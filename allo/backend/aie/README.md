@@ -28,6 +28,9 @@ python3 -m pip install https://github.com/Xilinx/llvm-aie/releases/download/nigh
 Then, install Allo as usual:
 ```bash
 git clone https://github.com/cornell-zhang/allo.git && cd allo
+python3 -m pip install pybind11 nanobind
+export PYBIND11_CMAKE_DIR="$(python3 -c 'import pybind11; print(pybind11.get_cmake_dir())')"
+export NANOBIND_CMAKE_DIR="$(python3 -c 'import nanobind; print(nanobind.cmake_dir())')"
 python3 -m pip install -v -e .
 ```
 
@@ -73,10 +76,13 @@ Below are the exact commands to set up the environment:
    ```
 
 6. Clone the allo repository and install.
-   - You may want to set up environment variables to use a custom CMake and LLVM build. For example, `export PATH=/opt/cmake-3.31.5-linux-x86_64/bin:/opt/llvm-project-19.x/build/bin:$PATH` and `export LLVM_BUILD_DIR=/opt/llvm-project-19.x/build`.
+   - You may want to set up environment variables to use a custom CMake and LLVM build. For example, `export PATH=/opt/cmake-3.31.5-linux-x86_64/bin:/opt/llvm-project/build/bin:$PATH` and `export LLVM_BUILD_DIR=/opt/llvm-project/build`.
    ```bash
    git clone https://github.com/cornell-zhang/allo.git
    cd allo
+   python3 -m pip install pybind11 nanobind
+   export PYBIND11_CMAKE_DIR="$(python3 -c 'import pybind11; print(pybind11.get_cmake_dir())')"
+   export NANOBIND_CMAKE_DIR="$(python3 -c 'import nanobind; print(nanobind.cmake_dir())')"
    python3 -m pip install -v -e .
    ```
 

@@ -459,7 +459,11 @@ def build(
         global_vars = get_global_vars(func)
         # [NOTE]: set unroll = False to improve compilation efficiency
         s: Schedule = _customize(
-            func, global_vars=global_vars, enable_tensor=False, unroll=False
+            func,
+            global_vars=global_vars,
+            enable_tensor=False,
+            unroll=False,
+            typing_rule_set="cpp-style",
         )
         stream_info, stream_types_dict, extra_stream_info = move_stream_to_interface(
             s, with_stream_type=True, with_extra_info=True, unroll=False

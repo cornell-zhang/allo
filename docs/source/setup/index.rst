@@ -74,10 +74,13 @@ We recommend creating a new conda environment for Allo. Since we are using the l
   $ conda create -n allo python=3.12
   $ conda activate allo
 
-You can now install Allo by running the following command.
+You can now install Allo by running the following commands.
 
 .. code-block:: console
 
+  $ python3 -m pip install pybind11 nanobind
+  $ export PYBIND11_CMAKE_DIR="$(python3 -c 'import pybind11; print(pybind11.get_cmake_dir())')"
+  $ export NANOBIND_CMAKE_DIR="$(python3 -c 'import nanobind; print(nanobind.cmake_dir())')"
   $ python3 -m pip install -v -e .
 
 

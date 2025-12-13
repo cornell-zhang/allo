@@ -12,13 +12,18 @@ from .types import (
     UInt,
     Fixed,
     UFixed,
+    int32,
     float32,
     float64,
 )
 
 
-def get_typing_rule(node):
-    return registry[node]
+def get_typing_rule(node, rule="default"):
+    rule_registry = registry
+    if rule == "cpp-style":
+        rule_registry = cpp_style_registry
+    assert node in rule_registry, f"Typing rule for {node} not found"
+    return rule_registry[node]
 
 
 def sort_type_classes(types):
@@ -443,114 +448,88 @@ def mod_rule():
 
 def cmp_rule():
     int_rules = {
-        (Int, Int): lambda t1, t2: (Int(max(t1.bits, t2.bits)), UInt(1)),
-        (Int, UInt): lambda t1, t2: (Int(max(t1.bits, t2.bits + 1)), UInt(1)),
-        (Int, Index): lambda t1, t2: (Int(max(t1.bits, t2.bits + 1)), UInt(1)),
-        (Int, Fixed): lambda t1, t2: (
-            Fixed(max(t1.bits, t2.bits - t2.fracs) + t2.fracs, t2.fracs),
-            UInt(1),
+        (Int, Int): lambda t1, t2: Int(max(t1.bits, t2.bits)),
+        (Int, UInt): lambda t1, t2: Int(max(t1.bits, t2.bits + 1)),
+        (Int, Index): lambda t1, t2: Int(max(t1.bits, t2.bits + 1)),
+        (Int, Fixed): lambda t1, t2: Fixed(
+            max(t1.bits, t2.bits - t2.fracs) + t2.fracs, t2.fracs
         ),
-        (Int, UFixed): lambda t1, t2: (
-            Fixed(max(t1.bits, t2.bits - t2.fracs + 1) + t2.fracs, t2.fracs),
-            UInt(1),
+        (Int, UFixed): lambda t1, t2: Fixed(
+            max(t1.bits, t2.bits - t2.fracs + 1) + t2.fracs, t2.fracs
         ),
-        (Int, Float): lambda t1, t2: (t2, UInt(1)),
+        (Int, Float): lambda t1, t2: t2,
     }
     uint_rules = {
-        (UInt, Int): lambda t1, t2: (Int(max(t1.bits + 1, t2.bits)), UInt(1)),
-        (UInt, UInt): lambda t1, t2: (UInt(max(t1.bits, t2.bits)), UInt(1)),
-        (UInt, Index): lambda t1, t2: (UInt(max(t1.bits, t2.bits)), UInt(1)),
-        (UInt, Fixed): lambda t1, t2: (
-            Fixed(max(t1.bits + 1, t2.bits - t2.fracs) + t2.fracs, t2.fracs),
-            UInt(1),
+        (UInt, Int): lambda t1, t2: Int(max(t1.bits + 1, t2.bits)),
+        (UInt, UInt): lambda t1, t2: UInt(max(t1.bits, t2.bits)),
+        (UInt, Index): lambda t1, t2: UInt(max(t1.bits, t2.bits)),
+        (UInt, Fixed): lambda t1, t2: Fixed(
+            max(t1.bits + 1, t2.bits - t2.fracs) + t2.fracs, t2.fracs
         ),
-        (UInt, UFixed): lambda t1, t2: (
-            UFixed(max(t1.bits, t2.bits - t2.fracs) + t2.fracs, t2.fracs),
-            UInt(1),
+        (UInt, UFixed): lambda t1, t2: UFixed(
+            max(t1.bits, t2.bits - t2.fracs) + t2.fracs, t2.fracs
         ),
-        (UInt, Float): lambda t1, t2: (t2, UInt(1)),
+        (UInt, Float): lambda t1, t2: t2,
     }
     index_rules = {
-        (Index, Int): lambda t1, t2: (Int(max(t1.bits + 1, t2.bits)), UInt(1)),
-        (Index, UInt): lambda t1, t2: (UInt(max(t1.bits, t2.bits)), UInt(1)),
-        (Index, Index): lambda t1, t2: (Index(), UInt(1)),
-        (Index, Fixed): lambda t1, t2: (
-            Fixed(max(t1.bits + 1, t2.bits - t2.fracs) + t2.fracs, t2.fracs),
-            UInt(1),
+        (Index, Int): lambda t1, t2: Int(max(t1.bits + 1, t2.bits)),
+        (Index, UInt): lambda t1, t2: UInt(max(t1.bits, t2.bits)),
+        (Index, Index): lambda t1, t2: Index(),
+        (Index, Fixed): lambda t1, t2: Fixed(
+            max(t1.bits + 1, t2.bits - t2.fracs) + t2.fracs, t2.fracs
         ),
-        (Index, UFixed): lambda t1, t2: (
-            UFixed(max(t1.bits, t2.bits - t2.fracs) + t2.fracs, t2.fracs),
-            UInt(1),
+        (Index, UFixed): lambda t1, t2: UFixed(
+            max(t1.bits, t2.bits - t2.fracs) + t2.fracs, t2.fracs
         ),
-        (Index, Float): lambda t1, t2: (t2, UInt(1)),
+        (Index, Float): lambda t1, t2: t2,
     }
     fixed_rules = {
-        (Fixed, Int): lambda t1, t2: (
-            Fixed(max(t1.bits - t1.fracs, t2.bits) + t1.fracs, t1.fracs),
-            UInt(1),
+        (Fixed, Int): lambda t1, t2: Fixed(
+            max(t1.bits - t1.fracs, t2.bits) + t1.fracs, t1.fracs
         ),
-        (Fixed, UInt): lambda t1, t2: (
-            Fixed(max(t1.bits - t1.fracs, t2.bits + 1) + t1.fracs, t1.fracs),
-            UInt(1),
+        (Fixed, UInt): lambda t1, t2: Fixed(
+            max(t1.bits - t1.fracs, t2.bits + 1) + t1.fracs, t1.fracs
         ),
-        (Fixed, Index): lambda t1, t2: (
-            Fixed(max(t1.bits - t1.fracs, t2.bits + 1) + t1.fracs, t1.fracs),
-            UInt(1),
+        (Fixed, Index): lambda t1, t2: Fixed(
+            max(t1.bits - t1.fracs, t2.bits + 1) + t1.fracs, t1.fracs
         ),
-        (Fixed, Fixed): lambda t1, t2: (
-            Fixed(
-                max(t1.bits - t1.fracs, t2.bits - t2.fracs) + max(t1.fracs, t2.fracs),
-                max(t1.fracs, t2.fracs),
-            ),
-            UInt(1),
+        (Fixed, Fixed): lambda t1, t2: Fixed(
+            max(t1.bits - t1.fracs, t2.bits - t2.fracs) + max(t1.fracs, t2.fracs),
+            max(t1.fracs, t2.fracs),
         ),
-        (Fixed, UFixed): lambda t1, t2: (
-            Fixed(
-                max(t1.bits - t1.fracs, t2.bits - t2.fracs + 1)
-                + max(t1.fracs, t2.fracs),
-                max(t1.fracs, t2.fracs),
-            ),
-            UInt(1),
+        (Fixed, UFixed): lambda t1, t2: Fixed(
+            max(t1.bits - t1.fracs, t2.bits - t2.fracs + 1) + max(t1.fracs, t2.fracs),
+            max(t1.fracs, t2.fracs),
         ),
-        (Fixed, Float): lambda t1, t2: (t2, UInt(1)),
+        (Fixed, Float): lambda t1, t2: t2,
     }
     ufixed_rules = {
-        (UFixed, Int): lambda t1, t2: (
-            Fixed(max(t1.bits - t1.fracs + 1, t2.bits) + t1.fracs, t1.fracs),
-            UInt(1),
+        (UFixed, Int): lambda t1, t2: Fixed(
+            max(t1.bits - t1.fracs + 1, t2.bits) + t1.fracs, t1.fracs
         ),
-        (UFixed, UInt): lambda t1, t2: (
-            UFixed(max(t1.bits - t1.fracs, t2.bits) + t1.fracs, t1.fracs),
-            UInt(1),
+        (UFixed, UInt): lambda t1, t2: UFixed(
+            max(t1.bits - t1.fracs, t2.bits) + t1.fracs, t1.fracs
         ),
-        (UFixed, Index): lambda t1, t2: (
-            UFixed(max(t1.bits - t1.fracs, t2.bits) + t1.fracs, t1.fracs),
-            UInt(1),
+        (UFixed, Index): lambda t1, t2: UFixed(
+            max(t1.bits - t1.fracs, t2.bits) + t1.fracs, t1.fracs
         ),
-        (UFixed, Fixed): lambda t1, t2: (
-            Fixed(
-                max(t1.bits - t1.fracs + 1, t2.bits - t2.fracs)
-                + max(t1.fracs, t2.fracs),
-                max(t1.fracs, t2.fracs),
-            ),
-            UInt(1),
+        (UFixed, Fixed): lambda t1, t2: Fixed(
+            max(t1.bits - t1.fracs + 1, t2.bits - t2.fracs) + max(t1.fracs, t2.fracs),
+            max(t1.fracs, t2.fracs),
         ),
-        (UFixed, UFixed): lambda t1, t2: (
-            UFixed(
-                max(t1.bits - t1.fracs, t2.bits - t2.fracs) + max(t1.fracs, t2.fracs),
-                max(t1.fracs, t2.fracs),
-            ),
-            UInt(1),
+        (UFixed, UFixed): lambda t1, t2: UFixed(
+            max(t1.bits - t1.fracs, t2.bits - t2.fracs) + max(t1.fracs, t2.fracs),
+            max(t1.fracs, t2.fracs),
         ),
-        (UFixed, Float): lambda t1, t2: (t2, UInt(1)),
+        (UFixed, Float): lambda t1, t2: t2,
     }
     float_rules = {
-        (Float, Int): lambda t1, t2: (t1, UInt(1)),
-        (Float, UInt): lambda t1, t2: (t1, UInt(1)),
-        (Float, Index): lambda t1, t2: (t1, UInt(1)),
-        (Float, Fixed): lambda t1, t2: (t1, UInt(1)),
-        (Float, UFixed): lambda t1, t2: (t1, UInt(1)),
-        (Float, Float): lambda t1, t2: (t1 if t1.bits >= t2.bits else t2, UInt(1)),
+        (Float, Int): lambda t1, t2: t1,
+        (Float, UInt): lambda t1, t2: t1,
+        (Float, Index): lambda t1, t2: t1,
+        (Float, Fixed): lambda t1, t2: t1,
+        (Float, UFixed): lambda t1, t2: t1,
+        (Float, Float): lambda t1, t2: t1 if t1.bits >= t2.bits else t2,
     }
     return TypingRule(
         [int_rules, uint_rules, index_rules, fixed_rules, ufixed_rules, float_rules],
@@ -757,4 +736,138 @@ registry = {
     ast.Invert: intrin_rule(),
     ast.IfExp: select_rule(),
     "minmax": select_rule(),
+}
+
+# ----------------------------------------------------
+# Typing rules following cpp implicit conversion rules
+#
+# - reference: https://en.cppreference.com/w/c/language/conversion.html
+# - types:
+#       - int8, int16, int32, int64
+#       - uint8, uint16, uint32, uint64
+#       - index (int32)
+#       - bfloat16, float16, float32, float64
+# ----------------------------------------------------
+
+
+def cpp_style_binary_arith_rule():
+    int_rules = {
+        (Int, Int): lambda t1, t2: (
+            Int(max(t1.bits, t2.bits))
+            if all(t.bits in {8, 16, 32, 64} for t in (t1, t2))
+            else TypeError(f"{t1}, {t2} fail binary arithmetic rule")
+        ),
+        (Int, UInt): lambda t1, t2: (
+            (UInt(t2.bits) if t2.bits >= t1.bits else Int(t1.bits))
+            if all(t.bits in {8, 16, 32, 64} for t in (t1, t2))
+            else (_ for _ in ()).throw(
+                TypeError(f"{t1}, {t2} fail binary arithmetic rule")
+            )
+        ),
+        (Int, Index): lambda t1, t2: (
+            Int(max(t1.bits, t2.bits))
+            if t1.bits in {8, 16, 32, 64}
+            else TypeError(f"{t1}, {t2} fail binary arithmetic rule")
+        ),
+        (Int, Float): lambda t1, t2: (
+            t2
+            if t1.bits in {8, 16, 32, 64}
+            else TypeError(f"{t1}, {t2} fail binary arithmetic rule")
+        ),
+    }
+    uint_rules = {
+        (UInt, Int): lambda t1, t2: (
+            (UInt(t1.bits) if t1.bits >= t2.bits else Int(t2.bits))
+            if all(t.bits in {8, 16, 32, 64} for t in (t1, t2))
+            else (_ for _ in ()).throw(
+                TypeError(f"{t1}, {t2} fail binary arithmetic rule")
+            )
+        ),
+        (UInt, UInt): lambda t1, t2: (
+            UInt(max(t1.bits, t2.bits))
+            if all(t.bits in {8, 16, 32, 64} for t in (t1, t2))
+            else TypeError(f"{t1}, {t2} fail binary arithmetic rule")
+        ),
+        (UInt, Index): lambda t1, t2: (
+            (UInt(t1.bits) if t1.bits >= 32 else Index())
+            if t1.bits in {8, 16, 32, 64}
+            else TypeError(f"{t1}, {t2} fail binary arithmetic rule")
+        ),
+        (UInt, Float): lambda t1, t2: (
+            t2
+            if t1.bits in {8, 16, 32, 64}
+            else TypeError(f"{t1}, {t2} fail binary arithmetic rule")
+        ),
+    }
+    index_rules = {
+        (Index, Int): lambda t1, t2: (
+            Int(max(t1.bits, t2.bits))
+            if t2.bits in {8, 16, 32, 64}
+            else TypeError(f"{t1}, {t2} fail binary arithmetic rule")
+        ),
+        (Index, UInt): lambda t1, t2: (
+            (UInt(t2.bits) if t2.bits >= 32 else Index())
+            if t2.bits in {8, 16, 32, 64}
+            else TypeError(f"{t1}, {t2} fail binary arithmetic rule")
+        ),
+        (Index, Index): lambda t1, t2: t2,
+        (Index, Float): lambda t1, t2: t2,
+    }
+    float_rules = {
+        (Float, Int): lambda t1, t2: (
+            t1
+            if t2.bits in {8, 16, 32, 64}
+            else TypeError(f"{t1}, {t2} fail binary arithmetic rule")
+        ),
+        (Float, UInt): lambda t1, t2: (
+            t1
+            if t2.bits in {8, 16, 32, 64}
+            else TypeError(f"{t1}, {t2} fail binary arithmetic rule")
+        ),
+        (Float, Index): lambda t1, t2: t1,
+        (Float, Float): lambda t1, t2: t1 if t1.bits >= t2.bits else t2,
+    }
+    return TypingRule(
+        [int_rules, uint_rules, index_rules, float_rules],
+    )
+
+
+def cpp_style_intrin_rule():
+    unaryrules = {
+        (Float,): lambda t: t,
+        (Int,): lambda t: int32 if t.bits < 32 else t,
+        (UInt,): lambda t: t,
+        (Index,): lambda t: t,
+        (Fixed,): lambda t: t,
+        (UFixed,): lambda t: t,
+    }
+    return TypingRule([unaryrules])
+
+
+cpp_style_registry = {
+    ast.Add: cpp_style_binary_arith_rule(),
+    ast.Sub: cpp_style_binary_arith_rule(),
+    ast.Mult: cpp_style_binary_arith_rule(),
+    ast.Div: cpp_style_binary_arith_rule(),
+    ast.FloorDiv: cpp_style_binary_arith_rule(),
+    ast.Mod: cpp_style_binary_arith_rule(),
+    # ast.Pow: pow_rule(), # TODO
+    # ast.LShift: shift_rule(), # TODO
+    # ast.RShift: shift_rule(), # TODO
+    # ast.BitOr: and_or_rule(), # TODO
+    # ast.BitXor: and_or_rule(), # TODO
+    # ast.BitAnd: and_or_rule(), # TODO
+    ast.And: lambda t1, t2: UInt(8),
+    ast.Or: lambda t1, t2: UInt(8),
+    ast.Eq: cpp_style_binary_arith_rule(),
+    ast.NotEq: cpp_style_binary_arith_rule(),
+    ast.Lt: cpp_style_binary_arith_rule(),
+    ast.LtE: cpp_style_binary_arith_rule(),
+    ast.Gt: cpp_style_binary_arith_rule(),
+    ast.GtE: cpp_style_binary_arith_rule(),
+    ast.USub: cpp_style_intrin_rule(),
+    ast.UAdd: cpp_style_intrin_rule(),
+    ast.Invert: cpp_style_intrin_rule(),
+    # ast.IfExp: select_rule(), # TODO
+    # "minmax": select_rule(), # TODO
 }
