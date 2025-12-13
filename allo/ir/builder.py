@@ -661,7 +661,9 @@ class ASTTransformer(ASTBuilder):
             # Get zero-rank memref for constant
             in_cst = ASTTransformer.build_array(ctx, dtype, tuple())
             with ctx.get_ip():
-                fill = linalg_d.fill(get_mlir_op_result(op), outs=[in_cst.result])
+                fill = linalg_d.fill(
+                    get_mlir_op_result(op, dtype=dtype), outs=[in_cst.result]
+                )
             op = (
                 (fill.owner if hasattr(fill, "owner") else fill)
                 if ctx.enable_tensor
@@ -915,14 +917,16 @@ class ASTTransformer(ASTBuilder):
                 rhs = ASTTransformer.build_cast_op(
                     ctx, rhs, value.dtype, target.dtype, value.shape
                 )
-                rhs_result = get_mlir_op_result(rhs)
                 # - scalar -> tesnor: use linalg_d.fill to broadcast
                 if len(target.shape) > 0 and len(value.shape) == 0:
                     alloc_op = ASTTransformer.build_array(
                         ctx, target.dtype, target.shape
                     )
                     with ctx.get_ip():
-                        linalg_op = linalg_d.fill(rhs_result, outs=[alloc_op.result])
+                        linalg_op = linalg_d.fill(
+                            get_mlir_op_result(rhs, dtype=target.dtype),
+                            outs=[alloc_op.result],
+                        )
                     rhs = (
                         (linalg_op.owner if hasattr(linalg_op, "owner") else linalg_op)
                         if ctx.enable_tensor
@@ -1605,7 +1609,10 @@ class ASTTransformer(ASTBuilder):
             lower = build_stmt(ctx, node.slice.lower)
             upper = build_stmt(ctx, node.slice.upper)
             cst = ASTTransformer.build_cast_op(
-                ctx, MockConstant(1, ctx), Int(32), node.slice.upper.dtype
+                ctx,
+                MockConstant(1, ctx, dtype=Int(32)),
+                Int(32),
+                node.slice.upper.dtype,
             )
             upper = arith_d.SubIOp(
                 get_mlir_op_result(upper), cst.result, ip=ctx.get_ip()
@@ -2597,12 +2604,11 @@ class ASTTransformer(ASTBuilder):
                 with ctx.get_ip():
                     alloc_op = ASTTransformer.build_array(ctx, dtype, shape)
                     res = (
-                        MockConstant(1, ctx)
+                        MockConstant(1, ctx, dtype=node.dtype)
                         if fn_name == "ones"
-                        else MockConstant(0, ctx)
+                        else MockConstant(0, ctx, dtype=node.dtype)
                     )
-                    op = ASTTransformer.build_cast_op(ctx, res, Int(32), node.dtype)
-                    op = linalg_d.fill(get_mlir_op_result(op), outs=[alloc_op.result])
+                    op = linalg_d.fill(res.result, outs=[alloc_op.result])
                     return (
                         (op.owner if hasattr(op, "owner") else op)
                         if ctx.enable_tensor
@@ -2870,8 +2876,7 @@ class ASTTransformer(ASTBuilder):
                 "relu",
             }:
                 # init zero
-                zero = MockConstant(0, ctx)
-                zero = ASTTransformer.build_cast_op(ctx, zero, Int(32), node.dtype)
+                zero = MockConstant(0, ctx, dtype=node.dtype)
                 linalg_fill = linalg_d.fill(
                     zero.result, outs=[get_mlir_op_result(buf_op)]
                 )
@@ -2986,7 +2991,7 @@ class ASTTransformer(ASTBuilder):
                     # TODO: Need to better manage library call
                     zero_op = ASTTransformer.build_array(ctx, dtype, shape)
                     # init zero
-                    zero = MockConstant(0, ctx)
+                    zero = MockConstant(0, ctx, dtype=dtype)
                     # TODO: support tensor
                     linalg_fill = linalg_d.fill(zero.result, outs=[zero_op.result])
                     op = linalg_d.max(

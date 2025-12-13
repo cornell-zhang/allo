@@ -23,7 +23,7 @@ from .._mlir.dialects import (
     tensor as tensor_d,
     func as func_d,
 )
-from .types import AlloType, Int, UInt, Fixed, UFixed, Index
+from .types import AlloType, Int, UInt, Fixed, UFixed, Index, Float
 from .symbol_resolver import ASTResolver
 
 
@@ -182,9 +182,15 @@ class MockConstant(MockOp):
     @property
     def result(self):
         if self.dtype is not None:
-            assert isinstance(self.dtype, Index)
             dtype = self.dtype.build()
-            value_attr = IntegerAttr.get(dtype, self.val)
+            if isinstance(self.dtype, (Int, UInt, Index)):
+                value_attr = IntegerAttr.get(dtype, self.val)
+            elif isinstance(self.dtype, Float):
+                value_attr = FloatAttr.get(dtype, self.val)
+            else:
+                raise ValueError(
+                    f"Fail to resolve MockConstant with dtype {self.dtype}"
+                )
         elif isinstance(self.val, int):
             dtype = IntegerType.get_signless(32)
             value_attr = IntegerAttr.get(dtype, self.val)
