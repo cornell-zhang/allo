@@ -290,7 +290,7 @@ def allo_type_from_mlir_type(mlir_type):
         return Float(32, 23)
     if isinstance(mlir_type, F64Type):
         return Float(64, 52)
-    # fixme (Shihan): avoid using string matching and parsing  
+    # fixme (Shihan): avoid using string matching and parsing
     pattern = re.compile(r"!allo\.(U)?Fixed<\s*(\d+)\s*,\s*(\d+)\s*>")
     m = pattern.fullmatch(str(mlir_type))
     if m:
