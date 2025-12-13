@@ -17,6 +17,7 @@
 #include "mlir/InitAllDialects.h"
 #include "mlir/Tools/mlir-translate/Translation.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/ADT/SmallSet.h"
 
 #include "allo/Dialect/AlloDialect.h"
 #include "allo/Dialect/AlloOps.h"
@@ -251,8 +252,7 @@ public:
       }
     }
     if (auto binaryRHS = llvm::dyn_cast<AffineBinaryOpExpr>(expr.getRHS())) {
-      if (auto constRHS =
-              llvm::dyn_cast<AffineConstantExpr>(binaryRHS.getRHS())) {
+      if (auto constRHS = llvm::dyn_cast<AffineConstantExpr>(binaryRHS.getRHS())) {
         if ((unsigned)*syntax == (unsigned)*"+" && constRHS.getValue() == -1 &&
             binaryRHS.getKind() == AffineExprKind::Mul) {
           visit(expr.getLHS());
@@ -702,13 +702,12 @@ void ModuleEmitter::emitAffineFor(AffineForOp op) {
   auto iterVar = op.getInductionVar();
   std::string loop_name = "";
   if (op->hasAttr("loop_name")) { // loop label
-    loop_name =
-        llvm::dyn_cast<StringAttr>(op->getAttr("loop_name")).getValue().str();
+    loop_name = llvm::cast<StringAttr>(op->getAttr("loop_name")).getValue().str();
     std::replace(loop_name.begin(), loop_name.end(), '.', '_');
     os << "l_";
     if (op->hasAttr("op_name")) {
       std::string op_name =
-          llvm::dyn_cast<StringAttr>(op->getAttr("op_name")).getValue().str();
+          llvm::cast<StringAttr>(op->getAttr("op_name")).getValue().str();
       std::replace(op_name.begin(), op_name.end(), '.', '_');
       os << op_name << "_";
     }
@@ -920,8 +919,7 @@ void ModuleEmitter::emitAffineLoad(AffineLoadOp op) {
   indent();
   std::string load_from_name = "";
   if (op->hasAttr("from")) {
-    load_from_name =
-        llvm::dyn_cast<StringAttr>(op->getAttr("from")).getValue().str();
+    load_from_name = llvm::cast<StringAttr>(op->getAttr("from")).getValue().str();
   }
   Value result = op.getResult();
   fixUnsignedType(result, op->hasAttr("unsigned"));
@@ -933,9 +931,9 @@ void ModuleEmitter::emitAffineLoad(AffineLoadOp op) {
   auto affineMap = op.getAffineMap();
   AffineExprEmitter affineEmitter(state, affineMap.getNumDims(),
                                   op.getMapOperands());
-  if (attr && llvm::dyn_cast<StringAttr>(attr).getValue().str().substr(0, 6) ==
-                  "stream") {
-    auto attr_str = llvm::dyn_cast<StringAttr>(attr).getValue().str();
+  if (attr &&
+      llvm::cast<StringAttr>(attr).getValue().str().substr(0, 6) == "stream") {
+    auto attr_str = llvm::cast<StringAttr>(attr).getValue().str();
     int S_index = attr_str.find("S"); // spatial
     int T_index = attr_str.find("T"); // temporal
     if (S_index != -1 && T_index != -1) {
@@ -955,7 +953,7 @@ void ModuleEmitter::emitAffineLoad(AffineLoadOp op) {
     os << ".read(); // ";
     emitValue(memref, 0, false, load_from_name); // comment
   }
-  auto arrayType = llvm::dyn_cast<ShapedType>(memref.getType());
+  auto arrayType = llvm::cast<ShapedType>(memref.getType());
   for (auto index : affineMap.getResults()) {
     os << "[";
     affineEmitter.emitAffineExpr(index);
@@ -969,8 +967,7 @@ void ModuleEmitter::emitAffineStore(AffineStoreOp op) {
   indent();
   std::string store_to_name = "";
   if (op->hasAttr("to")) {
-    store_to_name =
-        llvm::dyn_cast<StringAttr>(op->getAttr("to")).getValue().str();
+    store_to_name = llvm::cast<StringAttr>(op->getAttr("to")).getValue().str();
   }
   auto memref = op.getMemRef();
   emitValue(memref, 0, false, store_to_name);
@@ -978,9 +975,9 @@ void ModuleEmitter::emitAffineStore(AffineStoreOp op) {
   auto affineMap = op.getAffineMap();
   AffineExprEmitter affineEmitter(state, affineMap.getNumDims(),
                                   op.getMapOperands());
-  if (attr && llvm::dyn_cast<StringAttr>(attr).getValue().str().substr(0, 6) ==
-                  "stream") {
-    auto attr_str = llvm::dyn_cast<StringAttr>(attr).getValue().str();
+  if (attr &&
+      llvm::cast<StringAttr>(attr).getValue().str().substr(0, 6) == "stream") {
+    auto attr_str = llvm::cast<StringAttr>(attr).getValue().str();
     int S_index = attr_str.find("S"); // spatial
     int T_index = attr_str.find("T"); // temporal
     if (S_index != -1 && T_index != -1) {
@@ -1002,7 +999,7 @@ void ModuleEmitter::emitAffineStore(AffineStoreOp op) {
     os << "); // ";
     emitValue(memref, 0, false, store_to_name); // comment
   }
-  auto arrayType = llvm::dyn_cast<ShapedType>(memref.getType());
+  auto arrayType = llvm::cast<ShapedType>(memref.getType());
   for (auto index : affineMap.getResults()) {
     os << "[";
     affineEmitter.emitAffineExpr(index);
@@ -1143,7 +1140,7 @@ template <typename OpType> void ModuleEmitter::emitAlloc(OpType op) {
 
   std::string name;
   if (op->hasAttr("name")) {
-    auto attr = llvm::dyn_cast<StringAttr>(op->getAttr("name"));
+    auto attr = llvm::cast<StringAttr>(op->getAttr("name"));
     name = attr.getValue().str();
   }
 
@@ -1165,9 +1162,9 @@ void ModuleEmitter::emitLoad(memref::LoadOp op) {
   auto memref = op.getMemRef();
   emitValue(memref);
   auto attr = llvm::dyn_cast<MemRefType>(memref.getType()).getMemorySpace();
-  if (attr && llvm::dyn_cast<StringAttr>(attr).getValue().str().substr(0, 6) ==
-                  "stream") {
-    auto attr_str = llvm::dyn_cast<StringAttr>(attr).getValue().str();
+  if (attr &&
+      llvm::cast<StringAttr>(attr).getValue().str().substr(0, 6) == "stream") {
+    auto attr_str = llvm::cast<StringAttr>(attr).getValue().str();
     int S_index = attr_str.find("S"); // spatial
     int T_index = attr_str.find("T"); // temporal
     if (S_index != -1 && T_index != -1) {
@@ -1201,9 +1198,9 @@ void ModuleEmitter::emitStore(memref::StoreOp op) {
   auto memref = op.getMemRef();
   emitValue(memref);
   auto attr = llvm::dyn_cast<MemRefType>(memref.getType()).getMemorySpace();
-  if (attr && llvm::dyn_cast<StringAttr>(attr).getValue().str().substr(0, 6) ==
-                  "stream") {
-    auto attr_str = llvm::dyn_cast<StringAttr>(attr).getValue().str();
+  if (attr &&
+      llvm::cast<StringAttr>(attr).getValue().str().substr(0, 6) == "stream") {
+    auto attr_str = llvm::cast<StringAttr>(attr).getValue().str();
     int S_index = attr_str.find("S"); // spatial
     int T_index = attr_str.find("T"); // temporal
     if (S_index != -1 && T_index != -1) {
@@ -1263,8 +1260,20 @@ void ModuleEmitter::emitGlobal(memref::GlobalOp op) {
   auto attr = init_val.value();
   if (auto denseAttr = llvm::dyn_cast<DenseElementsAttr>(attr)) {
     indent();
-    auto arrayType = llvm::dyn_cast<ShapedType>(op.getType());
+    auto arrayType = llvm::cast<ShapedType>(op.getType());
     auto type = arrayType.getElementType();
+    // Check for hls.static attribute or stateful variable naming pattern
+    bool isStatic = op->hasAttr("hls.static");
+    if (!isStatic) {
+      // Check if symbol name contains "_stateful_" pattern (stateful variables)
+      std::string symName = op.getSymName().str();
+      if (symName.find("_stateful_") != std::string::npos) {
+        isStatic = true;
+      }
+    }
+    if (isStatic) {
+      os << "static ";
+    }
     if (op->hasAttr("constant")) {
       os << "const ";
     }
@@ -1277,8 +1286,7 @@ void ModuleEmitter::emitGlobal(memref::GlobalOp op) {
     unsigned elementIdx = 0;
     for (auto element : denseAttr.getValues<Attribute>()) {
       if (type.isF32()) {
-        auto value =
-            llvm::dyn_cast<FloatAttr>(element).getValue().convertToFloat();
+        auto value = llvm::cast<FloatAttr>(element).getValue().convertToFloat();
         if (std::isfinite(value))
           os << value;
         else if (value > 0)
@@ -1287,8 +1295,7 @@ void ModuleEmitter::emitGlobal(memref::GlobalOp op) {
           os << "-INFINITY";
 
       } else if (type.isF64()) {
-        auto value =
-            llvm::dyn_cast<FloatAttr>(element).getValue().convertToDouble();
+        auto value = llvm::cast<FloatAttr>(element).getValue().convertToDouble();
         if (std::isfinite(value))
           os << value;
         else if (value > 0)
@@ -1297,16 +1304,16 @@ void ModuleEmitter::emitGlobal(memref::GlobalOp op) {
           os << "-INFINITY";
 
       } else if (type.isInteger(1))
-        os << llvm::dyn_cast<BoolAttr>(element).getValue();
+        os << llvm::cast<BoolAttr>(element).getValue();
       else if (type.isIntOrIndex())
         if (op->hasAttr("unsigned")) {
           auto intType = llvm::dyn_cast<IntegerType>(type);
-          os << llvm::dyn_cast<IntegerAttr>(element).getValue().getZExtValue();
+          os << llvm::cast<IntegerAttr>(element).getValue().getZExtValue();
           if (intType.getWidth() > 64)
             os << "ULL";
         } else {
           auto intType = llvm::dyn_cast<IntegerType>(type);
-          os << llvm::dyn_cast<IntegerAttr>(element).getValue();
+          os << llvm::cast<IntegerAttr>(element).getValue();
           if (intType.getWidth() > 64)
             os << "LL";
         }
@@ -1366,8 +1373,8 @@ void ModuleEmitter::emitTensorInsert(tensor::InsertOp op) {
 void ModuleEmitter::emitDim(memref::DimOp op) {
   if (auto constOp =
           dyn_cast<arith::ConstantOp>(op.getOperand(1).getDefiningOp())) {
-    auto constVal = llvm::dyn_cast<IntegerAttr>(constOp.getValue()).getInt();
-    auto type = llvm::dyn_cast<ShapedType>(op.getOperand(0).getType());
+    auto constVal = llvm::cast<IntegerAttr>(constOp.getValue()).getInt();
+    auto type = llvm::cast<ShapedType>(op.getOperand(0).getType());
 
     if (type.hasStaticShape()) {
       if (constVal >= 0 && constVal < (int64_t)type.getShape().size()) {
@@ -1385,7 +1392,7 @@ void ModuleEmitter::emitDim(memref::DimOp op) {
 }
 
 void ModuleEmitter::emitRank(memref::RankOp op) {
-  auto type = llvm::dyn_cast<ShapedType>(op.getOperand().getType());
+  auto type = llvm::cast<ShapedType>(op.getOperand().getType());
   if (type.hasRank()) {
     indent();
     emitValue(op.getResult());
@@ -1470,12 +1477,10 @@ void ModuleEmitter::emitStreamConstruct(StreamConstructOp op) {
   emitValue(result);
   os << " depth=";
   if (llvm::isa<StreamType>(result.getType()))
-    os << llvm::dyn_cast<StreamType>(result.getType()).getDepth();
+    os << llvm::cast<StreamType>(result.getType()).getDepth();
   else {
     // array of stream
-    os << llvm::dyn_cast<StreamType>(
-              llvm::dyn_cast<ShapedType>(result.getType()).getElementType())
-              .getDepth();
+    os << llvm::cast<StreamType>(llvm::cast<ShapedType>(result.getType()).getElementType()).getDepth();
   }
   emitInfoAndNewLine(op);
 }
@@ -1487,9 +1492,8 @@ void ModuleEmitter::emitStreamGet(StreamGetOp op) {
   auto stream = op->getOperand(0);
   if (llvm::isa<StreamType>(stream.getType())) {
     unsigned dimIdx = 0;
-    auto streamType = llvm::dyn_cast<StreamType>(stream.getType());
-    if (auto shapedType =
-            llvm::dyn_cast<ShapedType>(streamType.getBaseType())) {
+    auto streamType = llvm::cast<StreamType>(stream.getType());
+    if (auto shapedType = llvm::dyn_cast<ShapedType>(streamType.getBaseType())) {
       indent();
       emitArrayDecl(result, false);
       os << ";\n";
@@ -1531,9 +1535,8 @@ void ModuleEmitter::emitStreamPut(StreamPutOp op) {
   auto stream = op->getOperand(0);
   if (llvm::isa<StreamType>(stream.getType())) {
     unsigned dimIdx = 0;
-    auto streamType = llvm::dyn_cast<StreamType>(stream.getType());
-    if (auto shapedType =
-            llvm::dyn_cast<ShapedType>(streamType.getBaseType())) {
+    auto streamType = llvm::cast<StreamType>(stream.getType());
+    if (auto shapedType = llvm::dyn_cast<ShapedType>(streamType.getBaseType())) {
       for (auto &shape : shapedType.getShape()) {
         indent();
         os << "for (int iv" << dimIdx << " = 0; ";
@@ -1694,7 +1697,7 @@ void ModuleEmitter::emitReshape(memref::ReshapeOp op) {
   auto array = op->getResult(0);
   assert(!isDeclared(array) && "has been declared before.");
 
-  auto arrayType = llvm::dyn_cast<ShapedType>(array.getType());
+  auto arrayType = llvm::cast<ShapedType>(array.getType());
   indent() << getTypeName(array) << " (*";
 
   // Add the new value to nameTable and emit its name.
@@ -1752,14 +1755,12 @@ void ModuleEmitter::emitConstant(arith::ConstantOp op) {
     fixUnsignedType(result, op->hasAttr("unsigned"));
     emitArrayDecl(result);
     os << " = {";
-    auto type =
-        llvm::dyn_cast<ShapedType>(op.getResult().getType()).getElementType();
+    auto type = llvm::cast<ShapedType>(op.getResult().getType()).getElementType();
 
     unsigned elementIdx = 0;
     for (auto element : denseAttr.getValues<Attribute>()) {
       if (type.isF32()) {
-        auto value =
-            llvm::dyn_cast<FloatAttr>(element).getValue().convertToFloat();
+        auto value = llvm::cast<FloatAttr>(element).getValue().convertToFloat();
         if (std::isfinite(value))
           os << value;
         else if (value > 0)
@@ -1768,8 +1769,7 @@ void ModuleEmitter::emitConstant(arith::ConstantOp op) {
           os << "-INFINITY";
 
       } else if (type.isF64()) {
-        auto value =
-            llvm::dyn_cast<FloatAttr>(element).getValue().convertToDouble();
+        auto value = llvm::cast<FloatAttr>(element).getValue().convertToDouble();
         if (std::isfinite(value))
           os << value;
         else if (value > 0)
@@ -1778,9 +1778,9 @@ void ModuleEmitter::emitConstant(arith::ConstantOp op) {
           os << "-INFINITY";
 
       } else if (type.isInteger(1))
-        os << llvm::dyn_cast<BoolAttr>(element).getValue();
+        os << llvm::cast<BoolAttr>(element).getValue();
       else if (type.isIntOrIndex())
-        os << llvm::dyn_cast<IntegerAttr>(element).getValue();
+        os << llvm::cast<IntegerAttr>(element).getValue();
       else
         emitError(op, "array has unsupported element type.");
 
@@ -1914,13 +1914,13 @@ void ModuleEmitter::emitValue(Value val, unsigned rank, bool isPtr,
 void ModuleEmitter::emitArrayDecl(Value array, bool isFunc, std::string name) {
   assert(!isDeclared(array) && "has been declared before.");
 
-  auto arrayType = llvm::dyn_cast<ShapedType>(array.getType());
+  auto arrayType = llvm::cast<ShapedType>(array.getType());
   if (arrayType.hasStaticShape()) {
     auto memref = llvm::dyn_cast<MemRefType>(array.getType());
     if (memref) {
       auto attr = memref.getMemorySpace();
-      if (attr && llvm::dyn_cast<StringAttr>(attr).getValue().str().substr(
-                      0, 6) == "stream") {
+      if (attr &&
+          llvm::cast<StringAttr>(attr).getValue().str().substr(0, 6) == "stream") {
         // Value has been declared before or is a constant number.
         if (isDeclared(array)) {
           os << getName(array);
@@ -1930,7 +1930,7 @@ void ModuleEmitter::emitArrayDecl(Value array, bool isFunc, std::string name) {
         // print stream type
         os << "hls::stream< " << getTypeName(array) << " > ";
 
-        auto attr_str = llvm::dyn_cast<StringAttr>(attr).getValue().str();
+        auto attr_str = llvm::cast<StringAttr>(attr).getValue().str();
         int S_index = attr_str.find("S"); // spatial
         int T_index = attr_str.find("T"); // temporal
         if (isFunc &&
@@ -2039,8 +2039,7 @@ void ModuleEmitter::emitLoopDirectives(Operation *op) {
   if (auto ii = getLoopDirective(op, "pipeline_ii")) {
     reduceIndent();
     indent();
-    os << "#pragma HLS pipeline II="
-       << llvm::dyn_cast<IntegerAttr>(ii).getValue();
+    os << "#pragma HLS pipeline II=" << llvm::cast<IntegerAttr>(ii).getValue();
     // https://docs.xilinx.com/r/en-US/ug1399-vitis-hls/Rewinding-Pipelined-Loops-for-Performance
     if (op->hasAttr("rewind"))
       os << " rewind";
@@ -2051,7 +2050,7 @@ void ModuleEmitter::emitLoopDirectives(Operation *op) {
   if (auto factor = getLoopDirective(op, "unroll")) {
     reduceIndent();
     indent();
-    auto val = llvm::dyn_cast<IntegerAttr>(factor).getValue();
+    auto val = llvm::cast<IntegerAttr>(factor).getValue();
     if (val == 0)
       os << "#pragma HLS unroll"
          << "\n";
@@ -2070,12 +2069,12 @@ void ModuleEmitter::emitLoopDirectives(Operation *op) {
 
 void ModuleEmitter::emitArrayDirectives(Value memref) {
   bool emitPragmaFlag = false;
-  auto type = llvm::dyn_cast<MemRefType>(memref.getType());
+  auto type = llvm::cast<MemRefType>(memref.getType());
 
   // streaming
   auto attr = type.getMemorySpace();
   if (attr) {
-    std::string attr_str = llvm::dyn_cast<StringAttr>(attr).getValue().str();
+    std::string attr_str = llvm::cast<StringAttr>(attr).getValue().str();
     if (attr_str.substr(0, 6) == "stream") {
       indent();
       os << "#pragma HLS stream variable=";
@@ -2115,7 +2114,7 @@ void ModuleEmitter::emitArrayDirectives(Value memref) {
           os << " factor=" << factors[dim] << "\n";
         }
       } else { // fully partitioned
-        if (llvm::dyn_cast<ShapedType>(memref.getType()).getShape()[dim] == 1)
+        if (llvm::cast<ShapedType>(memref.getType()).getShape()[dim] == 1)
           continue;
 
         emitPragmaFlag = true;
@@ -2188,7 +2187,7 @@ void ModuleEmitter::emitFunctionDirectives(func::FuncOp func,
   //   for (auto &port : portList) {
   //     // Array ports and scalar ports are handled separately. Here, we only
   //     // handle MemRef types since we assume the IR has be fully bufferized.
-  //     if (auto memrefType = port.getType().dyn_cast<MemRefType>()) {
+  //     if (auto memrefType = port.getType()llvm::dyn_cast<MemRefType>()) {
   //       // Only emit interface pragma when the array is not fully
   //       partitioned. if (!isFullyPartitioned(memrefType)) {
   //         indent();
@@ -2251,6 +2250,29 @@ void ModuleEmitter::emitFunction(func::FuncOp func) {
   if (func->hasAttr("top"))
     os << "/// This is top function.\n";
 
+  // Collect stateful globals used in this function
+  std::vector<memref::GlobalOp> statefulGlobals;
+  func.walk([&](memref::GetGlobalOp getGlobalOp) {
+    auto globalOp = getGlobalOp->getParentOfType<ModuleOp>()
+                        .lookupSymbol<memref::GlobalOp>(getGlobalOp.getName());
+    if (globalOp) {
+      std::string symName = globalOp.getSymName().str();
+      if (symName.find("_stateful_") != std::string::npos) {
+        // Check if we've already added this global
+        bool found = false;
+        for (auto &g : statefulGlobals) {
+          if (g.getSymName() == globalOp.getSymName()) {
+            found = true;
+            break;
+          }
+        }
+        if (!found) {
+          statefulGlobals.push_back(globalOp);
+        }
+      }
+    }
+  });
+
   // Emit function signature.
   os << "void " << func.getName() << "(\n";
   addIndent();
@@ -2263,20 +2285,18 @@ void ModuleEmitter::emitFunction(func::FuncOp func) {
   std::vector<std::string> input_args;
   if (func->hasAttr("inputs")) {
     std::string input_names =
-        llvm::dyn_cast<StringAttr>(func->getAttr("inputs")).getValue().str();
+        llvm::cast<StringAttr>(func->getAttr("inputs")).getValue().str();
     input_args = split_names(input_names);
   }
   std::string output_names;
   if (func->hasAttr("outputs")) {
-    output_names =
-        llvm::dyn_cast<StringAttr>(func->getAttr("outputs")).getValue().str();
+    output_names = llvm::cast<StringAttr>(func->getAttr("outputs")).getValue().str();
     // suppose only one output
     input_args.push_back(output_names);
   }
   std::string itypes = "";
   if (func->hasAttr("itypes"))
-    itypes =
-        llvm::dyn_cast<StringAttr>(func->getAttr("itypes")).getValue().str();
+    itypes = llvm::cast<StringAttr>(func->getAttr("itypes")).getValue().str();
   else {
     for (unsigned i = 0; i < func.getNumArguments(); ++i)
       itypes += "x";
@@ -2285,8 +2305,7 @@ void ModuleEmitter::emitFunction(func::FuncOp func) {
     indent();
     fixUnsignedType(arg, itypes[argIdx] == 'u');
     if (llvm::isa<ShapedType>(arg.getType())) {
-      if (llvm::isa<StreamType>(
-              llvm::dyn_cast<ShapedType>(arg.getType()).getElementType())) {
+      if (llvm::isa<StreamType>(llvm::cast<ShapedType>(arg.getType()).getElementType())) {
         auto shapedType = llvm::dyn_cast<ShapedType>(arg.getType());
         os << getTypeName(arg) << " ";
         os << addName(arg, false);
@@ -2318,14 +2337,13 @@ void ModuleEmitter::emitFunction(func::FuncOp func) {
   auto args = func.getArguments();
   std::string otypes = "";
   if (func->hasAttr("otypes"))
-    otypes =
-        llvm::dyn_cast<StringAttr>(func->getAttr("otypes")).getValue().str();
+    otypes = llvm::cast<StringAttr>(func->getAttr("otypes")).getValue().str();
   else {
     for (unsigned i = 0; i < func.getNumArguments(); ++i)
       otypes += "x";
   }
   if (auto funcReturn =
-          llvm::dyn_cast<func::ReturnOp>(func.front().getTerminator())) {
+          dyn_cast<func::ReturnOp>(func.front().getTerminator())) {
     unsigned idx = 0;
     for (auto result : funcReturn.getOperands()) {
       if (std::find(args.begin(), args.end(), result) == args.end()) {
@@ -2362,6 +2380,71 @@ void ModuleEmitter::emitFunction(func::FuncOp func) {
 
   // Emit function body.
   addIndent();
+
+  // Emit stateful globals inside the function (as static variables)
+  for (auto &globalOp : statefulGlobals) {
+    auto init_val = globalOp.getInitialValue();
+    if (!init_val.has_value())
+      continue;
+    fixUnsignedType(globalOp, globalOp->hasAttr("unsigned"));
+    auto attr = init_val.value();
+    if (auto denseAttr = llvm::dyn_cast<DenseElementsAttr>(attr)) {
+      indent();
+      auto arrayType = llvm::cast<ShapedType>(globalOp.getType());
+      auto type = arrayType.getElementType();
+      // Stateful variables are always static when inside a function
+      os << "static ";
+      if (globalOp->hasAttr("constant")) {
+        os << "const ";
+      }
+      os << getTypeName(type);
+      os << " " << globalOp.getSymName();
+      for (auto &shape : arrayType.getShape())
+        os << "[" << shape << "]";
+      os << " = {";
+
+      unsigned elementIdx = 0;
+      for (auto element : denseAttr.getValues<Attribute>()) {
+        if (type.isF32()) {
+          auto value = llvm::cast<FloatAttr>(element).getValue().convertToFloat();
+          if (std::isfinite(value))
+            os << value;
+          else if (value > 0)
+            os << "INFINITY";
+          else
+            os << "-INFINITY";
+        } else if (type.isF64()) {
+          auto value = llvm::cast<FloatAttr>(element).getValue().convertToDouble();
+          if (std::isfinite(value))
+            os << value;
+          else if (value > 0)
+            os << "INFINITY";
+          else
+            os << "-INFINITY";
+        } else if (type.isInteger(1))
+          os << llvm::cast<BoolAttr>(element).getValue();
+        else if (type.isIntOrIndex())
+          if (globalOp->hasAttr("unsigned")) {
+            auto intType = llvm::dyn_cast<IntegerType>(type);
+            os << llvm::cast<IntegerAttr>(element).getValue().getZExtValue();
+            if (intType.getWidth() > 64)
+              os << "ULL";
+          } else {
+            auto intType = llvm::dyn_cast<IntegerType>(type);
+            os << llvm::cast<IntegerAttr>(element).getValue();
+            if (intType.getWidth() > 64)
+              os << "LL";
+          }
+        else
+          emitError(globalOp.getOperation(), "array has unsupported element type.");
+
+        if (elementIdx++ != denseAttr.getNumElements() - 1)
+          os << ", ";
+      }
+      os << "};";
+      emitInfoAndNewLine(globalOp.getOperation());
+    }
+  }
 
   emitFunctionDirectives(func, portList);
 
@@ -2458,12 +2541,27 @@ using namespace std;
     }
   } else {
     os << device_header;
+    // First pass: collect all globals and determine which are stateful
+    llvm::SmallSet<StringRef, 4> statefulGlobalNames;
+    for (auto &op : *module.getBody()) {
+      if (auto cst = dyn_cast<memref::GlobalOp>(op)) {
+        std::string symName = cst.getSymName().str();
+        if (symName.find("_stateful_") != std::string::npos) {
+          statefulGlobalNames.insert(cst.getSymName());
+        }
+      }
+    }
+    // Second pass: emit functions and non-stateful globals
     for (auto &op : *module.getBody()) {
       if (auto func = dyn_cast<func::FuncOp>(op))
         emitFunction(func);
-      else if (auto cst = dyn_cast<memref::GlobalOp>(op))
-        emitGlobal(cst);
-      else
+      else if (auto cst = dyn_cast<memref::GlobalOp>(op)) {
+        // Only emit non-stateful globals at module level
+        // Stateful globals are emitted inside functions that use them
+        if (!statefulGlobalNames.contains(cst.getSymName())) {
+          emitGlobal(cst);
+        }
+      } else
         emitError(&op, "is unsupported operation.");
     }
   }

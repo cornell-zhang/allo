@@ -17,6 +17,7 @@ soda_*
 out
 rapidjson
 project_*
+**/.ipynb_checkpoints
 
 # Downloaded files
 *.params
@@ -76,7 +77,6 @@ tmp
 *.pyc
 
 .vscode
-*.prj
 *.pdf
 *.dot
 *.egg-info
