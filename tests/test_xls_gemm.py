@@ -1,5 +1,6 @@
 import allo
 from allo.ir.types import int32
+import numpy as np
 
 def gemm(A: int32[4, 4], B: int32[4, 4]) -> int32[4, 4]:
     C: int32[4, 4] = 0
@@ -32,3 +33,32 @@ print(mod_memory)
 
 # Print the textproto
 mod_memory.print_textproto()
+
+# Run functional verification tests
+print("\n" + "=" * 60)
+print("FUNCTIONAL VERIFICATION (register mode):")
+print("=" * 60)
+
+from xls_test_framework import XLSTestRunner
+
+# Create test matrices
+A = np.array([[1, 0, 0, 0],
+              [0, 1, 0, 0],
+              [0, 0, 1, 0],
+              [0, 0, 0, 1]], dtype=np.int32)  # Identity matrix
+B = np.array([[1, 2, 3, 4],
+              [5, 6, 7, 8],
+              [9, 10, 11, 12],
+              [13, 14, 15, 16]], dtype=np.int32)
+expected_C = (A @ B).astype(np.int32)  # Should equal B for identity A
+
+runner = XLSTestRunner()
+runner.test_sequential(
+    allo_func=gemm,
+    schedule=s,
+    test_cases=[
+        ((A.tolist(), B.tolist()), expected_C.tolist()),
+    ],
+    use_memory=False  # Register mode
+)
+runner.print_summary()

@@ -22,10 +22,27 @@ print(mod_register)
 print("\n" + "=" * 60)
 print("COMBINATIONAL MODE with use_memory=True (same output):")
 print("=" * 60)
-<<<<<<< HEAD
 mod_memory = s.build(target="xlscc", project="add_memory.prj", use_memory=True)
 print(mod_memory)
-=======
-mod_memory = s.build(target="xls", project="add_memory.prj", use_memory=True)
-print(mod_memory)
->>>>>>> xlscc
+
+# Run functional verification tests
+print("\n" + "=" * 60)
+print("FUNCTIONAL VERIFICATION:")
+print("=" * 60)
+
+from xls_test_framework import XLSTestRunner
+
+runner = XLSTestRunner()
+runner.test_combinational(
+    allo_func=add,
+    schedule=s,
+    test_cases=[
+        ((2, 3), 5),
+        ((10, -5), 5),
+        ((0, 0), 0),
+        ((-1, 1), 0),
+        ((100, 200), 300),
+        ((-50, -50), -100),
+    ]
+)
+runner.print_summary()
