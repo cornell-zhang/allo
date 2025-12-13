@@ -39,6 +39,7 @@ class CMakeBuild(build_ext):
         cmake_args = [
             f"-DMLIR_DIR={llvm_build_dir}/lib/cmake/mlir",
             f"-DPython3_EXECUTABLE={sys.executable}",
+            "-DCMAKE_BUILD_RPATH=$ORIGIN/..",
         ]
 
         build_temp = os.path.join(ext.sourcedir, "build")
@@ -48,7 +49,7 @@ class CMakeBuild(build_ext):
         BUILD_WITH = os.environ.get("BUILD_WITH")
         if not BUILD_WITH or BUILD_WITH == "ninja":
             subprocess.run(
-                ["cmake", "-G Ninja", ext.sourcedir] + cmake_args,
+                ["cmake", "-G", "Ninja", ext.sourcedir] + cmake_args,
                 cwd=build_temp,
                 check=True,
             )
@@ -60,7 +61,7 @@ class CMakeBuild(build_ext):
                 subprocess.run(["ninja"], cwd=build_temp, check=True)
         elif BUILD_WITH == "make":
             subprocess.run(
-                ["cmake", "-G Unix Makefiles", ext.sourcedir] + cmake_args,
+                ["cmake", "-G", "Unix Makefiles", ext.sourcedir] + cmake_args,
                 cwd=build_temp,
                 check=True,
             )
