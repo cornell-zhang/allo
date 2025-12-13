@@ -1,5 +1,7 @@
 # Allo XLS Backend
 
+> **Note:** This backend will be merged into the main Allo repository via PR over break.
+
 This directory contains Allo's backend support for Google's XLS (Accelerated HW Synthesis) toolchain. The backend provides two compilation targets: **DSLX** and **XLS[cc]**.
 
 ---
