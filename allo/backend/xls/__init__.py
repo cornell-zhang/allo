@@ -1,5 +1,5 @@
 # allo/allo/backend/xls/__init__.py
 
-from .xls import XLSModule
+from .xls import DSLXModule
 
-__all__ = ["XLSModule"]
+__all__ = ["DSLXModule"]

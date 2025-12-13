@@ -24,7 +24,7 @@ def find_xls_stdlib():
   return None
 
 # main interface for xls code generation and toolchain execution
-class XLSModule:
+class DSLXModule:
   def __init__(self, mod, top_func_name):
     self.module = mod
     self.func = top_func_name

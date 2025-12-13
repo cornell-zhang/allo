@@ -66,7 +66,8 @@ from .passes import (
 from .utils import freeze_list
 from .backend.llvm import LLVMModule
 from .backend.hls import HLSModule
-from .backend.xls import XLSModule
+from .backend.xls import XLSCCModule
+from .backend.xls.xls import DSLXModule
 from .library import KERNEL2SCHEDULE
 from .library.systolic import check_systolic, prepare_systolic
 
@@ -1207,13 +1208,25 @@ class Schedule:
                 return ele
         return []
 
-    def build(self, target=None, mode=None, project=None, configs=None, wrap_io=True):
+    def build(self, target=None, mode=None, project=None, configs=None, wrap_io=True, use_memory=False):
         if target is None or target == "llvm":
             target = "llvm"
             return LLVMModule(
                 self.module,
                 top_func_name=self.top_func_name,
                 ext_libs=self.ext_libs,
+            )
+        if target in {"xls", "dslx"}:
+            return DSLXModule(
+                self.module,
+                top_func_name=self.top_func_name,
+            )
+        if target == "xlscc":
+            return XLSCCModule(
+                self.module,
+                top_func_name=self.top_func_name,
+                project=project,
+                use_memory=use_memory,
             )
         if target in {"vhls", "vivado_hls", "vitis_hls", "tapa", "ihls"}:
             match target:
@@ -1235,11 +1248,6 @@ class Schedule:
                 configs=configs,
                 func_args=self.func_args,
                 wrap_io=wrap_io,
-            )
-        if target == "xls":
-            return XLSModule(
-                self.module,
-                top_func_name=self.top_func_name,
             )
         raise NotImplementedError(f"Target {target} is not supported")
 
