@@ -893,7 +893,7 @@ def analyze_read_write_patterns(mlir_func, external_kernel_lib: dict = {}):
                     op_str = str(op)
                     arg_refs = re.findall(r"%arg\d+", op_str)
                     for arg_ref in arg_refs:
-                        index = int(arg_ref.group(1))
+                        index = int(re.findall(r"\d+", arg_ref)[0])
                         if (
                             "ins(" in op_str
                             and arg_ref in op_str.split("ins(")[1].split("outs(")[0]
