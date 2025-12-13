@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # pylint: disable=redefined-builtin, no-name-in-module
 
+import re
 import numbers
 from collections import OrderedDict
 
@@ -289,6 +290,16 @@ def allo_type_from_mlir_type(mlir_type):
         return Float(32, 23)
     if isinstance(mlir_type, F64Type):
         return Float(64, 52)
+    # fixme (Shihan): avoid using string matching and parsing  
+    pattern = re.compile(r"!allo\.(U)?Fixed<\s*(\d+)\s*,\s*(\d+)\s*>")
+    m = pattern.fullmatch(str(mlir_type))
+    if m:
+        is_unsigned = m.group(1) is not None
+        bits = int(m.group(2))
+        fracs = int(m.group(3))
+        if is_unsigned:
+            return UFixed(bits, fracs)
+        return Fixed(bits, fracs)
     raise TypeError(f"Cannot reconstruct Allo Type from MLIR type: {mlir_type}")
 
 
