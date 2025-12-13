@@ -959,10 +959,10 @@ void XLSModuleEmitter::emitFunction(func::FuncOp func) {
     
     // Populate arrays from channels
     if (USE_MEMORY_FLAG) {
-      // Memory mode: Generate state-based code instead of loops
-      // Emit comment placeholder for state/index variables (wrapper will add at class level)
+      // Memory mode: Generate state-based code with pipelined for loops
+      // Emit comment placeholder for state variable (wrapper will add at class level)
       indent();
-      os << "// __xls_state_vars__: state, i\n";
+      os << "// __xls_state_vars__: state\n";
       
       // Generate state-based code for loading each input array
       unsigned stateNum = 0;
@@ -976,26 +976,28 @@ void XLSModuleEmitter::emitFunction(func::FuncOp func) {
         int64_t totalSize = 1;
         for (int64_t dim : shape) totalSize *= dim;
         
-        // Emit state for loading this array
+        // Emit state for loading this array using pipelined for loop
         indent();
         os << "// State " << stateNum << ": Load " << localName << " from " << channelName << "\n";
         indent();
-        os << "if (state == " << stateNum << ") {\n";
+        if (stateNum == 0) {
+          os << "if (state == " << stateNum << ") {\n";
+        } else {
+          os << "else if (state == " << stateNum << ") {\n";
+        }
         addIndent();
         indent();
-        os << getXLSTypeName(st.getElementType()) << " x;\n";
+        os << "#pragma hls_pipeline_init_interval 1\n";
         indent();
-        os << "if (" << channelName << ".nb_read(x)) {\n";
+        os << "for (int _i = 0; _i < " << totalSize << "; _i++) {\n";
         addIndent();
         indent();
-        os << localName << "[i] = x;\n";
-        indent();
-        os << "i++;\n";
-        indent();
-        os << "if (i == " << totalSize << ") { i = 0; state = " << (stateNum + 1) << "; }\n";
+        os << localName << "[_i] = " << channelName << ".read();\n";
         reduceIndent();
         indent();
         os << "}\n";
+        indent();
+        os << "state = " << (stateNum + 1) << ";\n";
         reduceIndent();
         indent();
         os << "}\n\n";
@@ -1090,7 +1092,7 @@ void XLSModuleEmitter::emitFunction(func::FuncOp func) {
       indent();
       os << "}\n\n";
       
-      // Output state: Write return array to channel
+      // Output state: Write return array to channel using pipelined for loop
       if (returnIsArray && returnValue) {
         auto terminator = block.getTerminator();
         if (auto returnOp = dyn_cast<func::ReturnOp>(terminator)) {
@@ -1107,13 +1109,19 @@ void XLSModuleEmitter::emitFunction(func::FuncOp func) {
               os << "else { // state == " << outputState << "\n";
               addIndent();
               indent();
+              os << "#pragma hls_pipeline_init_interval 1\n";
+              indent();
+              os << "for (int _i = 0; _i < " << totalSize << "; _i++) {\n";
+              addIndent();
+              indent();
               os << outputChannelName << ".write(";
               emitValue(returnValue);
-              os << "[i]);\n";
+              os << "[_i]);\n";
+              reduceIndent();
               indent();
-              os << "i++;\n";
+              os << "}\n";
               indent();
-              os << "if (i == " << totalSize << ") { i = 0; state = 0; }\n";
+              os << "state = 0;\n";
               reduceIndent();
               indent();
               os << "}\n";

@@ -29,3 +29,6 @@ print("Arrays emitted as: __xls_memory<int, 16>")
 print("=" * 60)
 mod_memory = s.build(target="xls", project="vvadd_memory.prj", use_memory=True)
 print(mod_memory)
+
+# Print the textproto
+mod_memory.print_textproto()
