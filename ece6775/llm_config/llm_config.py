@@ -1,3 +1,5 @@
+# Copyright Allo authors. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
 # LLM model config - shared for MoE and Attention+MoE
 
 # config modes: switch_base_8*, mixtral_8x7b*, deepseek*, custom
@@ -8,9 +10,9 @@ def get_moe_config(config_mode=None):
     # get MoE config (works for standalone MoE and Attention+MoE)
     if config_mode is None:
         config_mode = DEFAULT_CONFIG_MODE
-    
+
     config = {}
-    
+
     if config_mode == "switch_base_8":
         # Google Switch-Base-8 (original)
         config = {
@@ -121,7 +123,7 @@ def get_moe_config(config_mode=None):
             "k": 1,  # Top-1 MoE
             "hidden_dim": 256,
         }
-    
+
     return config
 
 
@@ -139,4 +141,3 @@ def print_config_info(config_mode, config):
     print(f"Top-k: {config['k']}")
     print(f"Hidden dimension: {config['hidden_dim']}")
     print("=" * 60)
-

@@ -1,3 +1,6 @@
+# Copyright Allo authors. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 # ECE6775 - MoE and Attention+MoE Implementations
 
 Allo implementations of MoE (Mixture of Experts) and Attention+MoE layers for FPGA acceleration.
@@ -41,3 +44,4 @@ Available configs:
 - Small numerical differences (~1e-4) vs PyTorch are normal due to accumulation order
 - Set `MODE` in each file to control build target: `llvm`, `sw_emu`, `hw_emu`, `hw`, `csyn`
 
+Github PR link: https://github.com/cornell-zhang/allo/pull/489
