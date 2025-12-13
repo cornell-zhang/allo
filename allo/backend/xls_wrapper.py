@@ -456,7 +456,6 @@ def validate_xls_ir(mlir_text: str, project: str = None) -> None:
     
     Checks for:
     - Floating-point types (f16, f32, f64, bf16) - not supported
-    - Fixed-point types (allo.fixed, allo.ufixed) - not supported  
     - Dynamic memref/tensor shapes (no '?' in type)
     - Dynamic allocation (memref.alloc, memref.alloca)
     - Unsupported Allo pragmas (partition, parallel, dataflow, etc.)
@@ -474,17 +473,6 @@ def validate_xls_ir(mlir_text: str, project: str = None) -> None:
                 error_type='FLOAT_TYPE',
                 message=f"Floating-point type '{float_match.group()}' is not supported. "
                         f"XLS requires integer types. Consider using fixed-point emulation with integers."
-            ))
-        
-        # Check for fixed-point types
-        fixed_match = FIXED_TYPE_RE.search(line)
-        if fixed_match:
-            errors.append(ValidationError(
-                line_num=line_num,
-                line_content=line,
-                error_type='FIXED_TYPE',
-                message=f"Fixed-point type '{fixed_match.group()}' is not supported. "
-                        f"Use integer types with manual scaling instead."
             ))
         
         # Check for dynamic shapes
@@ -591,6 +579,96 @@ public:
     return testblock
 
 
+# Add this constant at module level (after imports)
+FIXED_POINT_STRUCT = '''
+// XLS-compatible Fixed-Point Template
+// Stores fixed-point values as integers with compile-time width and fractional bits
+
+template <int WIDTH, int FRAC, bool SIGNED = true>
+struct Fixed {
+  // Underlying integer storage
+  ac_int<WIDTH, SIGNED> value;
+
+  // Default constructor
+  Fixed() : value(0) {}
+
+  // Constructor from integer (shifts left by FRAC bits)
+  Fixed(int v) : value(static_cast<ac_int<WIDTH, SIGNED>>(v) << FRAC) {}
+
+  // Constructor from raw representation (no shift)
+  static Fixed from_raw(ac_int<WIDTH, SIGNED> raw) {
+    Fixed f;
+    f.value = raw;
+    return f;
+  }
+
+  // Convert to integer (truncates fractional part)
+  int to_int() const {
+    return static_cast<int>(value >> FRAC);
+  }
+
+  // Get raw value
+  ac_int<WIDTH, SIGNED> raw() const { return value; }
+
+  // Addition
+  Fixed operator+(const Fixed& other) const {
+    Fixed result;
+    result.value = value + other.value;
+    return result;
+  }
+
+  // Subtraction
+  Fixed operator-(const Fixed& other) const {
+    Fixed result;
+    result.value = value - other.value;
+    return result;
+  }
+
+  // Multiplication (result needs right shift to maintain scale)
+  Fixed operator*(const Fixed& other) const {
+    Fixed result;
+    ac_int<WIDTH * 2, SIGNED> temp = static_cast<ac_int<WIDTH * 2, SIGNED>>(value) *
+                                      static_cast<ac_int<WIDTH * 2, SIGNED>>(other.value);
+    result.value = static_cast<ac_int<WIDTH, SIGNED>>(temp >> FRAC);
+    return result;
+  }
+
+  // Division
+  Fixed operator/(const Fixed& other) const {
+    Fixed result;
+    ac_int<WIDTH * 2, SIGNED> temp = static_cast<ac_int<WIDTH * 2, SIGNED>>(value) << FRAC;
+    result.value = static_cast<ac_int<WIDTH, SIGNED>>(temp / other.value);
+    return result;
+  }
+
+  // Comparison operators
+  bool operator==(const Fixed& other) const { return value == other.value; }
+  bool operator!=(const Fixed& other) const { return value != other.value; }
+  bool operator<(const Fixed& other) const { return value < other.value; }
+  bool operator<=(const Fixed& other) const { return value <= other.value; }
+  bool operator>(const Fixed& other) const { return value > other.value; }
+  bool operator>=(const Fixed& other) const { return value >= other.value; }
+
+  // Assignment operators
+  Fixed& operator+=(const Fixed& other) { value += other.value; return *this; }
+  Fixed& operator-=(const Fixed& other) { value -= other.value; return *this; }
+  Fixed& operator*=(const Fixed& other) { *this = *this * other; return *this; }
+  Fixed& operator/=(const Fixed& other) { *this = *this / other; return *this; }
+};
+
+// Unsigned fixed-point alias
+template <int WIDTH, int FRAC>
+using UFixed = Fixed<WIDTH, FRAC, false>;
+'''
+
+# Add regex pattern for detecting fixed-point in MLIR
+FIXED_TYPE_MLIR_RE = re.compile(r'!allo\.(Fixed|UFixed)<\d+,\s*\d+>')
+
+def contains_fixed_point(mlir_text: str) -> bool:
+    """Check if MLIR text contains fixed-point types."""
+    return bool(FIXED_TYPE_MLIR_RE.search(mlir_text))
+
+
 def wrap_xlscc(mlir_module_text: str,
                core_code: str,
                function_names: Tuple[str, str],
@@ -612,6 +690,11 @@ def wrap_xlscc(mlir_module_text: str,
     """
     top_name, generated_func_name = function_names
     
+    # Check if fixed-point types are used and prepend struct definition
+    fixed_point_header = ""
+    if contains_fixed_point(mlir_module_text):
+        fixed_point_header = FIXED_POINT_STRUCT + "\n"
+    
     # COMBINATIONAL MODE: No array inputs
     if len(function_inputs) == 0:
         if use_channels:
@@ -625,11 +708,11 @@ def wrap_xlscc(mlir_module_text: str,
                 scalar_inputs=["a", "b"],  # Default scalar inputs
                 scalar_output="result"
             )
-            return cpp_code, ""
+            return fixed_point_header + cpp_code, ""
         else:
             # Combinational without channels: just return core code as-is
             # The #pragma hls_top is already added by EmitXlsHLS.cpp
-            return core_code, ""
+            return fixed_point_header + core_code, ""
     
     # SEQUENTIAL MODE: Has array inputs -> wrap in TestBlock with channels
     # Extract the function body from the generated code
@@ -670,7 +753,7 @@ def wrap_xlscc(mlir_module_text: str,
         )
     parts.append(testblock)
     
-    cpp_code = "".join(parts)
+    cpp_code = fixed_point_header + "".join(parts)
     
     # Generate textproto for memory mode
     if use_memory and memories:
