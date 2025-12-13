@@ -7,7 +7,7 @@ from .._mlir.ir import Context, Location, Module
 from .._mlir.passmanager import PassManager
 from ..ir.transform import find_func_in_module
 
-from .xls_wrapper import wrap_xlscc, validate_xls_ir  # <-- NEW import
+from .xls_wrapper import wrap_xlscc, validate_xls_ir
 
 class XLSCCModule:
     def __init__(self,
@@ -62,7 +62,8 @@ class XLSCCModule:
                     param_names.append(f"arg{len(param_names)}")
 
         # Wrap core C++ with channels + wrapper class in XLS[cc] style
-        self.final_cpp = wrap_xlscc(
+        # wrap_xlscc returns (cpp_code, textproto) tuple
+        self.final_cpp, self.rewrites_textproto = wrap_xlscc(
             mlir_module_text=self.mlir_text,
             core_code=self.core_code,
             function_names=(self.top_func_name, func_name),
@@ -75,6 +76,22 @@ class XLSCCModule:
             os.makedirs(self.project, exist_ok=True)
             with open(f"{self.project}/test_block.cpp", "w", encoding="utf-8") as f:
                 f.write(self.final_cpp)
+            
+            # Write RAM rewrites textproto if memory mode is enabled
+            if self.use_memory and self.rewrites_textproto:
+                with open(f"{self.project}/rewrites.textproto", "w", encoding="utf-8") as f:
+                    f.write(self.rewrites_textproto)
 
     def __repr__(self):
         return self.final_cpp
+    
+    def print_textproto(self):
+        """Print the RAM rewrites textproto to stdout (for memory mode)."""
+        if self.rewrites_textproto:
+            print("\n" + "=" * 60)
+            print("RAM REWRITES TEXTPROTO (rewrites.textproto):")
+            print("=" * 60)
+            print(self.rewrites_textproto)
+        else:
+            print("No RAM rewrites textproto (not in memory mode or no memories detected)")
+    
