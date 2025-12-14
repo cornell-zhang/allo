@@ -1251,9 +1251,17 @@ def customize(
     global_vars: dict = None,
     instantiate: list = None,
     context: Context = None,
-    typing_rule_set="default",
+    typing_rule_set: str = "default",
     unroll: bool = True,
 ) -> Schedule:
+    """
+    Args:
+        - typing_rule_set (str): Identifier of the typing rule set used during IR building.
+            This controls implicit type casting behavior.
+            Currently supported values include `"default"`, which is primarily intended for HLS backends, and
+            `"cpp-style"`, which follows C++-like typing rules and is used for the AIE backend.
+            Defaults to `"default"`.
+    """
     # Get Python AST
     if isinstance(fn, str):
         src, starting_line_no = fn, 1
