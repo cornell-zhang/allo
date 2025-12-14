@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # pylint: disable=redefined-builtin, no-name-in-module
 
+import re
 import numbers
 from collections import OrderedDict
 
@@ -267,6 +268,39 @@ class Stream(AlloType):
     def __repr__(self):
         shape = ", ".join(str(s) for s in self.shape)
         return f"Stream({self.dtype}[{shape}])"
+
+
+def allo_type_from_mlir_type(mlir_type):
+    """
+    Reconstruct an Allo Type from an MLIR type.
+    """
+    # index
+    if isinstance(mlir_type, IndexType):
+        return Index()
+    # integer
+    if isinstance(mlir_type, IntegerType):
+        # MLIR integer reconstructed as Int
+        return Int(bits=mlir_type.width)
+    # float
+    if isinstance(mlir_type, BF16Type):
+        return Float(16, 7)
+    if isinstance(mlir_type, F16Type):
+        return Float(16, 10)
+    if isinstance(mlir_type, F32Type):
+        return Float(32, 23)
+    if isinstance(mlir_type, F64Type):
+        return Float(64, 52)
+    # fixme (Shihan): avoid using string matching and parsing
+    pattern = re.compile(r"!allo\.(U)?Fixed<\s*(\d+)\s*,\s*(\d+)\s*>")
+    m = pattern.fullmatch(str(mlir_type))
+    if m:
+        is_unsigned = m.group(1) is not None
+        bits = int(m.group(2))
+        fracs = int(m.group(3))
+        if is_unsigned:
+            return UFixed(bits, fracs)
+        return Fixed(bits, fracs)
+    raise TypeError(f"Cannot reconstruct Allo Type from MLIR type: {mlir_type}")
 
 
 # boolean type should not be used as i1!
