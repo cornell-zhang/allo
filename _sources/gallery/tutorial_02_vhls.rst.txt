@@ -165,8 +165,8 @@ This is used to change the computation order of matrix multiplication.
 
     module {
       func.func @gemm(%arg0: memref<32x32xf32>, %arg1: memref<32x32xf32>) -> memref<32x32xf32> attributes {itypes = "__", otypes = "_"} {
-        %cst = arith.constant 0.000000e+00 : f32
         %alloc = memref.alloc() {name = "C"} : memref<32x32xf32>
+        %cst = arith.constant 0.000000e+00 : f32
         linalg.fill ins(%cst : f32) outs(%alloc : memref<32x32xf32>)
         affine.for %arg2 = 0 to 32 {
           affine.for %arg3 = 0 to 32 {
@@ -222,8 +222,8 @@ we can directly use ``<schedule>.<tensor>`` to access a specific tensor in the s
 
     module {
       func.func @gemm(%arg0: memref<32x32xf32>, %arg1: memref<32x32xf32>) -> memref<32x32xf32> attributes {itypes = "__", otypes = "_"} {
-        %cst = arith.constant 0.000000e+00 : f32
         %alloc = memref.alloc() {name = "C"} : memref<32x32xf32>
+        %cst = arith.constant 0.000000e+00 : f32
         linalg.fill ins(%cst : f32) outs(%alloc : memref<32x32xf32>)
         affine.for %arg2 = 0 to 32 {
           %alloc_0 = memref.alloc() : memref<32xf32>
@@ -282,8 +282,8 @@ Lastly, we pipeline the ``j`` loop in order to achieve the best performance.
 
     module {
       func.func @gemm(%arg0: memref<32x32xf32>, %arg1: memref<32x32xf32>) -> memref<32x32xf32> attributes {itypes = "__", otypes = "_"} {
-        %cst = arith.constant 0.000000e+00 : f32
         %alloc = memref.alloc() {name = "C"} : memref<32x32xf32>
+        %cst = arith.constant 0.000000e+00 : f32
         linalg.fill ins(%cst : f32) outs(%alloc : memref<32x32xf32>)
         affine.for %arg2 = 0 to 32 {
           %alloc_0 = memref.alloc() : memref<32xf32>
@@ -531,7 +531,7 @@ you can check the following files:
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.195 seconds)
+   **Total running time of the script:** (0 minutes 0.201 seconds)
 
 
 .. _sphx_glr_download_gallery_tutorial_02_vhls.py:

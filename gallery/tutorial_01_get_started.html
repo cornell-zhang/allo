@@ -257,10 +257,9 @@ represent the program, and we can directly print out the IR by using
 </div>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>module {
   func.func @gemm(%arg0: memref&lt;32x32xi32&gt;, %arg1: memref&lt;32x32xi32&gt;) -&gt; memref&lt;32x32xi32&gt; attributes {itypes = &quot;ss&quot;, otypes = &quot;s&quot;} {
-    %c0_i32 = arith.constant 0 : i32
-    %c0_i32_0 = arith.constant 0 : i32
     %alloc = memref.alloc() {name = &quot;C&quot;} : memref&lt;32x32xi32&gt;
-    linalg.fill ins(%c0_i32_0 : i32) outs(%alloc : memref&lt;32x32xi32&gt;)
+    %c0_i32 = arith.constant 0 : i32
+    linalg.fill ins(%c0_i32 : i32) outs(%alloc : memref&lt;32x32xi32&gt;)
     affine.for %arg2 = 0 to 32 {
       affine.for %arg3 = 0 to 32 {
         affine.for %arg4 = 0 to 32 {
@@ -319,8 +318,8 @@ so users can directly see the changes after they apply the transformations.</p>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>#map = affine_map&lt;(d0, d1) -&gt; (d0 + d1 * 8)&gt;
 module {
   func.func @gemm(%arg0: memref&lt;32x32xi32&gt;, %arg1: memref&lt;32x32xi32&gt;) -&gt; memref&lt;32x32xi32&gt; attributes {itypes = &quot;ss&quot;, otypes = &quot;s&quot;} {
-    %c0_i32 = arith.constant 0 : i32
     %alloc = memref.alloc() {name = &quot;C&quot;} : memref&lt;32x32xi32&gt;
+    %c0_i32 = arith.constant 0 : i32
     linalg.fill ins(%c0_i32 : i32) outs(%alloc : memref&lt;32x32xi32&gt;)
     affine.for %arg2 = 0 to 4 {
       affine.for %arg3 = 0 to 8 {
@@ -359,8 +358,8 @@ as <code class="docutils literal notranslate"><span class="pre">i.outer</span></
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>#map = affine_map&lt;(d0, d1) -&gt; (d0 + d1 * 8)&gt;
 module {
   func.func @gemm(%arg0: memref&lt;32x32xi32&gt;, %arg1: memref&lt;32x32xi32&gt;) -&gt; memref&lt;32x32xi32&gt; attributes {itypes = &quot;ss&quot;, otypes = &quot;s&quot;} {
-    %c0_i32 = arith.constant 0 : i32
     %alloc = memref.alloc() {name = &quot;C&quot;} : memref&lt;32x32xi32&gt;
+    %c0_i32 = arith.constant 0 : i32
     linalg.fill ins(%c0_i32 : i32) outs(%alloc : memref&lt;32x32xi32&gt;)
     affine.for %arg2 = 0 to 4 {
       affine.for %arg3 = 0 to 8 {
@@ -401,8 +400,8 @@ loops together.</p>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>#map = affine_map&lt;(d0, d1) -&gt; (d0 + d1 * 8)&gt;
 module {
   func.func @gemm(%arg0: memref&lt;32x32xi32&gt;, %arg1: memref&lt;32x32xi32&gt;) -&gt; memref&lt;32x32xi32&gt; attributes {itypes = &quot;ss&quot;, otypes = &quot;s&quot;} {
-    %c0_i32 = arith.constant 0 : i32
     %alloc = memref.alloc() {name = &quot;C&quot;} : memref&lt;32x32xi32&gt;
+    %c0_i32 = arith.constant 0 : i32
     linalg.fill ins(%c0_i32 : i32) outs(%alloc : memref&lt;32x32xi32&gt;)
     affine.for %arg2 = 0 to 4 {
       affine.for %arg3 = 0 to 4 {
@@ -483,7 +482,7 @@ assign the output to a new variable.</p>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>Results are correct!
 </pre></div>
 </div>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 0.207 seconds)</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 0.203 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-gallery-tutorial-01-get-started-py">
 <div class="sphx-glr-download sphx-glr-download-jupyter docutils container">
 <p><a class="reference download internal" download="" href="../_downloads/addf17760130f22dafec92dedc62e16a/tutorial_01_get_started.ipynb"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Jupyter</span> <span class="pre">notebook:</span> <span class="pre">tutorial_01_get_started.ipynb</span></code></a></p>

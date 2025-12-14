@@ -222,8 +222,11 @@ ninja
 <span class="gp">$ </span>conda<span class="w"> </span>activate<span class="w"> </span>allo
 </pre></div>
 </div>
-<p>You can now install Allo by running the following command.</p>
-<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>python3<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>-v<span class="w"> </span>-e<span class="w"> </span>.
+<p>You can now install Allo by running the following commands.</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>python3<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>pybind11<span class="w"> </span>nanobind
+<span class="gp">$ </span><span class="nb">export</span><span class="w"> </span><span class="nv">PYBIND11_CMAKE_DIR</span><span class="o">=</span><span class="s2">&quot;</span><span class="k">$(</span>python3<span class="w"> </span>-c<span class="w"> </span><span class="s1">&#39;import pybind11; print(pybind11.get_cmake_dir())&#39;</span><span class="k">)</span><span class="s2">&quot;</span>
+<span class="gp">$ </span><span class="nb">export</span><span class="w"> </span><span class="nv">NANOBIND_CMAKE_DIR</span><span class="o">=</span><span class="s2">&quot;</span><span class="k">$(</span>python3<span class="w"> </span>-c<span class="w"> </span><span class="s1">&#39;import nanobind; print(nanobind.cmake_dir())&#39;</span><span class="k">)</span><span class="s2">&quot;</span>
+<span class="gp">$ </span>python3<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>-v<span class="w"> </span>-e<span class="w"> </span>.
 </pre></div>
 </div>
 </section>

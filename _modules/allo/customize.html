@@ -1490,8 +1490,17 @@
     <span class="n">global_vars</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">instantiate</span><span class="p">:</span> <span class="nb">list</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">context</span><span class="p">:</span> <span class="n">Context</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">typing_rule_set</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;default&quot;</span><span class="p">,</span>
     <span class="n">unroll</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Schedule</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Args:</span>
+<span class="sd">        - typing_rule_set (str): Identifier of the typing rule set used during IR building.</span>
+<span class="sd">            This controls implicit type casting behavior.</span>
+<span class="sd">            Currently supported values include `&quot;default&quot;`, which is primarily intended for HLS backends, and</span>
+<span class="sd">            `&quot;cpp-style&quot;`, which follows C++-like typing rules and is used for the AIE backend.</span>
+<span class="sd">            Defaults to `&quot;default&quot;`.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
     <span class="c1"># Get Python AST</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">fn</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
         <span class="n">src</span><span class="p">,</span> <span class="n">starting_line_no</span> <span class="o">=</span> <span class="n">fn</span><span class="p">,</span> <span class="mi">1</span>
@@ -1514,6 +1523,7 @@
         <span class="n">inst</span><span class="o">=</span><span class="n">instantiate</span><span class="p">,</span>
         <span class="n">unroll</span><span class="o">=</span><span class="n">unroll</span><span class="p">,</span>
         <span class="n">enable_tensor</span><span class="o">=</span><span class="n">enable_tensor</span><span class="p">,</span>
+        <span class="n">typing_rule_set</span><span class="o">=</span><span class="n">typing_rule_set</span><span class="p">,</span>
         <span class="n">verbose</span><span class="o">=</span><span class="n">verbose</span><span class="p">,</span>
     <span class="p">)</span>
     <span class="n">tree</span> <span class="o">=</span> <span class="n">TypeInferer</span><span class="p">()(</span><span class="n">ctx_type_inf</span><span class="p">,</span> <span class="n">tree</span><span class="p">)</span>

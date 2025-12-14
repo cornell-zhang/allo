@@ -92,8 +92,8 @@ We first create a schedule for the ``matrix_add`` kernel, and add several optimi
 
     module {
       func.func @matrix_add(%arg0: memref<32x32xi32>) -> memref<32x32xi32> attributes {itypes = "s", otypes = "s"} {
-        %c0_i32 = arith.constant 0 : i32
         %alloc = memref.alloc() {name = "B"} : memref<32x32xi32>
+        %c0_i32 = arith.constant 0 : i32
         linalg.fill ins(%c0_i32 : i32) outs(%alloc : memref<32x32xi32>)
         affine.for %arg1 = 0 to 32 {
           affine.for %arg2 = 0 to 32 {
@@ -139,8 +139,8 @@ Then we create a schedule for the ``gemm`` kernel and optimize it.
 
     module {
       func.func @gemm(%arg0: memref<32x32xi32>, %arg1: memref<32x32xi32>) -> memref<32x32xi32> attributes {itypes = "ss", otypes = "s"} {
-        %c0_i32 = arith.constant 0 : i32
         %alloc = memref.alloc() {name = "C"} : memref<32x32xi32>
+        %c0_i32 = arith.constant 0 : i32
         linalg.fill ins(%c0_i32 : i32) outs(%alloc : memref<32x32xi32>)
         affine.for %arg2 = 0 to 32 {
           %alloc_0 = memref.alloc() : memref<32xi32>
@@ -197,10 +197,9 @@ Notice that now we only optimize the separate kernels but do not incorporate the
 
     module {
       func.func @gemm(%arg0: memref<32x32xi32>, %arg1: memref<32x32xi32>) -> memref<32x32xi32> attributes {itypes = "ss", otypes = "s"} {
-        %c0_i32 = arith.constant 0 : i32
-        %c0_i32_0 = arith.constant 0 : i32
         %alloc = memref.alloc() {name = "C"} : memref<32x32xi32>
-        linalg.fill ins(%c0_i32_0 : i32) outs(%alloc : memref<32x32xi32>)
+        %c0_i32 = arith.constant 0 : i32
+        linalg.fill ins(%c0_i32 : i32) outs(%alloc : memref<32x32xi32>)
         affine.for %arg2 = 0 to 32 {
           affine.for %arg3 = 0 to 32 {
             affine.for %arg4 = 0 to 32 {
@@ -221,19 +220,18 @@ Notice that now we only optimize the separate kernels but do not incorporate the
         return %alloc : memref<32x32xi32>
       }
       func.func @matrix_add(%arg0: memref<32x32xi32>) -> memref<32x32xi32> attributes {itypes = "s", otypes = "s"} {
-        %c0_i32 = arith.constant 0 : i32
-        %c0_i32_0 = arith.constant 0 : i32
         %alloc = memref.alloc() {name = "B"} : memref<32x32xi32>
-        linalg.fill ins(%c0_i32_0 : i32) outs(%alloc : memref<32x32xi32>)
+        %c0_i32 = arith.constant 0 : i32
+        linalg.fill ins(%c0_i32 : i32) outs(%alloc : memref<32x32xi32>)
         affine.for %arg1 = 0 to 32 {
           affine.for %arg2 = 0 to 32 {
             %0 = affine.load %arg0[%arg1, %arg2] {from = "A"} : memref<32x32xi32>
             %1 = arith.extsi %0 : i32 to i33
             %c1_i32 = arith.constant 1 : i32
+            %c1_i32_0 = arith.constant 1 : i32
             %c1_i32_1 = arith.constant 1 : i32
             %c1_i32_2 = arith.constant 1 : i32
-            %c1_i32_3 = arith.constant 1 : i32
-            %2 = arith.extsi %c1_i32_3 : i32 to i33
+            %2 = arith.extsi %c1_i32_2 : i32 to i33
             %3 = arith.addi %1, %2 : i33
             %4 = arith.trunci %3 : i33 to i32
             affine.store %4, %alloc[%arg1, %arg2] {to = "B"} : memref<32x32xi32>
@@ -275,8 +273,8 @@ In Allo, we can use the ``.compose()`` primitive to compose the schedules togeth
 
     module {
       func.func @gemm(%arg0: memref<32x32xi32>, %arg1: memref<32x32xi32>) -> memref<32x32xi32> attributes {itypes = "ss", otypes = "s"} {
-        %c0_i32 = arith.constant 0 : i32
         %alloc = memref.alloc() {name = "C"} : memref<32x32xi32>
+        %c0_i32 = arith.constant 0 : i32
         linalg.fill ins(%c0_i32 : i32) outs(%alloc : memref<32x32xi32>)
         affine.for %arg2 = 0 to 32 {
           %alloc_0 = memref.alloc() : memref<32xi32>
@@ -306,8 +304,8 @@ In Allo, we can use the ``.compose()`` primitive to compose the schedules togeth
         return %alloc : memref<32x32xi32>
       }
       func.func @matrix_add(%arg0: memref<32x32xi32>) -> memref<32x32xi32> attributes {itypes = "s", otypes = "s"} {
-        %c0_i32 = arith.constant 0 : i32
         %alloc = memref.alloc() {name = "B"} : memref<32x32xi32>
+        %c0_i32 = arith.constant 0 : i32
         linalg.fill ins(%c0_i32 : i32) outs(%alloc : memref<32x32xi32>)
         affine.for %arg1 = 0 to 32 {
           affine.for %arg2 = 0 to 32 {
@@ -400,8 +398,8 @@ We also customize the two template kernels with different optimizations first.
 
     module {
       func.func @kernel(%arg0: memref<32xi32>) -> memref<32xi32> attributes {itypes = "s", otypes = "s"} {
-        %c0_i32 = arith.constant 0 : i32
         %alloc = memref.alloc() {name = "B"} : memref<32xi32>
+        %c0_i32 = arith.constant 0 : i32
         linalg.fill ins(%c0_i32 : i32) outs(%alloc : memref<32xi32>)
         affine.for %arg1 = 0 to 32 {
           %0 = affine.load %arg0[%arg1] {from = "A"} : memref<32xi32>
@@ -463,8 +461,8 @@ Finally, we compose the two template kernels into the top-level function with th
 
     module {
       func.func @kernel_K1(%arg0: memref<32xi32>) -> memref<32xi32> attributes {itypes = "s", otypes = "s"} {
-        %c0_i32 = arith.constant 0 : i32
         %alloc = memref.alloc() {name = "B"} : memref<32xi32>
+        %c0_i32 = arith.constant 0 : i32
         linalg.fill ins(%c0_i32 : i32) outs(%alloc : memref<32xi32>)
         affine.for %arg1 = 0 to 32 {
           %0 = affine.load %arg0[%arg1] {from = "A"} : memref<32xi32>
@@ -511,7 +509,7 @@ We can see from the printed module that the loop in the first kernel is unrolled
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.779 seconds)
+   **Total running time of the script:** (0 minutes 0.786 seconds)
 
 
 .. _sphx_glr_download_gallery_dive_03_composition.py:
