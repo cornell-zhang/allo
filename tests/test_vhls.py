@@ -281,6 +281,69 @@ def test_wrap_nonvoid(flatten):
     print("Passed!")
 
 
+def test_wrap_io_linearized_index():
+    M, N = 4, 4
+
+    def matrix_copy(A: int32[M, N]) -> int32[M, N]:
+        B: int32[M, N]
+        for i, j in allo.grid(M, N, name="copy"):
+            B[i, j] = A[i, j]
+        return B
+
+    s = allo.customize(matrix_copy)
+
+    # Test wrap_io=True
+    with tempfile.TemporaryDirectory() as tmpdir:
+        mod = s.build(target="vitis_hls", mode="sw_emu", project=tmpdir, wrap_io=True)
+        hls_code = mod.hls_code
+
+        # Check that function arguments are declared as pointers
+        assert (
+            "int32_t *v" in hls_code
+        ), "Expected pointer declaration for function arguments with wrap_io=True"
+
+        # Check that helper functions (load_buf/store_res) exist for data movement
+        assert (
+            "load_buf0" in hls_code
+        ), "Expected load_buf0 helper function with wrap_io=True"
+        assert (
+            "store_res1" in hls_code
+        ), "Expected store_res1 helper function with wrap_io=True"
+
+        # Check that linearized index pattern exists in helper functions
+        # Pattern: ((var * 4) + var) for 4x4 array
+        assert (
+            "* 4) +" in hls_code
+        ), "Expected linearized index pattern '* 4) +' in helper functions"
+        print("wrap_io=True: All specific assertions passed!")
+
+    # Test wrap_io=False
+    with tempfile.TemporaryDirectory() as tmpdir:
+        mod_no_wrap = s.build(
+            target="vitis_hls", mode="sw_emu", project=tmpdir, wrap_io=False
+        )
+        hls_code_no_wrap = mod_no_wrap.hls_code
+
+        # Check that function arguments are pointers with direct linearized access
+        assert (
+            "int32_t *v" in hls_code_no_wrap
+        ), "Expected pointer declaration with wrap_io=False"
+
+        # Check for direct linearized indexing pattern in main kernel
+        # Pattern: v0[(i) * 4 + (j)] for direct pointer access
+        assert (
+            ") * 4 + (" in hls_code_no_wrap
+        ), "Expected direct linearized index pattern ') * 4 + (' with wrap_io=False"
+
+        # Verify no helper functions are generated
+        assert (
+            "load_buf0" not in hls_code_no_wrap
+        ), "Should not have load_buf0 helper with wrap_io=False"
+        print("wrap_io=False: All specific assertions passed!")
+
+    print("Passed!")
+
+
 def test_ihls():
     def top(A: int32[1]) -> int32[1]:
         A[0] = A[0] + 1
