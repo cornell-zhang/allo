@@ -40,6 +40,9 @@ public:
   DenseMap<Value, SmallString<8>> nameTable;
   std::map<std::string, int> nameConflictCnt;
 
+  // Configuration flags
+  bool linearize_pointers = false;
+
 private:
   AlloEmitterState(const AlloEmitterState &) = delete;
   void operator=(const AlloEmitterState &) = delete;
