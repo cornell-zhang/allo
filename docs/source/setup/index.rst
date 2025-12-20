@@ -78,9 +78,6 @@ You can now install Allo by running the following commands.
 
 .. code-block:: console
 
-  $ python3 -m pip install pybind11 nanobind
-  $ export PYBIND11_CMAKE_DIR="$(python3 -c 'import pybind11; print(pybind11.get_cmake_dir())')"
-  $ export NANOBIND_CMAKE_DIR="$(python3 -c 'import nanobind; print(nanobind.cmake_dir())')"
   $ python3 -m pip install -v -e .
 
 
@@ -111,7 +108,7 @@ We also provide a script to set up the backend LLVM compiler. You can simply run
 
 .. code-block:: console
 
-  $ source /work/shared/common/allo/setup-llvm19.sh
+  $ source /work/shared/common/allo/setup-llvm-main.sh
 
 .. note::
 
@@ -149,6 +146,6 @@ If you are seeing the errors reported by the linker like this:
 
 .. code-block:: console
 
-  /opt/rh/devtoolset-9/root/usr/libexec/gcc/x86_64-redhat-linux/9/ld: cannot find /work/shared/common/llvm-project-19.x/build/lib/libMLIRLLVMToLLVMIRTranslation.a: Too many open files
+  /opt/rh/devtoolset-9/root/usr/libexec/gcc/x86_64-redhat-linux/9/ld: cannot find /work/shared/common/llvm-project-main/build/lib/libMLIRLLVMToLLVMIRTranslation.a: Too many open files
 
 It means you have hit the limit of file descriptors that can be open at a time. You can fix this by :code:`ulimit -n 4096`, then try compiling Allo again.
