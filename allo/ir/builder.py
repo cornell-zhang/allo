@@ -1655,8 +1655,11 @@ class ASTTransformer(ASTBuilder):
                     ip=ctx.get_ip(),
                 )
                 # write the updated integer back to the scalar
-                node.value.ctx = ast.Store()
-                store_op = build_stmt(ctx, node.value, val=set_bit_op)
+                # Create a copy to avoid mutating the original AST node
+                # (important for meta_for loops which reuse the same AST)
+                store_node = copy.copy(node.value)
+                store_node.ctx = ast.Store()
+                store_op = build_stmt(ctx, store_node, val=set_bit_op)
                 return store_op
 
         if isinstance(node.slice, ast.Slice):
@@ -1700,8 +1703,11 @@ class ASTTransformer(ASTBuilder):
                     ip=ctx.get_ip(),
                 )
                 # write the updated integer back to the scalar
-                node.value.ctx = ast.Store()
-                store_op = build_stmt(ctx, node.value, val=set_slice_op)
+                # Create a copy to avoid mutating the original AST node
+                # (important for meta_for loops which reuse the same AST)
+                store_node = copy.copy(node.value)
+                store_node.ctx = ast.Store()
+                store_op = build_stmt(ctx, store_node, val=set_slice_op)
                 return store_op
 
     @staticmethod
