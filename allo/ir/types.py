@@ -19,6 +19,30 @@ from .._mlir.dialects import allo as allo_d
 from .._mlir.exceptions import DTypeError, DTypeWarning
 
 
+class TypeAnnotation:
+    """
+    A wrapper class for type annotations that supports the @ operator.
+
+    This allows annotations like: a: int32[32] @ Memory(impl="URAM")
+
+    The @ operator is parsed at the AST level, but Python still tries to
+    evaluate it at runtime. This class makes the runtime evaluation succeed
+    by providing a __matmul__ method.
+    """
+
+    def __init__(self, dtype, shape):
+        self.dtype = dtype
+        self.shape = shape
+
+    def __matmul__(self, other):
+        """Support the @ operator for memory/layout annotations."""
+        # Return self to allow chaining, the actual spec is extracted from AST
+        return self
+
+    def __repr__(self):
+        return f"{self.dtype}[{', '.join(str(s) for s in self.shape)}]"
+
+
 class AlloType:
     def __init__(self, bits, fracs, name):
         if not isinstance(bits, numbers.Integral):
@@ -44,8 +68,12 @@ class AlloType:
         return isinstance(other, (AlloType, numbers.Number))
 
     def __getitem__(self, sizes):
-        # Placeholder for type[*sizes]
-        pass
+        # Return a TypeAnnotation that supports the @ operator
+        if isinstance(sizes, tuple):
+            shape = sizes
+        else:
+            shape = (sizes,)
+        return TypeAnnotation(self, shape)
 
     def __repr__(self):
         return self.name

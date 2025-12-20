@@ -6,6 +6,7 @@ import tempfile
 import pytest
 import allo
 from allo.ir.types import bool, int32, float32
+from allo.memory import Memory
 import numpy as np
 import allo.backend.hls as hls
 from allo.passes import generate_input_output_buffers
@@ -342,6 +343,173 @@ def test_wrap_io_linearized_index():
         print("wrap_io=False: All specific assertions passed!")
 
     print("Passed!")
+
+
+# Module-level kernel functions for Memory HLS tests
+# (Functions need to be at module level for proper AST parsing)
+_MemUram = Memory(impl="URAM")
+_MemBram2P = Memory(impl="BRAM", storage_type="RAM_2P")
+_MemBram = Memory(impl="BRAM")
+_MemLutram = Memory(impl="LUTRAM")
+
+
+def _kernel_uram(a: int32[32] @ _MemUram) -> int32[32]:
+    """Kernel with URAM memory annotation."""
+    b: int32[32]
+    for i in range(32):
+        b[i] = a[i] + 1
+    return b
+
+
+def _kernel_bram_2p(a: float32[16, 16] @ _MemBram2P) -> float32[16, 16]:
+    """Kernel with BRAM RAM_2P memory annotation."""
+    b: float32[16, 16]
+    for i, j in allo.grid(16, 16):
+        b[i, j] = a[i, j] * 2.0
+    return b
+
+
+def _kernel_multi_mem(
+    a: int32[32] @ _MemBram, b: int32[32] @ _MemUram, c: int32[32] @ _MemLutram
+):
+    """Kernel with multiple memory annotations."""
+    for i in range(32):
+        c[i] = a[i] + b[i]
+
+
+def _kernel_local_mem(a: int32[32]) -> int32[32]:
+    """Kernel with local variable using Memory annotation."""
+    # Local buffer with URAM annotation
+    buf: int32[32] @ _MemUram
+    for i in range(32):
+        buf[i] = a[i] * 2
+    b: int32[32]
+    for i in range(32):
+        b[i] = buf[i] + 1
+    return b
+
+
+def _kernel_local_bram(a: float32[16, 16]) -> float32[16, 16]:
+    """Kernel with local variable using BRAM RAM_2P annotation."""
+    # Local buffer with BRAM RAM_2P annotation
+    temp: float32[16, 16] @ _MemBram2P
+    for i, j in allo.grid(16, 16):
+        temp[i, j] = a[i, j] + 1.0
+    b: float32[16, 16]
+    for i, j in allo.grid(16, 16):
+        b[i, j] = temp[i, j] * 2.0
+    return b
+
+
+def test_memory_uram_hls():
+    """Test kernel with URAM Memory annotation generates bind_storage pragma."""
+    s = allo.customize(_kernel_uram)
+    print("=== MLIR Module (URAM) ===")
+    print(s.module)
+
+    # Check the memory space is in the memref type
+    mlir_str = str(s.module)
+    # URAM = impl_code 2, no storage = 0 -> memory_space = 32
+    assert "32 : i32" in mlir_str, "Memory space 32 (URAM) should be in MLIR"
+
+    # Build HLS code
+    mod = s.build(target="vhls")
+    print("\n=== HLS Code ===")
+    print(mod.hls_code)
+
+    # Check for bind_storage pragma with URAM
+    assert "#pragma HLS bind_storage variable=" in mod.hls_code
+    assert "impl=uram" in mod.hls_code
+
+
+def test_memory_bram_2p_hls():
+    """Test kernel with BRAM RAM_2P Memory annotation generates bind_storage pragma."""
+    s = allo.customize(_kernel_bram_2p)
+    print("=== MLIR Module (BRAM RAM_2P) ===")
+    print(s.module)
+
+    # Check the memory space is in the memref type
+    mlir_str = str(s.module)
+    # BRAM = 1, RAM_2P = 2 -> memory_space = 1*16 + 2 = 18
+    assert "18 : i32" in mlir_str, "Memory space 18 (BRAM+RAM_2P) should be in MLIR"
+
+    # Build HLS code
+    mod = s.build(target="vhls")
+    print("\n=== HLS Code ===")
+    print(mod.hls_code)
+
+    # Check for bind_storage pragma with BRAM and RAM_2P
+    assert "#pragma HLS bind_storage variable=" in mod.hls_code
+    assert "impl=bram" in mod.hls_code
+    assert "type=ram_2p" in mod.hls_code
+
+
+def test_multiple_memory_hls():
+    """Test kernel with multiple Memory annotations generates multiple pragmas."""
+    s = allo.customize(_kernel_multi_mem)
+    print("=== MLIR Module (Multiple Memory) ===")
+    print(s.module)
+
+    # Build HLS code
+    mod = s.build(target="vhls")
+    print("\n=== HLS Code ===")
+    print(mod.hls_code)
+
+    # Count bind_storage pragmas - should have 3 (BRAM, URAM, LUTRAM)
+    pragma_count = mod.hls_code.count("#pragma HLS bind_storage")
+    assert pragma_count == 3, f"Expected 3 bind_storage pragmas, got {pragma_count}"
+
+    # Check all implementation types are present
+    assert "impl=bram" in mod.hls_code
+    assert "impl=uram" in mod.hls_code
+    assert "impl=lutram" in mod.hls_code
+
+
+def test_memory_local_variable_uram():
+    """Test local variable with URAM Memory annotation generates bind_storage pragma."""
+    s = allo.customize(_kernel_local_mem)
+    print("=== MLIR Module (Local URAM) ===")
+    print(s.module)
+
+    # Check the memory space is in the memref type for the local buffer
+    mlir_str = str(s.module)
+    # URAM = 2, no storage = 0 -> memory_space = 32
+    assert (
+        "32 : i32" in mlir_str
+    ), "Memory space 32 (URAM) should be in MLIR for local buffer"
+
+    # Build HLS code
+    mod = s.build(target="vhls")
+    print("\n=== HLS Code ===")
+    print(mod.hls_code)
+
+    # Check for bind_storage pragma with URAM for the local buffer
+    assert "#pragma HLS bind_storage variable=" in mod.hls_code
+    assert "impl=uram" in mod.hls_code
+
+
+def test_memory_local_variable_bram():
+    """Test local variable with BRAM RAM_2P Memory annotation generates bind_storage pragma."""
+    s = allo.customize(_kernel_local_bram)
+    print("=== MLIR Module (Local BRAM RAM_2P) ===")
+    print(s.module)
+
+    # Check the memory space is in the memref type for the local buffer
+    mlir_str = str(s.module)
+    # BRAM = 1, RAM_2P = 2 -> memory_space = 18
+    assert (
+        "18 : i32" in mlir_str
+    ), "Memory space 18 (BRAM+RAM_2P) should be in MLIR for local buffer"
+
+    # Build HLS code
+    mod = s.build(target="vhls")
+    print("\n=== HLS Code ===")
+    print(mod.hls_code)
+
+    # Check for bind_storage pragma with BRAM and RAM_2P for the local buffer
+    assert "#pragma HLS bind_storage variable=" in mod.hls_code
+    assert "impl=bram" in mod.hls_code
+    assert "type=ram_2p" in mod.hls_code
 
 
 def test_ihls():

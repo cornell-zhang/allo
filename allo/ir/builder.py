@@ -73,6 +73,7 @@ from .types import (
     Stream,
     allo_type_from_mlir_type,
 )
+from ..memory import Memory
 from .visitor import ASTVisitor, ASTContext, get_symbolic_expr
 from .symbol_resolver import ASTResolver
 from ..utils import (
@@ -187,7 +188,11 @@ class ASTTransformer(ASTBuilder):
 
     @staticmethod
     def build_shaped_type(
-        ctx: ASTContext, dtype: AlloType, shape: list[int], layout: Attribute = None
+        ctx: ASTContext,
+        dtype: AlloType,
+        shape: list[int],
+        layout: Attribute = None,
+        memory_space: int = None,
     ):
         if len(shape) == 0:
             return dtype.build()
@@ -195,13 +200,25 @@ class ASTTransformer(ASTBuilder):
             shape = [
                 ShapedType.get_dynamic_size() if s == Ellipsis else s for s in shape
             ]
-            return MemRefType.get(shape, dtype.build(), layout)
+            mem_space_attr = None
+            if memory_space is not None and memory_space > 0:
+                mem_space_attr = IntegerAttr.get(
+                    IntegerType.get_signless(32), memory_space
+                )
+            return MemRefType.get(shape, dtype.build(), layout, mem_space_attr)
         return RankedTensorType.get(shape, dtype.build())
 
     @staticmethod
-    def build_array(ctx: ASTContext, dtype: AlloType, shape: list[int]):
+    def build_array(
+        ctx: ASTContext, dtype: AlloType, shape: list[int], memory_space: int = None
+    ):
         if not ctx.enable_tensor:
-            memref_type = MemRefType.get(shape, dtype.build())
+            mem_space_attr = None
+            if memory_space is not None and memory_space > 0:
+                mem_space_attr = IntegerAttr.get(
+                    IntegerType.get_signless(32), memory_space
+                )
+            memref_type = MemRefType.get(shape, dtype.build(), None, mem_space_attr)
             alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ctx.get_ip())
             if isinstance(dtype, UInt):
                 alloc_op.attributes["unsigned"] = UnitAttr.get()
@@ -983,6 +1000,10 @@ class ASTTransformer(ASTBuilder):
             target_ = ctx.get_symbol(name=target.id, allow_missing=True)
             if target_ is None:
                 # declare
+                # Get memory space from spec if present (for local variables with Memory annotation)
+                memory_space = None
+                if hasattr(target, "spec") and isinstance(target.spec, Memory):
+                    memory_space = target.spec.get_memory_space()
                 # - if rhs is constant, allocate on stack to make it a real variable
                 if rhs_value is None or not isinstance(
                     rhs_value.type, (MemRefType, RankedTensorType)
@@ -991,7 +1012,7 @@ class ASTTransformer(ASTBuilder):
                         alloc_op = rhs
                     else:
                         alloc_op = ASTTransformer.build_array(
-                            ctx, target.dtype, target.shape
+                            ctx, target.dtype, target.shape, memory_space
                         )
                     ctx.buffers[target.id] = alloc_op
                     if isinstance(alloc_op, OpView):
@@ -1012,7 +1033,7 @@ class ASTTransformer(ASTBuilder):
                         and "name" in rhs.attributes
                     ):
                         alloc_op = ASTTransformer.build_array(
-                            ctx, target.dtype, target.shape
+                            ctx, target.dtype, target.shape, memory_space
                         )
                         with ctx.get_ip():
                             copy_op = linalg_d.copy(
@@ -1851,9 +1872,17 @@ class ASTTransformer(ASTBuilder):
                 if len(ctx.call_args) > 0 and hasattr(ctx.call_args[i].type, "layout")
                 else None
             )
+            # Get memory space from Memory specification if present
+            memory_space = None
+            if (
+                hasattr(arg, "dtensor")
+                and arg.dtensor is not None
+                and arg.dtensor.memory is not None
+            ):
+                memory_space = arg.dtensor.memory.get_memory_space()
             input_types.append(
                 ASTTransformer.build_shaped_type(
-                    ctx, arg.dtype, arg.shape, layout=layout
+                    ctx, arg.dtype, arg.shape, layout=layout, memory_space=memory_space
                 )
             )
             input_typehints.append(get_extra_type_hints(arg.dtype))

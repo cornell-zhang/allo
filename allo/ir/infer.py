@@ -632,7 +632,7 @@ class TypeInferer(ASTVisitor):
 
     @staticmethod
     def visit_AnnAssign(ctx: ASTContext, node: ast.AnnAssign):
-        target_dtype, target_shape, _ = TypeInferer.visit_type_hint(
+        target_dtype, target_shape, spec = TypeInferer.visit_type_hint(
             ctx, node.annotation
         )
         assert isinstance(
@@ -656,6 +656,8 @@ class TypeInferer(ASTVisitor):
             ctx.put_symbol(name=node.target.id, val=node.target)
         node.target.dtype = node.dtype = target_dtype
         node.target.shape = node.shape = target_shape
+        # Store the memory/layout spec for local variables
+        node.target.spec = node.spec = spec
         final_shape, lhs_dims, rhs_dims = TypeInferer.visit_broadcast(
             ctx,
             node.target.shape,
