@@ -727,8 +727,9 @@ void ModuleEmitter::emitScfCondition(scf::ConditionOp op) {
   // The scf.condition op passes values to the after region.
   // First, update the after region's arguments with the values from condition
   unsigned operandIdx = 0;
+  // Note: scf.while has two regions - region 0 is 'before', region 1 is 'after'
   auto afterArgs = op->getParentRegion()->getParentOp()
-                       ->getRegion(1)
+                       ->getRegion(1)  // Get the 'after' region (index 1)
                        .front()
                        .getArguments();
   for (auto arg : afterArgs) {
