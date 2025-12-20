@@ -115,6 +115,8 @@ public:
   /// SCF statement emitters.
   void emitScfFor(scf::ForOp op);
   void emitScfIf(scf::IfOp op);
+  void emitScfWhile(scf::WhileOp op);
+  void emitScfCondition(scf::ConditionOp op);
   void emitScfYield(scf::YieldOp op);
 
   /// Affine statement emitters.
@@ -290,6 +292,8 @@ public:
   /// SCF statements.
   bool visitOp(scf::ForOp op) { return emitter.emitScfFor(op), true; };
   bool visitOp(scf::IfOp op) { return emitter.emitScfIf(op), true; };
+  bool visitOp(scf::WhileOp op) { return emitter.emitScfWhile(op), true; };
+  bool visitOp(scf::ConditionOp op) { return emitter.emitScfCondition(op), true; };
   bool visitOp(scf::ParallelOp op) { return true; };
   bool visitOp(scf::ReduceOp op) { return true; };
   bool visitOp(scf::ReduceReturnOp op) { return true; };
@@ -660,6 +664,84 @@ void ModuleEmitter::emitScfIf(scf::IfOp op) {
 
   indent();
   os << "}\n";
+}
+
+void ModuleEmitter::emitScfWhile(scf::WhileOp op) {
+  // Declare all loop-carried values
+  for (auto result : op.getResults()) {
+    if (!isDeclared(result)) {
+      indent();
+      if (llvm::isa<ShapedType>(result.getType()))
+        emitArrayDecl(result);
+      else
+        emitValue(result);
+      os << ";\n";
+    }
+  }
+
+  // Initialize loop-carried variables with initial values (operands)
+  unsigned operandIdx = 0;
+  for (auto arg : op.getBeforeBody()->getArguments()) {
+    if (operandIdx < op.getNumOperands()) {
+      indent();
+      emitValue(arg);
+      os << " = ";
+      emitValue(op.getOperand(operandIdx++));
+      os << ";\n";
+    }
+  }
+
+  // Emit while loop header
+  indent();
+  os << "while (true) {";
+  emitInfoAndNewLine(op);
+  addIndent();
+
+  // Emit before block (condition check)
+  emitBlock(*op.getBeforeBody(), /*emitBraces=*/false);
+
+  // Emit after block (loop body) if condition is true
+  // The emitScfCondition will handle the break statement
+  emitBlock(*op.getAfterBody(), /*emitBraces=*/false);
+
+  reduceIndent();
+  indent();
+  os << "}\n";
+
+  // Copy final values to result variables
+  unsigned resultIdx = 0;
+  for (auto result : op.getResults()) {
+    if (resultIdx < op.getBeforeBody()->getNumArguments()) {
+      indent();
+      emitValue(result);
+      os << " = ";
+      emitValue(op.getBeforeBody()->getArgument(resultIdx++));
+      os << ";\n";
+    }
+  }
+}
+
+void ModuleEmitter::emitScfCondition(scf::ConditionOp op) {
+  // Handle loop-carried values update
+  unsigned operandIdx = 0;
+  for (auto arg : op->getParentRegion()->getParentOp()
+                      ->getRegion(1)
+                      .front()
+                      .getArguments()) {
+    if (operandIdx < op.getNumOperands()) {
+      indent();
+      emitValue(arg);
+      os << " = ";
+      emitValue(op.getOperand(operandIdx++));
+      os << ";\n";
+    }
+  }
+
+  // Emit the break condition
+  indent();
+  os << "if (!(";
+  emitValue(op.getCondition());
+  os << ")) break;\n";
 }
 
 void ModuleEmitter::emitScfYield(scf::YieldOp op) {
