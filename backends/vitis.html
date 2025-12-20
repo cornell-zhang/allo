@@ -336,6 +336,124 @@ sp=gemm.v17:DDR[0]
 <li><p><strong>Platform-specific tuning</strong>: Match memory assignments to your target FPGA platform’s memory architecture</p></li>
 </ul>
 </section>
+<section id="memory-implementation-customization">
+<h2>Memory Implementation Customization<a class="headerlink" href="#memory-implementation-customization" title="Link to this heading"><span>¶</span></a></h2>
+<p>Allo provides the <code class="docutils literal notranslate"><span class="pre">Memory</span></code> class to specify on-chip memory implementation details for arrays, similar to the <a class="reference external" href="https://docs.amd.com/r/en-US/ug1399-vitis-hls/pragma-HLS-bind_storage">Vitis HLS bind_storage pragma</a>. This allows fine-grained control over how arrays are mapped to FPGA memory resources (BRAM, URAM, LUTRAM, etc.).</p>
+<p><strong>Basic Usage</strong></p>
+<p>Use the <code class="docutils literal notranslate"><span class="pre">&#64;</span></code> operator to annotate function arguments or local variables with memory specifications:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">allo</span><span class="w"> </span><span class="kn">import</span> <span class="n">Memory</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">allo.ir.types</span><span class="w"> </span><span class="kn">import</span> <span class="n">int32</span><span class="p">,</span> <span class="n">float32</span>
+
+<span class="c1"># Define memory specifications</span>
+<span class="n">MemUram</span> <span class="o">=</span> <span class="n">Memory</span><span class="p">(</span><span class="n">resource</span><span class="o">=</span><span class="s2">&quot;URAM&quot;</span><span class="p">)</span>
+<span class="n">MemBram</span> <span class="o">=</span> <span class="n">Memory</span><span class="p">(</span><span class="n">resource</span><span class="o">=</span><span class="s2">&quot;BRAM&quot;</span><span class="p">,</span> <span class="n">storage_type</span><span class="o">=</span><span class="s2">&quot;RAM_2P&quot;</span><span class="p">)</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">kernel</span><span class="p">(</span><span class="n">a</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">]</span> <span class="o">@</span> <span class="n">MemUram</span><span class="p">,</span> <span class="n">b</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="mi">16</span><span class="p">,</span> <span class="mi">16</span><span class="p">]</span> <span class="o">@</span> <span class="n">MemBram</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">]:</span>
+    <span class="c1"># Local variable with memory annotation</span>
+    <span class="n">buf</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">]</span> <span class="o">@</span> <span class="n">Memory</span><span class="p">(</span><span class="n">resource</span><span class="o">=</span><span class="s2">&quot;BRAM&quot;</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">32</span><span class="p">):</span>
+        <span class="n">buf</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">a</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">*</span> <span class="mi">2</span>
+    <span class="n">c</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">]</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">32</span><span class="p">):</span>
+        <span class="n">c</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">buf</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">+</span> <span class="mi">1</span>
+    <span class="k">return</span> <span class="n">c</span>
+
+<span class="n">s</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">customize</span><span class="p">(</span><span class="n">kernel</span><span class="p">)</span>
+<span class="n">mod</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">&quot;vhls&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">mod</span><span class="o">.</span><span class="n">hls_code</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>This generates HLS code with <code class="docutils literal notranslate"><span class="pre">bind_storage</span></code> pragmas:</p>
+<div class="highlight-cpp notranslate"><div class="highlight"><pre><span></span><span class="kt">void</span><span class="w"> </span><span class="nf">kernel</span><span class="p">(</span><span class="kt">int32_t</span><span class="w"> </span><span class="n">v0</span><span class="p">[</span><span class="mi">32</span><span class="p">],</span><span class="w"> </span><span class="kt">float</span><span class="w"> </span><span class="n">v1</span><span class="p">[</span><span class="mi">16</span><span class="p">][</span><span class="mi">16</span><span class="p">],</span><span class="w"> </span><span class="kt">int32_t</span><span class="w"> </span><span class="n">v2</span><span class="p">[</span><span class="mi">32</span><span class="p">])</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="cp">#pragma HLS bind_storage variable=v0 impl=uram</span>
+<span class="w">  </span><span class="cp">#pragma HLS bind_storage variable=v1 type=ram_2p impl=bram</span>
+
+<span class="w">  </span><span class="kt">int32_t</span><span class="w"> </span><span class="n">buf</span><span class="p">[</span><span class="mi">32</span><span class="p">];</span>
+<span class="w">  </span><span class="cp">#pragma HLS bind_storage variable=buf impl=bram</span>
+<span class="w">  </span><span class="c1">// ... kernel body ...</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p><strong>Memory Class Parameters</strong></p>
+<p>The <code class="docutils literal notranslate"><span class="pre">Memory</span></code> class accepts the following parameters:</p>
+<ul class="simple">
+<li><p><strong>resource</strong> (str): Memory resource type</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;BRAM&quot;</span></code>: Block RAM - the most common on-chip memory</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;URAM&quot;</span></code>: Ultra RAM - larger capacity, available on UltraScale+ devices</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;LUTRAM&quot;</span></code>: LUT-based RAM - faster but smaller</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;SRL&quot;</span></code>: Shift Register LUT - efficient for FIFOs</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;AUTO&quot;</span></code>: Let the HLS tool decide (default)</p></li>
+</ul>
+</li>
+<li><p><strong>storage_type</strong> (str, optional): RAM access pattern</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;RAM_1P&quot;</span></code>: Single-port RAM</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;RAM_2P&quot;</span></code>: Simple dual-port RAM (one read, one write port)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;RAM_T2P&quot;</span></code>: True dual-port RAM (two read/write ports)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;RAM_1WNR&quot;</span></code>: Single write, N read ports</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;RAM_S2P&quot;</span></code>: Simple dual-port (alias for RAM_2P)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;ROM_1P&quot;</span></code>: Single-port ROM</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;ROM_2P&quot;</span></code>: Dual-port ROM</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;ROM_NP&quot;</span></code>: N-port ROM</p></li>
+</ul>
+</li>
+<li><p><strong>latency</strong> (int, optional): Memory access latency in cycles</p></li>
+<li><p><strong>depth</strong> (int, optional): Depth of the memory (useful for streams/FIFOs)</p></li>
+</ul>
+<p><strong>Examples</strong></p>
+<ol class="arabic">
+<li><p><strong>URAM for large buffers</strong>:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># URAM is ideal for large arrays on UltraScale+ FPGAs</span>
+<span class="n">LargeBuffer</span> <span class="o">=</span> <span class="n">Memory</span><span class="p">(</span><span class="n">resource</span><span class="o">=</span><span class="s2">&quot;URAM&quot;</span><span class="p">)</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">process</span><span class="p">(</span><span class="n">data</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="mi">1024</span><span class="p">,</span> <span class="mi">1024</span><span class="p">]</span> <span class="o">@</span> <span class="n">LargeBuffer</span><span class="p">):</span>
+    <span class="o">...</span>
+</pre></div>
+</div>
+</li>
+<li><p><strong>Dual-port BRAM for concurrent access</strong>:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># RAM_2P allows simultaneous read and write</span>
+<span class="n">DualPort</span> <span class="o">=</span> <span class="n">Memory</span><span class="p">(</span><span class="n">resource</span><span class="o">=</span><span class="s2">&quot;BRAM&quot;</span><span class="p">,</span> <span class="n">storage_type</span><span class="o">=</span><span class="s2">&quot;RAM_2P&quot;</span><span class="p">)</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">pipeline</span><span class="p">(</span><span class="n">inp</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="mi">256</span><span class="p">]</span> <span class="o">@</span> <span class="n">DualPort</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">int32</span><span class="p">[</span><span class="mi">256</span><span class="p">]:</span>
+    <span class="o">...</span>
+</pre></div>
+</div>
+</li>
+<li><p><strong>LUTRAM for small, fast buffers</strong>:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># LUTRAM is faster but uses more LUTs</span>
+<span class="n">FastBuffer</span> <span class="o">=</span> <span class="n">Memory</span><span class="p">(</span><span class="n">resource</span><span class="o">=</span><span class="s2">&quot;LUTRAM&quot;</span><span class="p">)</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">compute</span><span class="p">(</span><span class="n">weights</span><span class="p">:</span> <span class="n">int8</span><span class="p">[</span><span class="mi">64</span><span class="p">]</span> <span class="o">@</span> <span class="n">FastBuffer</span><span class="p">):</span>
+    <span class="o">...</span>
+</pre></div>
+</div>
+</li>
+<li><p><strong>Multiple memory types in one kernel</strong>:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">InputMem</span> <span class="o">=</span> <span class="n">Memory</span><span class="p">(</span><span class="n">resource</span><span class="o">=</span><span class="s2">&quot;BRAM&quot;</span><span class="p">,</span> <span class="n">storage_type</span><span class="o">=</span><span class="s2">&quot;RAM_1P&quot;</span><span class="p">)</span>
+<span class="n">WeightMem</span> <span class="o">=</span> <span class="n">Memory</span><span class="p">(</span><span class="n">resource</span><span class="o">=</span><span class="s2">&quot;URAM&quot;</span><span class="p">)</span>
+<span class="n">OutputMem</span> <span class="o">=</span> <span class="n">Memory</span><span class="p">(</span><span class="n">resource</span><span class="o">=</span><span class="s2">&quot;BRAM&quot;</span><span class="p">,</span> <span class="n">storage_type</span><span class="o">=</span><span class="s2">&quot;RAM_2P&quot;</span><span class="p">)</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">neural_layer</span><span class="p">(</span>
+    <span class="n">inp</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="mi">128</span><span class="p">]</span> <span class="o">@</span> <span class="n">InputMem</span><span class="p">,</span>
+    <span class="n">weights</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="mi">128</span><span class="p">,</span> <span class="mi">64</span><span class="p">]</span> <span class="o">@</span> <span class="n">WeightMem</span><span class="p">,</span>
+    <span class="n">out</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="mi">64</span><span class="p">]</span> <span class="o">@</span> <span class="n">OutputMem</span>
+<span class="p">):</span>
+    <span class="o">...</span>
+</pre></div>
+</div>
+</li>
+</ol>
+<p><strong>Best Practices</strong></p>
+<ul class="simple">
+<li><p>Use <strong>URAM</strong> for large arrays (&gt;36Kb) on UltraScale+ devices to save BRAM resources</p></li>
+<li><p>Use <strong>BRAM with RAM_2P</strong> when you need concurrent read/write access</p></li>
+<li><p>Use <strong>LUTRAM</strong> for small lookup tables that require low latency</p></li>
+<li><p>Use <strong>ROM</strong> types for constant data that never changes</p></li>
+<li><p>Let the tool decide (<code class="docutils literal notranslate"><span class="pre">resource=&quot;AUTO&quot;</span></code>) when you don’t have specific requirements</p></li>
+</ul>
+</section>
 <section id="device-and-frequency-configuration">
 <h2>Device and Frequency Configuration<a class="headerlink" href="#device-and-frequency-configuration" title="Link to this heading"><span>¶</span></a></h2>
 <p>You can specify the target device and clock frequency through the <code class="docutils literal notranslate"><span class="pre">configs</span></code> dictionary:</p>
@@ -383,6 +501,7 @@ sp=gemm.v17:DDR[0]
 <li><a class="reference internal" href="#code-generation-for-vivado-vitis-hls">Code Generation for Vivado/Vitis HLS</a></li>
 <li><a class="reference internal" href="#project-structure-and-execution">Project Structure and Execution</a></li>
 <li><a class="reference internal" href="#hbm-ddr-memory-mapping">HBM/DDR Memory Mapping</a></li>
+<li><a class="reference internal" href="#memory-implementation-customization">Memory Implementation Customization</a></li>
 <li><a class="reference internal" href="#device-and-frequency-configuration">Device and Frequency Configuration</a></li>
 <li><a class="reference internal" href="#conclusion">Conclusion</a></li>
 </ul>
