@@ -57,7 +57,7 @@ class TestMemoryClass:
 
     def test_memory_invalid_impl(self):
         """Test that invalid impl raises ValueError."""
-        with pytest.raises(ValueError, match="Invalid impl"):
+        with pytest.raises(ValueError, match="Invalid resource"):
             Memory(resource="INVALID")
 
     def test_memory_invalid_storage_type(self):
