@@ -77,7 +77,6 @@ Below are the exact commands to set up the environment:
    ```bash
    git clone https://github.com/cornell-zhang/allo.git
    cd allo
-   python3 -m pip install pybind11 nanobind
    python3 -m pip install -v -e .
    ```
 
