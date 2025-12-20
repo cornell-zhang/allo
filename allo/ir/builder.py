@@ -1158,9 +1158,11 @@ class ASTTransformer(ASTBuilder):
         # Compute RHS
         rhs = build_stmt(ctx, node.value)
         # Load LHS
-        node.target.ctx = ast.Load()
-        lhs = build_stmt(ctx, node.target)
-        node.target.ctx = ast.Store()
+        # Create a copy to avoid mutating the original AST node
+        # (important for meta_for loops which reuse the same AST)
+        load_target = copy.copy(node.target)
+        load_target.ctx = ast.Load()
+        lhs = build_stmt(ctx, load_target)
         # Cast lhs to the operation type
         lhs = ASTTransformer.build_cast_op(
             ctx, lhs, node.target.dtype, node.dtype, node.target.shape
@@ -1176,7 +1178,10 @@ class ASTTransformer(ASTBuilder):
             ctx, res, node.dtype, node.target.dtype, node.shape
         )
         # Store LHS
-        store_op = build_stmt(ctx, node.target, val=res)
+        # Create a copy to avoid mutating the original AST node
+        store_target = copy.copy(node.target)
+        store_target.ctx = ast.Store()
+        store_op = build_stmt(ctx, store_target, val=res)
         return store_op
 
     @staticmethod

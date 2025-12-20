@@ -1234,5 +1234,59 @@ def test_bit_operations_in_meta_for():
     print("Test 5 passed: multiple iterations work correctly")
 
 
+def test_augmented_assign_in_meta_for():
+    """Test that augmented assignments work correctly inside meta_for loops.
+    
+    This is a regression test for a similar bug where augmented assignments
+    would crash when used inside meta_for loops due to AST node mutation.
+    """
+    
+    # Test 1: Regular for loop with augmented assignment (baseline)
+    def kernel_regular_for(A: int32[10], B: int32[10]):
+        for i in range(10):
+            B[i] += A[i]
+    
+    s1 = allo.customize(kernel_regular_for)
+    print("Test 1 passed: regular for loop with augmented assignment works")
+    
+    # Test 2: meta_for loop with augmented assignment
+    def kernel_meta_for(A: int32[10], B: int32[10]):
+        with allo.meta_for(10) as i:
+            B[i] += A[i]
+    
+    s2 = allo.customize(kernel_meta_for)
+    print("Test 2 passed: meta_for loop with augmented assignment works")
+    
+    # Test execution correctness
+    mod1 = s1.build()
+    mod2 = s2.build()
+    
+    np_A = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], dtype=np.int32)
+    np_B1 = np.array([10, 9, 8, 7, 6, 5, 4, 3, 2, 1], dtype=np.int32)
+    np_B2 = np.array([10, 9, 8, 7, 6, 5, 4, 3, 2, 1], dtype=np.int32)
+    
+    mod1(np_A, np_B1)
+    mod2(np_A, np_B2)
+    
+    # Both should produce the same result
+    np.testing.assert_array_equal(np_B1, np_B2)
+    # Result should be original B + A
+    np.testing.assert_array_equal(np_B1, np.array([11, 11, 11, 11, 11, 11, 11, 11, 11, 11], dtype=np.int32))
+    
+    # Test 3: Multiple augmented operations in meta_for
+    def kernel_multi_ops(A: int32[5]):
+        with allo.meta_for(5) as i:
+            A[i] *= 2
+            A[i] += 1
+    
+    s3 = allo.customize(kernel_multi_ops)
+    mod3 = s3.build()
+    np_A3 = np.array([1, 2, 3, 4, 5], dtype=np.int32)
+    mod3(np_A3)
+    # Result should be (A * 2) + 1
+    np.testing.assert_array_equal(np_A3, np.array([3, 5, 7, 9, 11], dtype=np.int32))
+    print("Test 3 passed: multiple augmented operations work correctly")
+
+
 if __name__ == "__main__":
     pytest.main([__file__])
