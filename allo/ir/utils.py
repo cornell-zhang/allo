@@ -77,6 +77,25 @@ def get_kwarg(kwargs, name):
     raise RuntimeError(f"Keyword argument {name} not found")
 
 
+def _ast_to_value(node):
+    """Convert an AST node to its Python value (Python 3.12+)."""
+    if isinstance(node, ast.Constant):
+        return node.value
+    if isinstance(node, ast.List):
+        return [_ast_to_value(elt) for elt in node.elts]
+    if isinstance(node, ast.Tuple):
+        return tuple(_ast_to_value(elt) for elt in node.elts)
+    return node
+
+
+def get_kwarg_value(kwargs, name, default=None):
+    """Get a keyword argument value, returning default if not found."""
+    for keyword in kwargs:
+        if keyword.arg == name:
+            return _ast_to_value(keyword.value)
+    return default
+
+
 def _adjust_line_numbers(node, offset):
     for child in ast.walk(node):
         if hasattr(child, "lineno"):
