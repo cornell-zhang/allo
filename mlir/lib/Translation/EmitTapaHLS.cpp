@@ -921,9 +921,10 @@ void ModuleEmitter::emitAffineLoad(AffineLoadOp op) {
   auto affineMap = op.getAffineMap();
   AffineExprEmitter affineEmitter(state, affineMap.getNumDims(),
                                   op.getMapOperands());
-  if (attr && llvm::dyn_cast<StringAttr>(attr).getValue().str().substr(0, 6) ==
-                  "stream") {
-    auto attr_str = llvm::dyn_cast<StringAttr>(attr).getValue().str();
+  // Check if memory space is a string attribute for streams
+  auto strAttrLoad = attr ? llvm::dyn_cast<StringAttr>(attr) : nullptr;
+  if (strAttrLoad && strAttrLoad.getValue().str().substr(0, 6) == "stream") {
+    auto attr_str = strAttrLoad.getValue().str();
     int S_index = attr_str.find("S"); // spatial
     int T_index = attr_str.find("T"); // temporal
     if (S_index != -1 && T_index != -1) {
@@ -996,9 +997,10 @@ void ModuleEmitter::emitAffineStore(AffineStoreOp op) {
   auto affineMap = op.getAffineMap();
   AffineExprEmitter affineEmitter(state, affineMap.getNumDims(),
                                   op.getMapOperands());
-  if (attr && llvm::dyn_cast<StringAttr>(attr).getValue().str().substr(0, 6) ==
-                  "stream") {
-    auto attr_str = llvm::dyn_cast<StringAttr>(attr).getValue().str();
+  // Check if memory space is a string attribute for streams
+  auto strAttrStore = attr ? llvm::dyn_cast<StringAttr>(attr) : nullptr;
+  if (strAttrStore && strAttrStore.getValue().str().substr(0, 6) == "stream") {
+    auto attr_str = strAttrStore.getValue().str();
     int S_index = attr_str.find("S"); // spatial
     int T_index = attr_str.find("T"); // temporal
     if (S_index != -1 && T_index != -1) {
@@ -1212,9 +1214,11 @@ void ModuleEmitter::emitLoad(memref::LoadOp op) {
   auto memref = op.getMemRef();
   emitValue(memref);
   auto attr = llvm::dyn_cast<MemRefType>(memref.getType()).getMemorySpace();
-  if (attr && llvm::dyn_cast<StringAttr>(attr).getValue().str().substr(0, 6) ==
-                  "stream") {
-    auto attr_str = llvm::dyn_cast<StringAttr>(attr).getValue().str();
+  // Check if memory space is a string attribute for streams
+  auto strAttrMemLoad = attr ? llvm::dyn_cast<StringAttr>(attr) : nullptr;
+  if (strAttrMemLoad &&
+      strAttrMemLoad.getValue().str().substr(0, 6) == "stream") {
+    auto attr_str = strAttrMemLoad.getValue().str();
     int S_index = attr_str.find("S"); // spatial
     int T_index = attr_str.find("T"); // temporal
     if (S_index != -1 && T_index != -1) {
@@ -1248,9 +1252,11 @@ void ModuleEmitter::emitStore(memref::StoreOp op) {
   auto memref = op.getMemRef();
   emitValue(memref);
   auto attr = llvm::dyn_cast<MemRefType>(memref.getType()).getMemorySpace();
-  if (attr && llvm::dyn_cast<StringAttr>(attr).getValue().str().substr(0, 6) ==
-                  "stream") {
-    auto attr_str = llvm::dyn_cast<StringAttr>(attr).getValue().str();
+  // Check if memory space is a string attribute for streams
+  auto strAttrMemStore = attr ? llvm::dyn_cast<StringAttr>(attr) : nullptr;
+  if (strAttrMemStore &&
+      strAttrMemStore.getValue().str().substr(0, 6) == "stream") {
+    auto attr_str = strAttrMemStore.getValue().str();
     int S_index = attr_str.find("S"); // spatial
     int T_index = attr_str.find("T"); // temporal
     if (S_index != -1 && T_index != -1) {
@@ -1982,8 +1988,9 @@ void ModuleEmitter::emitArrayDecl(Value array, bool isFunc, std::string name,
     auto memref = llvm::dyn_cast<MemRefType>(array.getType());
     if (memref) {
       auto attr = memref.getMemorySpace();
-      if (attr && llvm::dyn_cast<StringAttr>(attr).getValue().str().substr(
-                      0, 6) == "stream") {
+      // Check if memory space is a string attribute for streams
+      auto strAttr = attr ? llvm::dyn_cast<StringAttr>(attr) : nullptr;
+      if (strAttr && strAttr.getValue().str().substr(0, 6) == "stream") {
         // Value has been declared before or is a constant number.
         if (isDeclared(array)) {
           os << getName(array);
@@ -1995,7 +2002,7 @@ void ModuleEmitter::emitArrayDecl(Value array, bool isFunc, std::string name,
            << ((type == '_' || type == 'g') ? "" : std::string(1, type))
            << "stream< " << getTypeName(array) << " > ";
 
-        auto attr_str = llvm::dyn_cast<StringAttr>(attr).getValue().str();
+        auto attr_str = strAttr.getValue().str();
         int S_index = attr_str.find("S"); // spatial
         int T_index = attr_str.find("T"); // temporal
         if (isFunc &&
@@ -2144,21 +2151,98 @@ void ModuleEmitter::emitArrayDirectives(Value memref) {
   bool emitPragmaFlag = false;
   auto type = llvm::dyn_cast<MemRefType>(memref.getType());
 
-  // streaming
+  // streaming or memory implementation
   auto attr = type.getMemorySpace();
   if (attr) {
-    std::string attr_str = llvm::dyn_cast<StringAttr>(attr).getValue().str();
-    if (attr_str.substr(0, 6) == "stream") {
-      indent();
-      os << "#pragma HLS stream variable=";
-      emitValue(memref);
-      os << " depth=";
-      int semicolon_index = attr_str.find(";");
-      os << attr_str.substr(7, semicolon_index - 7);
-      os << "\n";
-      // if the array is a FIFO, then it cannot be further partitioned
-      // so directly return
-      return;
+    // Check if it's a string attribute (streaming)
+    if (auto strAttr = llvm::dyn_cast<StringAttr>(attr)) {
+      std::string attr_str = strAttr.getValue().str();
+      if (attr_str.substr(0, 6) == "stream") {
+        indent();
+        os << "#pragma HLS stream variable=";
+        emitValue(memref);
+        os << " depth=";
+        int semicolon_index = attr_str.find(";");
+        os << attr_str.substr(7, semicolon_index - 7);
+        os << "\n";
+        // if the array is a FIFO, then it cannot be further partitioned
+        // so directly return
+        return;
+      }
+    }
+    // Check if it's an integer attribute (memory implementation)
+    else if (auto intAttr = llvm::dyn_cast<IntegerAttr>(attr)) {
+      int64_t memSpace = intAttr.getInt();
+      if (memSpace > 0) {
+        // Decode: memory_space = impl_code * 16 + storage_type_code
+        int implCode = memSpace / 16;
+        int storageCode = memSpace % 16;
+
+        // Map impl_code to implementation type
+        std::string implType;
+        switch (implCode) {
+        case 1:
+          implType = "bram";
+          break;
+        case 2:
+          implType = "uram";
+          break;
+        case 3:
+          implType = "lutram";
+          break;
+        case 4:
+          implType = "srl";
+          break;
+        default:
+          implType = "";
+          break; // AUTO or unknown
+        }
+
+        // Map storage_code to storage type
+        std::string storageType;
+        switch (storageCode) {
+        case 1:
+          storageType = "ram_1p";
+          break;
+        case 2:
+          storageType = "ram_2p";
+          break;
+        case 3:
+          storageType = "ram_t2p";
+          break;
+        case 4:
+          storageType = "ram_1wnr";
+          break;
+        case 5:
+          storageType = "ram_s2p";
+          break;
+        case 6:
+          storageType = "rom_1p";
+          break;
+        case 7:
+          storageType = "rom_2p";
+          break;
+        case 8:
+          storageType = "rom_np";
+          break;
+        default:
+          storageType = "";
+          break;
+        }
+
+        // Emit bind_storage pragma if we have a valid implementation type
+        if (!implType.empty()) {
+          emitPragmaFlag = true;
+          indent();
+          os << "#pragma HLS bind_storage variable=";
+          emitValue(memref);
+          if (!storageType.empty()) {
+            os << " type=" << storageType;
+          }
+          os << " impl=" << implType;
+          os << "\n";
+        }
+      }
     }
   }
 

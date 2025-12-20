@@ -183,6 +183,132 @@ This feature is particularly useful for:
 - **Platform-specific tuning**: Match memory assignments to your target FPGA platform's memory architecture
 
 
+Memory Implementation Customization
+------------------------------------
+Allo provides the ``Memory`` class to specify on-chip memory implementation details for arrays, similar to the `Vitis HLS bind_storage pragma <https://docs.amd.com/r/en-US/ug1399-vitis-hls/pragma-HLS-bind_storage>`_. This allows fine-grained control over how arrays are mapped to FPGA memory resources (BRAM, URAM, LUTRAM, etc.).
+
+**Basic Usage**
+
+Use the ``@`` operator to annotate function arguments or local variables with memory specifications:
+
+.. code-block:: python
+
+   from allo import Memory
+   from allo.ir.types import int32, float32
+
+   # Define memory specifications
+   MemUram = Memory(resource="URAM")
+   MemBram = Memory(resource="BRAM", storage_type="RAM_2P")
+
+   def kernel(a: int32[32] @ MemUram, b: float32[16, 16] @ MemBram) -> int32[32]:
+       # Local variable with memory annotation
+       buf: int32[32] @ Memory(resource="BRAM")
+       for i in range(32):
+           buf[i] = a[i] * 2
+       c: int32[32]
+       for i in range(32):
+           c[i] = buf[i] + 1
+       return c
+
+   s = allo.customize(kernel)
+   mod = s.build(target="vhls")
+   print(mod.hls_code)
+
+This generates HLS code with ``bind_storage`` pragmas:
+
+.. code-block:: cpp
+
+   void kernel(int32_t v0[32], float v1[16][16], int32_t v2[32]) {
+     #pragma HLS bind_storage variable=v0 impl=uram
+     #pragma HLS bind_storage variable=v1 type=ram_2p impl=bram
+
+     int32_t buf[32];
+     #pragma HLS bind_storage variable=buf impl=bram
+     // ... kernel body ...
+   }
+
+**Memory Class Parameters**
+
+The ``Memory`` class accepts the following parameters:
+
+- **resource** (str): Memory resource type
+
+  - ``"BRAM"``: Block RAM - the most common on-chip memory
+  - ``"URAM"``: Ultra RAM - larger capacity, available on UltraScale+ devices
+  - ``"LUTRAM"``: LUT-based RAM - faster but smaller
+  - ``"SRL"``: Shift Register LUT - efficient for FIFOs
+  - ``"AUTO"``: Let the HLS tool decide (default)
+
+- **storage_type** (str, optional): RAM access pattern
+
+  - ``"RAM_1P"``: Single-port RAM
+  - ``"RAM_2P"``: Simple dual-port RAM (one read, one write port)
+  - ``"RAM_T2P"``: True dual-port RAM (two read/write ports)
+  - ``"RAM_1WNR"``: Single write, N read ports
+  - ``"RAM_S2P"``: Simple dual-port (alias for RAM_2P)
+  - ``"ROM_1P"``: Single-port ROM
+  - ``"ROM_2P"``: Dual-port ROM
+  - ``"ROM_NP"``: N-port ROM
+
+- **latency** (int, optional): Memory access latency in cycles
+- **depth** (int, optional): Depth of the memory (useful for streams/FIFOs)
+
+**Examples**
+
+1. **URAM for large buffers**:
+
+   .. code-block:: python
+
+      # URAM is ideal for large arrays on UltraScale+ FPGAs
+      LargeBuffer = Memory(resource="URAM")
+
+      def process(data: float32[1024, 1024] @ LargeBuffer):
+          ...
+
+2. **Dual-port BRAM for concurrent access**:
+
+   .. code-block:: python
+
+      # RAM_2P allows simultaneous read and write
+      DualPort = Memory(resource="BRAM", storage_type="RAM_2P")
+
+      def pipeline(inp: int32[256] @ DualPort) -> int32[256]:
+          ...
+
+3. **LUTRAM for small, fast buffers**:
+
+   .. code-block:: python
+
+      # LUTRAM is faster but uses more LUTs
+      FastBuffer = Memory(resource="LUTRAM")
+
+      def compute(weights: int8[64] @ FastBuffer):
+          ...
+
+4. **Multiple memory types in one kernel**:
+
+   .. code-block:: python
+
+      InputMem = Memory(resource="BRAM", storage_type="RAM_1P")
+      WeightMem = Memory(resource="URAM")
+      OutputMem = Memory(resource="BRAM", storage_type="RAM_2P")
+
+      def neural_layer(
+          inp: float32[128] @ InputMem,
+          weights: float32[128, 64] @ WeightMem,
+          out: float32[64] @ OutputMem
+      ):
+          ...
+
+**Best Practices**
+
+- Use **URAM** for large arrays (>36Kb) on UltraScale+ devices to save BRAM resources
+- Use **BRAM with RAM_2P** when you need concurrent read/write access
+- Use **LUTRAM** for small lookup tables that require low latency
+- Use **ROM** types for constant data that never changes
+- Let the tool decide (``resource="AUTO"``) when you don't have specific requirements
+
+
 Device and Frequency Configuration
 ----------------------------------
 You can specify the target device and clock frequency through the ``configs`` dictionary:

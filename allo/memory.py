@@ -141,23 +141,220 @@ class Layout:
         return f"Layout({result})"
 
 
+class Memory:
+    """
+    Memory interface specification for HLS synthesis.
+
+    This class allows users to specify memory implementation details
+    for array/tensor arguments, similar to Vitis HLS pragma interface.
+
+    Supported options:
+    - resource: Memory resource type
+        - "BRAM": Block RAM
+        - "URAM": Ultra RAM
+        - "LUTRAM": LUT-based RAM
+        - "SRL": Shift Register LUT
+        - "AUTO": Let the tool decide (default)
+    - storage_type: RAM access pattern
+        - "RAM_1P": Single-port RAM
+        - "RAM_2P": Simple dual-port RAM (one read, one write port)
+        - "RAM_T2P": True dual-port RAM (two read/write ports)
+        - "RAM_1WNR": Single write, N read ports
+        - "RAM_S2P": Simple dual-port (alias for RAM_2P)
+        - "ROM_1P": Single-port ROM
+        - "ROM_2P": Dual-port ROM
+        - "ROM_NP": N-port ROM
+    - latency: Memory access latency in cycles
+    - depth: Depth of the memory (for streams/FIFOs)
+
+    Example:
+        def kernel(a: int32[32] @ Memory(resource="URAM")):
+            ...
+
+        def kernel(b: float32[64, 64] @ Memory(resource="BRAM", storage_type="RAM_2P")):
+            ...
+    """
+
+    # Valid resource types
+    VALID_RESOURCE = {"BRAM", "URAM", "LUTRAM", "SRL", "AUTO"}
+
+    # Memory space encoding for MLIR MemRefType
+    # Format: resource_code * 16 + storage_type_code
+    # This allows encoding both resource and storage_type in a single integer
+    RESOURCE_TO_SPACE = {
+        "AUTO": 0,
+        "BRAM": 1,
+        "URAM": 2,
+        "LUTRAM": 3,
+        "SRL": 4,
+    }
+
+    STORAGE_TYPE_TO_CODE = {
+        None: 0,
+        "RAM_1P": 1,
+        "RAM_2P": 2,
+        "RAM_T2P": 3,
+        "RAM_1WNR": 4,
+        "RAM_S2P": 5,
+        "ROM_1P": 6,
+        "ROM_2P": 7,
+        "ROM_NP": 8,
+    }
+
+    # Reverse mappings for decoding in C++ emitter
+    SPACE_TO_RESOURCE = {v: k for k, v in RESOURCE_TO_SPACE.items()}
+    CODE_TO_STORAGE_TYPE = {v: k for k, v in STORAGE_TYPE_TO_CODE.items()}
+
+    # Valid storage types
+    VALID_STORAGE_TYPE = {
+        "RAM_1P",
+        "RAM_2P",
+        "RAM_T2P",
+        "RAM_1WNR",
+        "RAM_S2P",
+        "ROM_1P",
+        "ROM_2P",
+        "ROM_NP",
+    }
+
+    def __init__(
+        self,
+        resource: str = "AUTO",
+        storage_type: str = None,
+        latency: int = None,
+        depth: int = None,
+    ):
+        """
+        Create a Memory specification.
+
+        Parameters
+        ----------
+        resource : str
+            Memory resource type. One of: BRAM, URAM, LUTRAM, SRL, AUTO.
+            Default is AUTO (let the tool decide).
+        storage_type : str
+            RAM access pattern. One of: RAM_1P, RAM_2P, RAM_T2P, RAM_1WNR,
+            RAM_S2P, ROM_1P, ROM_2P, ROM_NP. Default is None (tool decides).
+        latency : int
+            Memory access latency in cycles. Default is None (tool decides).
+        depth : int
+            Depth of the memory. Useful for streams/FIFOs. Default is None.
+        """
+        if resource.upper() not in self.VALID_RESOURCE:
+            raise ValueError(
+                f"Invalid resource '{resource}'. Must be one of: {', '.join(self.VALID_RESOURCE)}"
+            )
+        self.resource = resource.upper()
+
+        if storage_type is not None:
+            if storage_type.upper() not in self.VALID_STORAGE_TYPE:
+                raise ValueError(
+                    f"Invalid storage_type '{storage_type}'. "
+                    f"Must be one of: {', '.join(self.VALID_STORAGE_TYPE)}"
+                )
+            self.storage_type = storage_type.upper()
+        else:
+            self.storage_type = None
+
+        self.latency = latency
+        self.depth = depth
+
+    def __repr__(self):
+        parts = [f'resource="{self.resource}"']
+        if self.storage_type is not None:
+            parts.append(f'storage_type="{self.storage_type}"')
+        if self.latency is not None:
+            parts.append(f"latency={self.latency}")
+        if self.depth is not None:
+            parts.append(f"depth={self.depth}")
+        return f"Memory({', '.join(parts)})"
+
+    def __eq__(self, other):
+        if not isinstance(other, Memory):
+            return False
+        return (
+            self.resource == other.resource
+            and self.storage_type == other.storage_type
+            and self.latency == other.latency
+            and self.depth == other.depth
+        )
+
+    def __hash__(self):
+        return hash((self.resource, self.storage_type, self.latency, self.depth))
+
+    def get_memory_space(self) -> int:
+        """
+        Get the memory space encoding for MLIR MemRefType.
+
+        The encoding combines resource and storage_type into a single integer:
+            memory_space = resource_code * 16 + storage_type_code
+
+        This allows the C++ emitter to decode both values and emit
+        appropriate HLS pragmas.
+
+        Returns
+        -------
+        int
+            Memory space encoding. 0 means AUTO (default, no pragma needed).
+        """
+        resource_code = self.RESOURCE_TO_SPACE.get(self.resource, 0)
+        storage_code = self.STORAGE_TYPE_TO_CODE.get(self.storage_type, 0)
+        return resource_code * 16 + storage_code
+
+    @staticmethod
+    def decode_memory_space(memory_space: int) -> tuple:
+        """
+        Decode memory space integer back to (resource, storage_type).
+
+        Parameters
+        ----------
+        memory_space : int
+            The memory space encoding.
+
+        Returns
+        -------
+        tuple
+            (resource: str, storage_type: str or None)
+        """
+        resource_code = memory_space // 16
+        storage_code = memory_space % 16
+        resource = Memory.SPACE_TO_RESOURCE.get(resource_code, "AUTO")
+        storage_type = Memory.CODE_TO_STORAGE_TYPE.get(storage_code, None)
+        return resource, storage_type
+
+
 class DTensor:
     """
     Distributed tensor.
     """
 
-    def __init__(self, rank, mapping, shape, dtype, layout, name=None):
+    def __init__(self, rank, mapping, shape, dtype, spec, name=None):
         self.rank = rank
         self.mapping = mapping  # mesh dims
         self.shape = shape  # tensor shape
         self.dtype = dtype
-        self.layout: Layout = layout
         self.name = name
-        if layout is not None and mapping is not None:
+
+        # Handle spec: can be Layout, Memory, or None
+        self.layout: Layout = None
+        self.memory: Memory = None
+
+        if isinstance(spec, Layout):
+            self.layout = spec
+        elif isinstance(spec, Memory):
+            self.memory = spec
+        elif spec is not None:
+            # For backward compatibility, treat as layout if it has placement attr
+            if hasattr(spec, "placement"):
+                self.layout = spec
+            elif hasattr(spec, "resource"):
+                self.memory = spec
+
+        if self.layout is not None and mapping is not None:
             # tensor tile ID -> PE tile IDs
             self.global_placement: dict[
                 tuple[int | str, ...], list[tuple[int, ...]]
-            ] = layout.get_placement_exp(mapping)
+            ] = self.layout.get_placement_exp(mapping)
         self.access_pattern_set = False
         self.global_id: int = None
         self.is_input: bool = None
@@ -275,7 +472,23 @@ class DTensor:
         )
 
     def __str__(self):
-        return f"DTensor(name={self.name}, shape={self.shape}, dtype={self.dtype}, layout={self.layout}, mapping={self.mapping}, rank={self.rank}, local_shape={self.get_local_shape()})"
+        parts = [
+            f"name={self.name}",
+            f"shape={self.shape}",
+            f"dtype={self.dtype}",
+        ]
+        if self.layout is not None:
+            parts.append(f"layout={self.layout}")
+        if self.memory is not None:
+            parts.append(f"memory={self.memory}")
+        parts.extend(
+            [
+                f"mapping={self.mapping}",
+                f"rank={self.rank}",
+                f"local_shape={self.get_local_shape()}",
+            ]
+        )
+        return f"DTensor({', '.join(parts)})"
 
     def __repr__(self):
         return f"{self.name}"
