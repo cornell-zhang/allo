@@ -731,7 +731,6 @@ void ModuleEmitter::emitScfCondition(scf::ConditionOp op) {
                        ->getRegion(1)
                        .front()
                        .getArguments();
-
   for (auto arg : afterArgs) {
     if (operandIdx < op.getNumOperands()) {
       indent();
