@@ -32,7 +32,8 @@ public:
     return TypeSwitch<Operation *, ResultType>(op)
         .template Case<
             // SCF statements.
-            scf::ForOp, scf::IfOp, scf::ParallelOp, scf::ReduceOp,
+            scf::ForOp, scf::IfOp, scf::WhileOp, scf::ConditionOp,
+            scf::ParallelOp, scf::ReduceOp,
             scf::ReduceReturnOp, scf::YieldOp,
             // Affine statements.
             affine::AffineForOp, affine::AffineIfOp, affine::AffineParallelOp,
@@ -109,6 +110,8 @@ public:
   // SCF statements.
   HANDLE(scf::ForOp);
   HANDLE(scf::IfOp);
+  HANDLE(scf::WhileOp);
+  HANDLE(scf::ConditionOp);
   HANDLE(scf::ParallelOp);
   HANDLE(scf::ReduceOp);
   HANDLE(scf::ReduceReturnOp);

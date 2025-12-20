@@ -522,5 +522,53 @@ def test_ihls():
     assert "h.single_task<Top>([=]() [[intel::kernel_args_restrict]]" in mod.hls_code
 
 
+def test_while_basic():
+    """Test basic while loop support in HLS backend."""
+
+    def kernel(A: int32[10]):
+        i: int32 = 0
+        while i < 10:
+            A[i] = i
+            i += 1
+
+    s = allo.customize(kernel)
+    print("=== MLIR Module ===")
+    print(s.module)
+
+    # Build for vhls target
+    mod = s.build(target="vhls")
+    print("\n=== HLS Code ===")
+    print(mod.hls_code)
+
+    # Check that while loop is generated
+    assert "while (true)" in mod.hls_code or "while (" in mod.hls_code
+    assert "break" in mod.hls_code
+    print("test_while_basic passed!")
+
+
+def test_while_with_array():
+    """Test while loop with array operations."""
+
+    def kernel(A: int32[10], B: int32[10]):
+        i: int32 = 0
+        while i < 10:
+            B[i] = A[i] * 2
+            i += 1
+
+    s = allo.customize(kernel)
+    print("=== MLIR Module ===")
+    print(s.module)
+
+    # Build for vhls target
+    mod = s.build(target="vhls")
+    print("\n=== HLS Code ===")
+    print(mod.hls_code)
+
+    # Check that while loop is generated
+    assert "while (true)" in mod.hls_code or "while (" in mod.hls_code
+    assert "break" in mod.hls_code
+    print("test_while_with_array passed!")
+
+
 if __name__ == "__main__":
     pytest.main([__file__])

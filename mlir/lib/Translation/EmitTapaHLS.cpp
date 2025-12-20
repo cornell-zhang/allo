@@ -115,6 +115,8 @@ public:
   /// SCF statement emitters.
   void emitScfFor(scf::ForOp op);
   void emitScfIf(scf::IfOp op);
+  void emitScfWhile(scf::WhileOp op);
+  void emitScfCondition(scf::ConditionOp op);
   void emitScfYield(scf::YieldOp op);
 
   /// Affine statement emitters.
@@ -290,6 +292,10 @@ public:
   /// SCF statements.
   bool visitOp(scf::ForOp op) { return emitter.emitScfFor(op), true; };
   bool visitOp(scf::IfOp op) { return emitter.emitScfIf(op), true; };
+  bool visitOp(scf::WhileOp op) { return emitter.emitScfWhile(op), true; };
+  bool visitOp(scf::ConditionOp op) {
+    return emitter.emitScfCondition(op), true;
+  };
   bool visitOp(scf::ParallelOp op) { return true; };
   bool visitOp(scf::ReduceOp op) { return true; };
   bool visitOp(scf::ReduceReturnOp op) { return true; };
@@ -662,12 +668,96 @@ void ModuleEmitter::emitScfIf(scf::IfOp op) {
   os << "}\n";
 }
 
+void ModuleEmitter::emitScfWhile(scf::WhileOp op) {
+  // Declare all loop-carried values (results of while loop)
+  for (auto result : op.getResults()) {
+    if (!isDeclared(result)) {
+      indent();
+      if (llvm::isa<ShapedType>(result.getType()))
+        emitArrayDecl(result);
+      else
+        emitValue(result);
+      os << ";\n";
+    }
+  }
+
+  // Initialize loop-carried variables with initial values (operands to
+  // scf.while)
+  unsigned operandIdx = 0;
+  for (auto arg : op.getBeforeBody()->getArguments()) {
+    if (operandIdx < op.getNumOperands()) {
+      indent();
+      emitValue(arg);
+      os << " = ";
+      emitValue(op.getOperand(operandIdx++));
+      os << ";\n";
+    }
+  }
+
+  // Emit while loop header
+  indent();
+  os << "while (true) {";
+  emitInfoAndNewLine(op);
+  addIndent();
+
+  // Emit before block (condition check and preparation)
+  // This contains computations and ends with scf.condition
+  emitBlock(*op.getBeforeBody());
+
+  // After the scf.condition updates loop vars and checks condition,
+  // emit the after block (loop body)
+  emitBlock(*op.getAfterBody());
+
+  reduceIndent();
+  indent();
+  os << "}\n";
+
+  // Copy final values to result variables
+  // The final values are the before region's arguments after loop exit
+  unsigned resultIdx = 0;
+  for (auto result : op.getResults()) {
+    if (resultIdx < op.getBeforeBody()->getNumArguments()) {
+      indent();
+      emitValue(result);
+      os << " = ";
+      emitValue(op.getBeforeBody()->getArgument(resultIdx++));
+      os << ";\n";
+    }
+  }
+}
+
+void ModuleEmitter::emitScfCondition(scf::ConditionOp op) {
+  // The scf.condition op passes values to the after region.
+  // First, update the after region's arguments with the values from condition
+  unsigned operandIdx = 0;
+  // Note: scf.while has two regions - region 0 is 'before', region 1 is 'after'
+  auto afterArgs = op->getParentRegion()
+                       ->getParentOp()
+                       ->getRegion(1) // Get the 'after' region (index 1)
+                       .front()
+                       .getArguments();
+  for (auto arg : afterArgs) {
+    if (operandIdx < op.getNumOperands()) {
+      indent();
+      emitValue(arg);
+      os << " = ";
+      emitValue(op.getOperand(operandIdx++));
+      os << ";\n";
+    }
+  }
+
+  // Emit the break condition - if condition is false, break
+  indent();
+  os << "if (!(";
+  emitValue(op.getCondition());
+  os << ")) break;\n";
+}
+
 void ModuleEmitter::emitScfYield(scf::YieldOp op) {
   if (op.getNumOperands() == 0)
     return;
 
-  // For now, only and scf::If operations will use scf::Yield to return
-  // generated values.
+  // scf::Yield can be used in scf::If or scf::While operations
   if (auto parentOp = dyn_cast<scf::IfOp>(op->getParentOp())) {
     unsigned resultIdx = 0;
     for (auto result : parentOp.getResults()) {
@@ -679,6 +769,23 @@ void ModuleEmitter::emitScfYield(scf::YieldOp op) {
       os << ";";
       emitInfoAndNewLine(op);
       emitNestedLoopTail(rank);
+    }
+  } else if (auto whileOp = dyn_cast<scf::WhileOp>(op->getParentOp())) {
+    // In scf.while, the yield is in the after region and passes values
+    // back to the before region for the next iteration
+    unsigned operandIdx = 0;
+    for (auto arg : whileOp.getBeforeBody()->getArguments()) {
+      if (operandIdx < op.getNumOperands()) {
+        // Handle array and scalar types
+        unsigned rank = emitNestedLoopHead(arg);
+        indent();
+        emitValue(arg, rank);
+        os << " = ";
+        emitValue(op.getOperand(operandIdx++), rank);
+        os << ";";
+        emitInfoAndNewLine(op);
+        emitNestedLoopTail(rank);
+      }
     }
   }
 }
@@ -2135,8 +2242,7 @@ void ModuleEmitter::emitLoopDirectives(Operation *op) {
     indent();
     auto val = llvm::dyn_cast<IntegerAttr>(factor).getValue();
     if (val == 0)
-      os << "#pragma HLS unroll"
-         << "\n";
+      os << "#pragma HLS unroll" << "\n";
     else
       os << "#pragma HLS unroll factor=" << val << "\n";
     addIndent();
