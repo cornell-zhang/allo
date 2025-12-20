@@ -347,10 +347,10 @@ def test_wrap_io_linearized_index():
 
 # Module-level kernel functions for Memory HLS tests
 # (Functions need to be at module level for proper AST parsing)
-_MemUram = Memory(impl="URAM")
-_MemBram2P = Memory(impl="BRAM", storage_type="RAM_2P")
-_MemBram = Memory(impl="BRAM")
-_MemLutram = Memory(impl="LUTRAM")
+_MemUram = Memory(resource="URAM")
+_MemBram2P = Memory(resource="BRAM", storage_type="RAM_2P")
+_MemBram = Memory(resource="BRAM")
+_MemLutram = Memory(resource="LUTRAM")
 
 
 def _kernel_uram(a: int32[32] @ _MemUram) -> int32[32]:

@@ -14,82 +14,82 @@ class TestMemoryClass:
     def test_memory_default(self):
         """Test default Memory creation."""
         mem = Memory()
-        assert mem.impl == "AUTO"
+        assert mem.resource == "AUTO"
         assert mem.storage_type is None
         assert mem.latency is None
         assert mem.depth is None
 
     def test_memory_bram(self):
         """Test Memory with BRAM implementation."""
-        mem = Memory(impl="BRAM")
-        assert mem.impl == "BRAM"
+        mem = Memory(resource="BRAM")
+        assert mem.resource == "BRAM"
         assert mem.storage_type is None
 
     def test_memory_uram(self):
         """Test Memory with URAM implementation."""
-        mem = Memory(impl="URAM")
-        assert mem.impl == "URAM"
+        mem = Memory(resource="URAM")
+        assert mem.resource == "URAM"
 
     def test_memory_lutram(self):
         """Test Memory with LUTRAM implementation."""
-        mem = Memory(impl="LUTRAM")
-        assert mem.impl == "LUTRAM"
+        mem = Memory(resource="LUTRAM")
+        assert mem.resource == "LUTRAM"
 
     def test_memory_storage_type(self):
         """Test Memory with storage type specification."""
-        mem = Memory(impl="BRAM", storage_type="RAM_2P")
-        assert mem.impl == "BRAM"
+        mem = Memory(resource="BRAM", storage_type="RAM_2P")
+        assert mem.resource == "BRAM"
         assert mem.storage_type == "RAM_2P"
 
     def test_memory_all_options(self):
         """Test Memory with all options specified."""
-        mem = Memory(impl="URAM", storage_type="RAM_T2P", latency=3, depth=1024)
-        assert mem.impl == "URAM"
+        mem = Memory(resource="URAM", storage_type="RAM_T2P", latency=3, depth=1024)
+        assert mem.resource == "URAM"
         assert mem.storage_type == "RAM_T2P"
         assert mem.latency == 3
         assert mem.depth == 1024
 
     def test_memory_case_insensitive(self):
         """Test that impl and storage_type are case insensitive."""
-        mem = Memory(impl="bram", storage_type="ram_2p")
-        assert mem.impl == "BRAM"
+        mem = Memory(resource="bram", storage_type="ram_2p")
+        assert mem.resource == "BRAM"
         assert mem.storage_type == "RAM_2P"
 
     def test_memory_invalid_impl(self):
         """Test that invalid impl raises ValueError."""
         with pytest.raises(ValueError, match="Invalid impl"):
-            Memory(impl="INVALID")
+            Memory(resource="INVALID")
 
     def test_memory_invalid_storage_type(self):
         """Test that invalid storage_type raises ValueError."""
         with pytest.raises(ValueError, match="Invalid storage_type"):
-            Memory(impl="BRAM", storage_type="INVALID")
+            Memory(resource="BRAM", storage_type="INVALID")
 
     def test_memory_repr(self):
         """Test Memory string representation."""
-        mem = Memory(impl="URAM")
-        assert 'impl="URAM"' in repr(mem)
+        mem = Memory(resource="URAM")
+        assert 'resource="URAM"' in repr(mem)
 
-        mem2 = Memory(impl="BRAM", storage_type="RAM_2P", latency=2)
+        mem2 = Memory(resource="BRAM", storage_type="RAM_2P", latency=2)
         repr_str = repr(mem2)
-        assert 'impl="BRAM"' in repr_str
+        assert 'resource="BRAM"' in repr_str
         assert 'storage_type="RAM_2P"' in repr_str
         assert "latency=2" in repr_str
 
     def test_memory_equality(self):
         """Test Memory equality comparison."""
-        mem1 = Memory(impl="BRAM", storage_type="RAM_2P")
-        mem2 = Memory(impl="BRAM", storage_type="RAM_2P")
-        mem3 = Memory(impl="URAM")
+        mem1 = Memory(resource="BRAM", storage_type="RAM_2P")
+        mem2 = Memory(resource="BRAM", storage_type="RAM_2P")
+        mem3 = Memory(resource="URAM")
 
         assert mem1 == mem2
         assert mem1 != mem3
 
     def test_memory_hash(self):
         """Test Memory can be used in sets/dicts."""
-        mem1 = Memory(impl="BRAM")
-        mem2 = Memory(impl="BRAM")
-        mem3 = Memory(impl="URAM")
+        mem1 = Memory(resource="BRAM")
+        mem2 = Memory(resource="BRAM")
+        mem3 = Memory(resource="URAM")
 
         mem_set = {mem1, mem3}
         assert len(mem_set) == 2
@@ -101,7 +101,7 @@ class TestMemoryWithDTensor:
 
     def test_dtensor_with_memory(self):
         """Test creating DTensor with Memory spec."""
-        mem = Memory(impl="URAM")
+        mem = Memory(resource="URAM")
         dtensor = DTensor(
             rank=None, mapping=None, shape=(32, 32), dtype=int32, spec=mem, name="A"
         )
@@ -126,7 +126,7 @@ class TestMemoryWithDTensor:
 
     def test_dtensor_str_with_memory(self):
         """Test DTensor string representation includes memory."""
-        mem = Memory(impl="BRAM", storage_type="RAM_2P")
+        mem = Memory(resource="BRAM", storage_type="RAM_2P")
         dtensor = DTensor(
             rank=None, mapping=None, shape=(64,), dtype=float32, spec=mem, name="C"
         )
@@ -140,7 +140,7 @@ class TestMemoryAnnotation:
     def test_kernel_with_memory_annotation(self):
         """Test that kernels can be defined with Memory annotations."""
 
-        def kernel(a: int32[32] @ Memory(impl="URAM")) -> int32[32]:
+        def kernel(a: int32[32] @ Memory(resource="URAM")) -> int32[32]:
             b: int32[32]
             for i in range(32):
                 b[i] = a[i] + 1
@@ -156,7 +156,7 @@ class TestMemoryAnnotation:
     def test_kernel_with_bram_annotation(self):
         """Test kernel with BRAM memory annotation."""
 
-        def kernel(a: float32[16, 16] @ Memory(impl="BRAM")):
+        def kernel(a: float32[16, 16] @ Memory(resource="BRAM")):
             for i, j in allo.grid(16, 16):
                 a[i, j] = a[i, j] * 2.0
 
@@ -172,9 +172,9 @@ class TestMemoryAnnotation:
         """Test kernel with multiple Memory annotations."""
 
         def kernel(
-            a: int32[32] @ Memory(impl="BRAM"),
-            b: int32[32] @ Memory(impl="URAM"),
-            c: int32[32] @ Memory(impl="LUTRAM"),
+            a: int32[32] @ Memory(resource="BRAM"),
+            b: int32[32] @ Memory(resource="URAM"),
+            c: int32[32] @ Memory(resource="LUTRAM"),
         ):
             for i in range(32):
                 c[i] = a[i] + b[i]
@@ -192,7 +192,7 @@ class TestMemoryAnnotation:
         """Test kernel with Memory including storage_type."""
 
         def kernel(
-            a: int32[64] @ Memory(impl="BRAM", storage_type="RAM_2P"),
+            a: int32[64] @ Memory(resource="BRAM", storage_type="RAM_2P"),
         ) -> int32[64]:
             b: int32[64]
             for i in range(64):
@@ -214,8 +214,8 @@ class TestMemoryValid:
         """Test all valid implementation types."""
         valid_impls = ["BRAM", "URAM", "LUTRAM", "SRL", "AUTO"]
         for impl in valid_impls:
-            mem = Memory(impl=impl)
-            assert mem.impl == impl
+            mem = Memory(resource=impl)
+            assert mem.resource == impl
 
     def test_all_valid_storage_types(self):
         """Test all valid storage types."""
@@ -230,15 +230,15 @@ class TestMemoryValid:
             "ROM_NP",
         ]
         for storage in valid_storage:
-            mem = Memory(impl="BRAM", storage_type=storage)
+            mem = Memory(resource="BRAM", storage_type=storage)
             assert mem.storage_type == storage
 
 
 # Module-level Memory definitions and kernel functions for HLS codegen tests
 # (Functions need to be at module level for proper AST parsing)
-_MemBram = Memory(impl="BRAM", storage_type="RAM_2P")
-_MemUram = Memory(impl="URAM")
-_MemBramMulti = Memory(impl="BRAM", storage_type="RAM_1P")
+_MemBram = Memory(resource="BRAM", storage_type="RAM_2P")
+_MemUram = Memory(resource="URAM")
+_MemBramMulti = Memory(resource="BRAM", storage_type="RAM_1P")
 
 
 def _kernel_bram(a: int32[32] @ _MemBram) -> int32[32]:
@@ -299,15 +299,15 @@ class TestMemoryHLSCodegen:
     def test_memory_space_encoding(self):
         """Test Memory space encoding is correct."""
         # BRAM = 1, RAM_2P = 2 -> memory_space = 1*16 + 2 = 18
-        mem = Memory(impl="BRAM", storage_type="RAM_2P")
+        mem = Memory(resource="BRAM", storage_type="RAM_2P")
         assert mem.get_memory_space() == 18
 
         # URAM = 2, no storage -> memory_space = 2*16 + 0 = 32
-        mem = Memory(impl="URAM")
+        mem = Memory(resource="URAM")
         assert mem.get_memory_space() == 32
 
         # AUTO = 0 -> memory_space = 0
-        mem = Memory(impl="AUTO")
+        mem = Memory(resource="AUTO")
         assert mem.get_memory_space() == 0
 
 

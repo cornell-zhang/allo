@@ -149,7 +149,7 @@ class Memory:
     for array/tensor arguments, similar to Vitis HLS pragma interface.
 
     Supported options:
-    - impl: Memory implementation type
+    - resource: Memory resource type
         - "BRAM": Block RAM
         - "URAM": Ultra RAM
         - "LUTRAM": LUT-based RAM
@@ -168,20 +168,20 @@ class Memory:
     - depth: Depth of the memory (for streams/FIFOs)
 
     Example:
-        def kernel(a: int32[32] @ Memory(impl="URAM")):
+        def kernel(a: int32[32] @ Memory(resource="URAM")):
             ...
 
-        def kernel(b: float32[64, 64] @ Memory(impl="BRAM", storage_type="RAM_2P")):
+        def kernel(b: float32[64, 64] @ Memory(resource="BRAM", storage_type="RAM_2P")):
             ...
     """
 
-    # Valid implementation types
-    VALID_IMPL = {"BRAM", "URAM", "LUTRAM", "SRL", "AUTO"}
+    # Valid resource types
+    VALID_RESOURCE = {"BRAM", "URAM", "LUTRAM", "SRL", "AUTO"}
 
     # Memory space encoding for MLIR MemRefType
-    # Format: impl_code * 16 + storage_type_code
-    # This allows encoding both impl and storage_type in a single integer
-    IMPL_TO_SPACE = {
+    # Format: resource_code * 16 + storage_type_code
+    # This allows encoding both resource and storage_type in a single integer
+    RESOURCE_TO_SPACE = {
         "AUTO": 0,
         "BRAM": 1,
         "URAM": 2,
@@ -202,7 +202,7 @@ class Memory:
     }
 
     # Reverse mappings for decoding in C++ emitter
-    SPACE_TO_IMPL = {v: k for k, v in IMPL_TO_SPACE.items()}
+    SPACE_TO_RESOURCE = {v: k for k, v in RESOURCE_TO_SPACE.items()}
     CODE_TO_STORAGE_TYPE = {v: k for k, v in STORAGE_TYPE_TO_CODE.items()}
 
     # Valid storage types
@@ -219,7 +219,7 @@ class Memory:
 
     def __init__(
         self,
-        impl: str = "AUTO",
+        resource: str = "AUTO",
         storage_type: str = None,
         latency: int = None,
         depth: int = None,
@@ -229,8 +229,8 @@ class Memory:
 
         Parameters
         ----------
-        impl : str
-            Memory implementation type. One of: BRAM, URAM, LUTRAM, SRL, AUTO.
+        resource : str
+            Memory resource type. One of: BRAM, URAM, LUTRAM, SRL, AUTO.
             Default is AUTO (let the tool decide).
         storage_type : str
             RAM access pattern. One of: RAM_1P, RAM_2P, RAM_T2P, RAM_1WNR,
@@ -240,11 +240,11 @@ class Memory:
         depth : int
             Depth of the memory. Useful for streams/FIFOs. Default is None.
         """
-        if impl.upper() not in self.VALID_IMPL:
+        if resource.upper() not in self.VALID_RESOURCE:
             raise ValueError(
-                f"Invalid impl '{impl}'. Must be one of: {', '.join(self.VALID_IMPL)}"
+                f"Invalid resource '{resource}'. Must be one of: {', '.join(self.VALID_RESOURCE)}"
             )
-        self.impl = impl.upper()
+        self.resource = resource.upper()
 
         if storage_type is not None:
             if storage_type.upper() not in self.VALID_STORAGE_TYPE:
@@ -260,7 +260,7 @@ class Memory:
         self.depth = depth
 
     def __repr__(self):
-        parts = [f'impl="{self.impl}"']
+        parts = [f'resource="{self.resource}"']
         if self.storage_type is not None:
             parts.append(f'storage_type="{self.storage_type}"')
         if self.latency is not None:
@@ -273,21 +273,21 @@ class Memory:
         if not isinstance(other, Memory):
             return False
         return (
-            self.impl == other.impl
+            self.resource == other.resource
             and self.storage_type == other.storage_type
             and self.latency == other.latency
             and self.depth == other.depth
         )
 
     def __hash__(self):
-        return hash((self.impl, self.storage_type, self.latency, self.depth))
+        return hash((self.resource, self.storage_type, self.latency, self.depth))
 
     def get_memory_space(self) -> int:
         """
         Get the memory space encoding for MLIR MemRefType.
 
-        The encoding combines impl and storage_type into a single integer:
-            memory_space = impl_code * 16 + storage_type_code
+        The encoding combines resource and storage_type into a single integer:
+            memory_space = resource_code * 16 + storage_type_code
 
         This allows the C++ emitter to decode both values and emit
         appropriate HLS pragmas.
@@ -297,14 +297,14 @@ class Memory:
         int
             Memory space encoding. 0 means AUTO (default, no pragma needed).
         """
-        impl_code = self.IMPL_TO_SPACE.get(self.impl, 0)
+        resource_code = self.RESOURCE_TO_SPACE.get(self.resource, 0)
         storage_code = self.STORAGE_TYPE_TO_CODE.get(self.storage_type, 0)
-        return impl_code * 16 + storage_code
+        return resource_code * 16 + storage_code
 
     @staticmethod
     def decode_memory_space(memory_space: int) -> tuple:
         """
-        Decode memory space integer back to (impl, storage_type).
+        Decode memory space integer back to (resource, storage_type).
 
         Parameters
         ----------
@@ -314,13 +314,13 @@ class Memory:
         Returns
         -------
         tuple
-            (impl: str, storage_type: str or None)
+            (resource: str, storage_type: str or None)
         """
-        impl_code = memory_space // 16
+        resource_code = memory_space // 16
         storage_code = memory_space % 16
-        impl = Memory.SPACE_TO_IMPL.get(impl_code, "AUTO")
+        resource = Memory.SPACE_TO_RESOURCE.get(resource_code, "AUTO")
         storage_type = Memory.CODE_TO_STORAGE_TYPE.get(storage_code, None)
-        return impl, storage_type
+        return resource, storage_type
 
 
 class DTensor:

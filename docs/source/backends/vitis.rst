@@ -197,12 +197,12 @@ Use the ``@`` operator to annotate function arguments or local variables with me
    from allo.ir.types import int32, float32
 
    # Define memory specifications
-   MemUram = Memory(impl="URAM")
-   MemBram = Memory(impl="BRAM", storage_type="RAM_2P")
+   MemUram = Memory(resource="URAM")
+   MemBram = Memory(resource="BRAM", storage_type="RAM_2P")
 
    def kernel(a: int32[32] @ MemUram, b: float32[16, 16] @ MemBram) -> int32[32]:
        # Local variable with memory annotation
-       buf: int32[32] @ Memory(impl="BRAM")
+       buf: int32[32] @ Memory(resource="BRAM")
        for i in range(32):
            buf[i] = a[i] * 2
        c: int32[32]
@@ -231,7 +231,7 @@ This generates HLS code with ``bind_storage`` pragmas:
 
 The ``Memory`` class accepts the following parameters:
 
-- **impl** (str): Memory implementation type
+- **resource** (str): Memory resource type
 
   - ``"BRAM"``: Block RAM - the most common on-chip memory
   - ``"URAM"``: Ultra RAM - larger capacity, available on UltraScale+ devices
@@ -260,7 +260,7 @@ The ``Memory`` class accepts the following parameters:
    .. code-block:: python
 
       # URAM is ideal for large arrays on UltraScale+ FPGAs
-      LargeBuffer = Memory(impl="URAM")
+      LargeBuffer = Memory(resource="URAM")
 
       def process(data: float32[1024, 1024] @ LargeBuffer):
           ...
@@ -270,7 +270,7 @@ The ``Memory`` class accepts the following parameters:
    .. code-block:: python
 
       # RAM_2P allows simultaneous read and write
-      DualPort = Memory(impl="BRAM", storage_type="RAM_2P")
+      DualPort = Memory(resource="BRAM", storage_type="RAM_2P")
 
       def pipeline(inp: int32[256] @ DualPort) -> int32[256]:
           ...
@@ -280,7 +280,7 @@ The ``Memory`` class accepts the following parameters:
    .. code-block:: python
 
       # LUTRAM is faster but uses more LUTs
-      FastBuffer = Memory(impl="LUTRAM")
+      FastBuffer = Memory(resource="LUTRAM")
 
       def compute(weights: int8[64] @ FastBuffer):
           ...
@@ -289,9 +289,9 @@ The ``Memory`` class accepts the following parameters:
 
    .. code-block:: python
 
-      InputMem = Memory(impl="BRAM", storage_type="RAM_1P")
-      WeightMem = Memory(impl="URAM")
-      OutputMem = Memory(impl="BRAM", storage_type="RAM_2P")
+      InputMem = Memory(resource="BRAM", storage_type="RAM_1P")
+      WeightMem = Memory(resource="URAM")
+      OutputMem = Memory(resource="BRAM", storage_type="RAM_2P")
 
       def neural_layer(
           inp: float32[128] @ InputMem,
@@ -306,7 +306,7 @@ The ``Memory`` class accepts the following parameters:
 - Use **BRAM with RAM_2P** when you need concurrent read/write access
 - Use **LUTRAM** for small lookup tables that require low latency
 - Use **ROM** types for constant data that never changes
-- Let the tool decide (``impl="AUTO"``) when you don't have specific requirements
+- Let the tool decide (``resource="AUTO"``) when you don't have specific requirements
 
 
 Device and Frequency Configuration
