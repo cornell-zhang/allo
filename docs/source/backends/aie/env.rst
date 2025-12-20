@@ -116,9 +116,6 @@ Next, enter Allo's root directory and install by running the following commands
 
 .. code-block:: bash
 
-   python3 -m pip install pybind11 nanobind
-   export PYBIND11_CMAKE_DIR="$(python3 -c 'import pybind11; print(pybind11.get_cmake_dir())')"
-   export NANOBIND_CMAKE_DIR="$(python3 -c 'import nanobind; print(nanobind.cmake_dir())')"
    python3 -m pip install -v -e .
 
 .. note::

@@ -42,8 +42,6 @@ jobs:
       run: |
         source activate allo
         export LLVM_BUILD_DIR=/root/llvm-project/build
-        export PYBIND11_CMAKE_DIR="$(python3 -c 'import pybind11; print(pybind11.get_cmake_dir())')"
-        export NANOBIND_CMAKE_DIR="$(python3 -c 'import nanobind; print(nanobind.cmake_dir())')"
         python3 -m pip install -v -e .
     - name: Build docs
       shell: bash

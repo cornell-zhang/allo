@@ -28,9 +28,6 @@ python3 -m pip install https://github.com/Xilinx/llvm-aie/releases/download/nigh
 Then, install Allo as usual:
 ```bash
 git clone https://github.com/cornell-zhang/allo.git && cd allo
-python3 -m pip install pybind11 nanobind
-export PYBIND11_CMAKE_DIR="$(python3 -c 'import pybind11; print(pybind11.get_cmake_dir())')"
-export NANOBIND_CMAKE_DIR="$(python3 -c 'import nanobind; print(nanobind.cmake_dir())')"
 python3 -m pip install -v -e .
 ```
 
@@ -80,9 +77,6 @@ Below are the exact commands to set up the environment:
    ```bash
    git clone https://github.com/cornell-zhang/allo.git
    cd allo
-   python3 -m pip install pybind11 nanobind
-   export PYBIND11_CMAKE_DIR="$(python3 -c 'import pybind11; print(pybind11.get_cmake_dir())')"
-   export NANOBIND_CMAKE_DIR="$(python3 -c 'import nanobind; print(nanobind.cmake_dir())')"
    python3 -m pip install -v -e .
    ```
 
