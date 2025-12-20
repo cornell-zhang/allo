@@ -293,7 +293,9 @@ public:
   bool visitOp(scf::ForOp op) { return emitter.emitScfFor(op), true; };
   bool visitOp(scf::IfOp op) { return emitter.emitScfIf(op), true; };
   bool visitOp(scf::WhileOp op) { return emitter.emitScfWhile(op), true; };
-  bool visitOp(scf::ConditionOp op) { return emitter.emitScfCondition(op), true; };
+  bool visitOp(scf::ConditionOp op) {
+    return emitter.emitScfCondition(op), true;
+  };
   bool visitOp(scf::ParallelOp op) { return true; };
   bool visitOp(scf::ReduceOp op) { return true; };
   bool visitOp(scf::ReduceReturnOp op) { return true; };
@@ -679,7 +681,8 @@ void ModuleEmitter::emitScfWhile(scf::WhileOp op) {
     }
   }
 
-  // Initialize loop-carried variables with initial values (operands to scf.while)
+  // Initialize loop-carried variables with initial values (operands to
+  // scf.while)
   unsigned operandIdx = 0;
   for (auto arg : op.getBeforeBody()->getArguments()) {
     if (operandIdx < op.getNumOperands()) {
@@ -728,8 +731,9 @@ void ModuleEmitter::emitScfCondition(scf::ConditionOp op) {
   // First, update the after region's arguments with the values from condition
   unsigned operandIdx = 0;
   // Note: scf.while has two regions - region 0 is 'before', region 1 is 'after'
-  auto afterArgs = op->getParentRegion()->getParentOp()
-                       ->getRegion(1)  // Get the 'after' region (index 1)
+  auto afterArgs = op->getParentRegion()
+                       ->getParentOp()
+                       ->getRegion(1) // Get the 'after' region (index 1)
                        .front()
                        .getArguments();
   for (auto arg : afterArgs) {
@@ -2238,8 +2242,7 @@ void ModuleEmitter::emitLoopDirectives(Operation *op) {
     indent();
     auto val = llvm::dyn_cast<IntegerAttr>(factor).getValue();
     if (val == 0)
-      os << "#pragma HLS unroll"
-         << "\n";
+      os << "#pragma HLS unroll" << "\n";
     else
       os << "#pragma HLS unroll factor=" << val << "\n";
     addIndent();
