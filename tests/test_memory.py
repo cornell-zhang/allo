@@ -50,13 +50,13 @@ class TestMemoryClass:
         assert mem.depth == 1024
 
     def test_memory_case_insensitive(self):
-        """Test that impl and storage_type are case insensitive."""
+        """Test that resource and storage_type are case insensitive."""
         mem = Memory(resource="bram", storage_type="ram_2p")
         assert mem.resource == "BRAM"
         assert mem.storage_type == "RAM_2P"
 
-    def test_memory_invalid_impl(self):
-        """Test that invalid impl raises ValueError."""
+    def test_memory_invalid_resource(self):
+        """Test that invalid resource raises ValueError."""
         with pytest.raises(ValueError, match="Invalid resource"):
             Memory(resource="INVALID")
 
@@ -147,7 +147,11 @@ class TestMemoryAnnotation:
             return b
 
         s = allo.customize(kernel)
-        print(s.module)
+        ir_str = str(s.module)
+        print(ir_str)
+        # Verify MLIR memory space attribute for URAM (2*16 = 32)
+        assert "memref<32xi32, 32 : i32>" in ir_str, "URAM memory space (32) not found"
+
         mod = s.build()
         np_a = np.arange(32, dtype=np.int32)
         np_b = mod(np_a)
@@ -161,7 +165,13 @@ class TestMemoryAnnotation:
                 a[i, j] = a[i, j] * 2.0
 
         s = allo.customize(kernel)
-        print(s.module)
+        ir_str = str(s.module)
+        print(ir_str)
+        # Verify MLIR memory space attribute for BRAM (1*16 = 16)
+        assert (
+            "memref<16x16xf32, 16 : i32>" in ir_str
+        ), "BRAM memory space (16) not found"
+
         mod = s.build()
         np_a = np.random.rand(16, 16).astype(np.float32)
         expected = np_a * 2.0
@@ -180,13 +190,26 @@ class TestMemoryAnnotation:
                 c[i] = a[i] + b[i]
 
         s = allo.customize(kernel)
-        print(s.module)
-        mod = s.build()
-        np_a = np.arange(32, dtype=np.int32)
-        np_b = np.arange(32, dtype=np.int32) * 2
-        np_c = np.zeros(32, dtype=np.int32)
-        mod(np_a, np_b, np_c)
-        np.testing.assert_array_equal(np_c, np_a + np_b)
+        ir_str = str(s.module)
+        print(ir_str)
+        # Verify MLIR memory space attributes are set correctly
+        # BRAM = 1 -> memory_space = 1*16 = 16
+        # URAM = 2 -> memory_space = 2*16 = 32
+        # LUTRAM = 3 -> memory_space = 3*16 = 48
+        assert "memref<32xi32, 16 : i32>" in ir_str, "BRAM memory space (16) not found"
+        assert "memref<32xi32, 32 : i32>" in ir_str, "URAM memory space (32) not found"
+        assert (
+            "memref<32xi32, 48 : i32>" in ir_str
+        ), "LUTRAM memory space (48) not found"
+
+        mod = s.build(target="vhls")
+        hls_code = mod.hls_code
+        print(hls_code)
+        # Verify HLS bind_storage pragmas are generated
+        assert "#pragma HLS bind_storage" in hls_code
+        assert "impl=bram" in hls_code
+        assert "impl=uram" in hls_code
+        assert "impl=lutram" in hls_code
 
     def test_kernel_memory_with_storage_type(self):
         """Test kernel with Memory including storage_type."""
@@ -200,7 +223,13 @@ class TestMemoryAnnotation:
             return b
 
         s = allo.customize(kernel)
-        print(s.module)
+        ir_str = str(s.module)
+        print(ir_str)
+        # Verify MLIR memory space attribute for BRAM + RAM_2P (1*16 + 2 = 18)
+        assert (
+            "memref<64xi32, 18 : i32>" in ir_str
+        ), "BRAM+RAM_2P memory space (18) not found"
+
         mod = s.build()
         np_a = np.arange(64, dtype=np.int32)
         np_b = mod(np_a)
@@ -208,14 +237,14 @@ class TestMemoryAnnotation:
 
 
 class TestMemoryValid:
-    """Test valid Memory implementation options."""
+    """Test valid Memory resource options."""
 
-    def test_all_valid_impl_types(self):
-        """Test all valid implementation types."""
-        valid_impls = ["BRAM", "URAM", "LUTRAM", "SRL", "AUTO"]
-        for impl in valid_impls:
-            mem = Memory(resource=impl)
-            assert mem.resource == impl
+    def test_all_valid_resource_types(self):
+        """Test all valid resource types."""
+        valid_resources = ["BRAM", "URAM", "LUTRAM", "SRL", "AUTO"]
+        for resource in valid_resources:
+            mem = Memory(resource=resource)
+            assert mem.resource == resource
 
     def test_all_valid_storage_types(self):
         """Test all valid storage types."""

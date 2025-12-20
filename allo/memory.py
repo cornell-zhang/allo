@@ -347,7 +347,7 @@ class DTensor:
             # For backward compatibility, treat as layout if it has placement attr
             if hasattr(spec, "placement"):
                 self.layout = spec
-            elif hasattr(spec, "impl"):
+            elif hasattr(spec, "resource"):
                 self.memory = spec
 
         if self.layout is not None and mapping is not None:
