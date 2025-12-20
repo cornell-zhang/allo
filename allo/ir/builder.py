@@ -391,6 +391,7 @@ class ASTTransformer(ASTBuilder):
         iter_args = node.iter.args
         if attr in {"grid", "reduction"}:
             for_loops = []
+            # pylint: disable=redefined-variable-type
             if stage_name is None:
                 stage_name = "S_" + "_".join(names)
 
