@@ -5,11 +5,11 @@
 import numpy as np
 
 
-def grid(*args, name=None):
+def grid(*args, name=None, pipeline=False, unroll=False):
     return np.ndindex(*args)
 
 
-def reduction(*args, name=None):
+def reduction(*args, name=None, pipeline=False, unroll=False):
     return np.ndindex(*args)
 
 

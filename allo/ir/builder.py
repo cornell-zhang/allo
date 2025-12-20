@@ -56,7 +56,7 @@ from .utils import (
     MockConstant,
     MockBuffer,
     get_extra_type_hints,
-    get_kwarg,
+    get_kwarg_value,
     get_func_id_from_param_types,
     resolve_generic_types,
 )
@@ -381,17 +381,17 @@ class ASTTransformer(ASTBuilder):
         # avoid name conflicts
         names += [str(ctx.loop_band_count)]
 
-        # get stage name
-        if len(node.iter.keywords) == 0:
-            stage_name = None
-        else:
-            stage_name = get_kwarg(node.iter.keywords, "name").value
+        # get stage name and loop annotation keywords
+        stage_name = get_kwarg_value(node.iter.keywords, "name", default=None)
+        pipeline_val = get_kwarg_value(node.iter.keywords, "pipeline", default=False)
+        unroll_val = get_kwarg_value(node.iter.keywords, "unroll", default=False)
 
         # build for loops
         is_affine = True
         iter_args = node.iter.args
         if attr in {"grid", "reduction"}:
             for_loops = []
+            # pylint: disable=redefined-variable-type
             if stage_name is None:
                 stage_name = "S_" + "_".join(names)
 
@@ -436,6 +436,38 @@ class ASTTransformer(ASTBuilder):
             ):
                 for loop in for_loops:
                     loop.attributes["reduction"] = UnitAttr.get()
+
+            # attach pipeline annotation
+            if pipeline_val:
+                i32 = IntegerType.get_unsigned(32)
+                if isinstance(pipeline_val, (list, tuple)):
+                    # List specifies which loops to pipeline
+                    for idx, val in enumerate(pipeline_val):
+                        if val and idx < len(for_loops):
+                            ii = 1 if isinstance(val, bool) else val
+                            for_loops[idx].attributes["pipeline_ii"] = IntegerAttr.get(
+                                i32, ii
+                            )
+                else:
+                    # Single value applies to innermost loop
+                    ii = 1 if isinstance(pipeline_val, bool) else pipeline_val
+                    for_loops[-1].attributes["pipeline_ii"] = IntegerAttr.get(i32, ii)
+
+            # attach unroll annotation
+            if unroll_val:
+                i32 = IntegerType.get_unsigned(32)
+                if isinstance(unroll_val, (list, tuple)):
+                    # List specifies which loops to unroll
+                    for idx, val in enumerate(unroll_val):
+                        if val and idx < len(for_loops):
+                            factor = 0 if isinstance(val, bool) else val
+                            for_loops[idx].attributes["unroll"] = IntegerAttr.get(
+                                i32, factor
+                            )
+                else:
+                    # Single value applies to innermost loop
+                    factor = 0 if isinstance(unroll_val, bool) else unroll_val
+                    for_loops[-1].attributes["unroll"] = IntegerAttr.get(i32, factor)
 
         for_loops = None
         # Not sure why the for loops will not be collected if we do not call gc.collect()
