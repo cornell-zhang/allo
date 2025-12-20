@@ -702,11 +702,11 @@ void ModuleEmitter::emitScfWhile(scf::WhileOp op) {
 
   // Emit before block (condition check and preparation)
   // This contains computations and ends with scf.condition
-  emitBlock(*op.getBeforeBody(), /*emitBraces=*/false);
+  emitBlock(*op.getBeforeBody());
 
   // After the scf.condition updates loop vars and checks condition,
   // emit the after block (loop body)
-  emitBlock(*op.getAfterBody(), /*emitBraces=*/false);
+  emitBlock(*op.getAfterBody());
 
   reduceIndent();
   indent();
