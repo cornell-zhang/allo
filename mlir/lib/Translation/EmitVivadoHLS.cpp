@@ -852,7 +852,7 @@ void ModuleEmitter::emitScfIf(scf::IfOp op) {
 }
 
 void ModuleEmitter::emitScfWhile(scf::WhileOp op) {
-  // Declare all loop-carried values
+  // Declare all loop-carried values (results of while loop)
   for (auto result : op.getResults()) {
     if (!isDeclared(result)) {
       indent();
@@ -864,7 +864,7 @@ void ModuleEmitter::emitScfWhile(scf::WhileOp op) {
     }
   }
 
-  // Initialize loop-carried variables with initial values (operands)
+  // Initialize loop-carried variables with initial values (operands to scf.while)
   unsigned operandIdx = 0;
   for (auto arg : op.getBeforeBody()->getArguments()) {
     if (operandIdx < op.getNumOperands()) {
@@ -882,11 +882,12 @@ void ModuleEmitter::emitScfWhile(scf::WhileOp op) {
   emitInfoAndNewLine(op);
   addIndent();
 
-  // Emit before block (condition check)
+  // Emit before block (condition check and preparation)
+  // This contains computations and ends with scf.condition
   emitBlock(*op.getBeforeBody(), /*emitBraces=*/false);
 
-  // Emit after block (loop body) if condition is true
-  // The emitScfCondition will handle the break statement
+  // After the scf.condition updates loop vars and checks condition,
+  // emit the after block (loop body)
   emitBlock(*op.getAfterBody(), /*emitBraces=*/false);
 
   reduceIndent();
@@ -894,6 +895,7 @@ void ModuleEmitter::emitScfWhile(scf::WhileOp op) {
   os << "}\n";
 
   // Copy final values to result variables
+  // The final values are the before region's arguments after loop exit
   unsigned resultIdx = 0;
   for (auto result : op.getResults()) {
     if (resultIdx < op.getBeforeBody()->getNumArguments()) {
@@ -907,12 +909,15 @@ void ModuleEmitter::emitScfWhile(scf::WhileOp op) {
 }
 
 void ModuleEmitter::emitScfCondition(scf::ConditionOp op) {
-  // Handle loop-carried values update
+  // The scf.condition op passes values to the after region.
+  // First, update the after region's arguments with the values from condition
   unsigned operandIdx = 0;
-  for (auto arg : op->getParentRegion()->getParentOp()
-                      ->getRegion(1)
-                      .front()
-                      .getArguments()) {
+  auto afterArgs = op->getParentRegion()->getParentOp()
+                       ->getRegion(1)
+                       .front()
+                       .getArguments();
+  
+  for (auto arg : afterArgs) {
     if (operandIdx < op.getNumOperands()) {
       indent();
       emitValue(arg);
@@ -922,7 +927,7 @@ void ModuleEmitter::emitScfCondition(scf::ConditionOp op) {
     }
   }
 
-  // Emit the break condition
+  // Emit the break condition - if condition is false, break
   indent();
   os << "if (!(";
   emitValue(op.getCondition());
@@ -933,8 +938,7 @@ void ModuleEmitter::emitScfYield(scf::YieldOp op) {
   if (op.getNumOperands() == 0)
     return;
 
-  // For now, only and scf::If operations will use scf::Yield to return
-  // generated values.
+  // scf::Yield can be used in scf::If or scf::While operations
   if (auto parentOp = dyn_cast<scf::IfOp>(op->getParentOp())) {
     unsigned resultIdx = 0;
     for (auto result : parentOp.getResults()) {
@@ -946,6 +950,19 @@ void ModuleEmitter::emitScfYield(scf::YieldOp op) {
       os << ";";
       emitInfoAndNewLine(op);
       emitNestedLoopTail(rank);
+    }
+  } else if (auto whileOp = dyn_cast<scf::WhileOp>(op->getParentOp())) {
+    // In scf.while, the yield is in the after region and passes values
+    // back to the before region for the next iteration
+    unsigned operandIdx = 0;
+    for (auto arg : whileOp.getBeforeBody()->getArguments()) {
+      if (operandIdx < op.getNumOperands()) {
+        indent();
+        emitValue(arg);
+        os << " = ";
+        emitValue(op.getOperand(operandIdx++));
+        os << ";\n";
+      }
     }
   }
 }
