@@ -1158,9 +1158,11 @@ class ASTTransformer(ASTBuilder):
         # Compute RHS
         rhs = build_stmt(ctx, node.value)
         # Load LHS
-        node.target.ctx = ast.Load()
-        lhs = build_stmt(ctx, node.target)
-        node.target.ctx = ast.Store()
+        # Create a copy to avoid mutating the original AST node
+        # (important for meta_for loops which reuse the same AST)
+        load_target = copy.copy(node.target)
+        load_target.ctx = ast.Load()
+        lhs = build_stmt(ctx, load_target)
         # Cast lhs to the operation type
         lhs = ASTTransformer.build_cast_op(
             ctx, lhs, node.target.dtype, node.dtype, node.target.shape
@@ -1176,7 +1178,10 @@ class ASTTransformer(ASTBuilder):
             ctx, res, node.dtype, node.target.dtype, node.shape
         )
         # Store LHS
-        store_op = build_stmt(ctx, node.target, val=res)
+        # Create a copy to avoid mutating the original AST node
+        store_target = copy.copy(node.target)
+        store_target.ctx = ast.Store()
+        store_op = build_stmt(ctx, store_target, val=res)
         return store_op
 
     @staticmethod
@@ -1655,8 +1660,11 @@ class ASTTransformer(ASTBuilder):
                     ip=ctx.get_ip(),
                 )
                 # write the updated integer back to the scalar
-                node.value.ctx = ast.Store()
-                store_op = build_stmt(ctx, node.value, val=set_bit_op)
+                # Create a copy to avoid mutating the original AST node
+                # (important for meta_for loops which reuse the same AST)
+                store_node = copy.copy(node.value)
+                store_node.ctx = ast.Store()
+                store_op = build_stmt(ctx, store_node, val=set_bit_op)
                 return store_op
 
         if isinstance(node.slice, ast.Slice):
@@ -1700,8 +1708,11 @@ class ASTTransformer(ASTBuilder):
                     ip=ctx.get_ip(),
                 )
                 # write the updated integer back to the scalar
-                node.value.ctx = ast.Store()
-                store_op = build_stmt(ctx, node.value, val=set_slice_op)
+                # Create a copy to avoid mutating the original AST node
+                # (important for meta_for loops which reuse the same AST)
+                store_node = copy.copy(node.value)
+                store_node.ctx = ast.Store()
+                store_op = build_stmt(ctx, store_node, val=set_slice_op)
                 return store_op
 
     @staticmethod
