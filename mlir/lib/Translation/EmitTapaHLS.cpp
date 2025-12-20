@@ -772,11 +772,15 @@ void ModuleEmitter::emitScfYield(scf::YieldOp op) {
     unsigned operandIdx = 0;
     for (auto arg : whileOp.getBeforeBody()->getArguments()) {
       if (operandIdx < op.getNumOperands()) {
+        // Handle array and scalar types
+        unsigned rank = emitNestedLoopHead(arg);
         indent();
-        emitValue(arg);
+        emitValue(arg, rank);
         os << " = ";
-        emitValue(op.getOperand(operandIdx++));
-        os << ";\n";
+        emitValue(op.getOperand(operandIdx++), rank);
+        os << ";";
+        emitInfoAndNewLine(op);
+        emitNestedLoopTail(rank);
       }
     }
   }
