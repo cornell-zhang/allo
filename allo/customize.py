@@ -1161,6 +1161,52 @@ class Schedule:
                 sch = KERNEL2SCHEDULE[sch](schedule)
             if not isinstance(sch, Schedule):
                 raise TypeError("The first argument must be a Schedule object")
+
+        if hasattr(sch, "custom_globals"):
+            if not hasattr(self, "_stateful_seen"):
+                self._stateful_seen = {}
+
+            for var_name, (global_name, memref_type) in sch.custom_globals.items():
+                new_name = (
+                    f"{global_name}_{id}"
+                    if id
+                    else f"{global_name}_inst{len(self._stateful_seen.get(global_name, []))}"
+                )
+
+                original_global = None
+                for op in self.module.body.operations:
+                    if (
+                        isinstance(op, memref_d.GlobalOp)
+                        and op.attributes["sym_name"].value == global_name
+                    ):
+                        original_global = op
+                        break
+
+                if original_global is None:
+                    raise RuntimeError(f"Stateful global {global_name} not found")
+
+                is_first = global_name not in self._stateful_seen
+                if is_first:
+                    original_global.attributes["sym_name"] = StringAttr.get(new_name)
+                    self._stateful_seen[global_name] = [new_name]
+                else:
+                    cloned = original_global.operation.clone(
+                        InsertionPoint(original_global)
+                    )
+                    cloned.attributes["sym_name"] = StringAttr.get(new_name)
+                    self._stateful_seen[global_name].append(new_name)
+
+                # Update references in composed function
+                func_name = f"{sch.top_func_name}_{id}" if id else sch.top_func_name
+                func = self._find_function(func_name)
+                for op in func.entry_block.operations:
+                    if isinstance(op, memref_d.GetGlobalOp):
+                        if (
+                            FlatSymbolRefAttr(op.attributes["name"]).value
+                            == global_name
+                        ):
+                            op.attributes["name"] = FlatSymbolRefAttr.get(new_name)
+
             for primitive in sch.primitive_sequences:
                 args, kwargs = primitive[1:]
                 # Avoid changing the original schedule
@@ -1325,6 +1371,7 @@ def customize(
         inst_list=instantiate,
         func_instances=func_instances,
     )
+    sch.custom_globals = getattr(ctx, "custom_globals", {})
     # Attach buffers to schedule:
     # The reason why we do not attach buffers to function is that
     # we may have multiple schedules referring to the same function,
