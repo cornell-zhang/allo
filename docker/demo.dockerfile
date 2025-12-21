@@ -47,7 +47,7 @@ RUN cd /root/ && git clone https://github.com/llvm/llvm-project.git
 RUN cd /root/llvm-project && \
     git checkout 1335a05 && \
     python3 -m pip install --upgrade pip && \
-    python3 -m pip install numpy PyYAML dataclasses pybind11>=2.9.0  && \
+    python3 -m pip install numpy PyYAML dataclasses nanobind>=2.9  && \
     mkdir build && cd build && \
     cmake -G Ninja ../llvm -DLLVM_ENABLE_PROJECTS="clang;mlir;openmp" \
         -DLLVM_BUILD_EXAMPLES=ON -DLLVM_TARGETS_TO_BUILD="X86" \
