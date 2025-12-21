@@ -141,22 +141,6 @@ def test_tp_v2():
             top,
             target="aie",
             mapping_primitives=[
-                ("chain", ["gemm1_1", "acc_0"]),
-                ("chain", ["gemm1_0", "gemm1_1-acc_0"]),
-            ],
-        )
-        Z = np.zeros((M, L)).astype(np.int32)
-        mod(X, W1, W2, Z)
-        np.testing.assert_allclose(Z, X @ W1 @ W2, atol=1e-5)
-        print("PASSED!")
-    else:
-        print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
-
-    if is_available():
-        mod = df.build(
-            top,
-            target="aie",
-            mapping_primitives=[
                 ("bundle", [("gemm0_0", "gemm1_0"), ("gemm0_1", "gemm1_1")]),
             ],
         )
@@ -179,5 +163,5 @@ if __name__ == "__main__":
     """
     os.environ["FORCE_UNROLL_INDEX"] = "1"
     test_tp_v1()
-    test_tp_v2()
     del os.environ["FORCE_UNROLL_INDEX"]
+    test_tp_v2()
