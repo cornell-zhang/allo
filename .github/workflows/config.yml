@@ -49,6 +49,7 @@ jobs:
         export LD_LIBRARY_PATH=${MLIR_AIE_INSTALL_DIR}/lib:${LD_LIBRARY_PATH}
         export INSTALL_PY_MAIN="$MLIR_AIE_INSTALL_DIR/python/aie/compiler/aiecc/main.py"
         cp /mlir-aie/python/compiler/aiecc/main.py "$INSTALL_PY_MAIN"
+        export OPT_BASE=/host-opt
         source /host-opt/common/setupVitis.sh
         source /host-opt/common/setupXRT.sh
         export MLIR_AIE_EXTERNAL_KERNEL_DIR=/mlir-aie/aie_kernels/
