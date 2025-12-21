@@ -16,8 +16,7 @@ jobs:
     runs-on: [self-hosted, aie, xdna1]
     container:
       image: chhzh123/allo:latest
-      options: > 
-        -v /opt:/host-opt:ro
+      options: "-v /opt:/host-opt:ro"
     steps:
     # https://github.com/actions/checkout/issues/363#issuecomment-1915075699
     - name: Install git in container
