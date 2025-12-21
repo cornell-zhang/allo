@@ -13,7 +13,7 @@ on:
 jobs:
   build:
     # This job runs on Linux
-    runs-on: self-hosted
+    runs-on: ace2
     container:
       image: chhzh123/allo:latest
 
