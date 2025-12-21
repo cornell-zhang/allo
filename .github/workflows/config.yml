@@ -17,7 +17,7 @@ jobs:
     container:
       image: chhzh123/allo:latest
       options: > 
-        -v /opt/:/host-opt/:ro
+        -v /opt:/host-opt:ro
     steps:
     # https://github.com/actions/checkout/issues/363#issuecomment-1915075699
     - name: Install git in container
