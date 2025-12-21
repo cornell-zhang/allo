@@ -42,9 +42,9 @@ jobs:
         python3 -m pip install -r /mlir-aie/python/requirements.txt
         HOST_MLIR_PYTHON_PACKAGE_PREFIX=aie python3 -m pip install -r /mlir-aie/python/requirements_extras.txt
         python3 -m pip install -r /mlir-aie/python/requirements_ml.txt
+        source /mlir-aie/utils/env_setup.sh
         export INSTALL_PY_MAIN="$MLIR_AIE_INSTALL_DIR/python/aie/compiler/aiecc/main.py"
         cp /mlir-aie/python/compiler/aiecc/main.py "$INSTALL_PY_MAIN"
-        source /mlir-aie/utils/env_setup.sh
         source /host-opt/common/setupVitis.sh
         source /host-opt/common/setupXRT.sh
         export MLIR_AIE_EXTERNAL_KERNEL_DIR=/mlir-aie/aie_kernels/
