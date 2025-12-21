@@ -30,6 +30,7 @@ from .._mlir.ir import (
     AffineMap,
     AffineMapAttr,
     IntegerSet,
+    IntegerSetAttr,
     FlatSymbolRefAttr,
     DenseElementsAttr,
     TypeAttr,
@@ -2020,7 +2021,7 @@ class ASTTransformer(ASTBuilder):
             )
             eq_flags.append(True)
             if_cond_set = IntegerSet.get(1, 0, exprs, eq_flags)
-            attr = allo_d.IntegerSetAttr.get(if_cond_set)
+            attr = IntegerSetAttr.get(if_cond_set)
             return attr, ctx.get_symbol(node.left.id)
         else:
             lhs = build_stmt(ctx, node.left)

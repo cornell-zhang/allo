@@ -14,49 +14,11 @@
 #include "allo/Bindings/AlloModule.h"
 
 namespace nb = nanobind;
-using namespace mlir::python::nanobind_adaptors;
-
 using namespace mlir;
 using namespace mlir::python;
-
-namespace nanobind {
-namespace detail {
-
-/// Casts object <-> MlirIntegerSet.
-template <> struct type_caster<MlirIntegerSet> {
-  NB_TYPE_CASTER(MlirIntegerSet, const_name("ir.IntegerSet"));
-  bool from_python(handle src, uint8_t flags, cleanup_list *cleanup) noexcept {
-    if (auto capsule = mlirApiObjectToCapsule(src)) {
-      value = mlirPythonCapsuleToIntegerSet(capsule->ptr());
-      return !mlirIntegerSetIsNull(value);
-    }
-    return false;
-  }
-  static handle from_cpp(MlirIntegerSet v, rv_policy,
-                         cleanup_list *cleanup) noexcept {
-    nanobind::object capsule =
-        nanobind::steal<nanobind::object>(mlirPythonIntegerSetToCapsule(v));
-    return nanobind::module_::import_(MAKE_MLIR_PYTHON_QUALNAME("ir"))
-        .attr("IntegerSet")
-        .attr(MLIR_PYTHON_CAPI_FACTORY_ATTR)(capsule)
-        .release();
-  }
-};
-
-} // namespace detail
-} // namespace nanobind
+using namespace mlir::python::nanobind_adaptors;
 
 void mlir::python::populateAlloAttributes(nb::module_ &m) {
-  mlir_attribute_subclass(m, "IntegerSetAttr", mlirAttributeIsAIntegerSet)
-      .def_classmethod(
-          "get",
-          [](nb::object cls, MlirIntegerSet IntegerSet, MlirContext ctx) {
-            return cls(mlirIntegerSetAttrGet(IntegerSet));
-          },
-          nb::arg("cls"), nb::arg("integer_set"),
-          nb::arg("context") = nb::none(),
-          "Gets an attribute wrapping an IntegerSet.");
-
   mlir_attribute_subclass(m, "PartitionKindEnum", mlirAttributeIsAPartitionKind)
       .def_classmethod(
           "get",
