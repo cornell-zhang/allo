@@ -15,8 +15,8 @@ jobs:
     # This job runs on Linux
     runs-on: [self-hosted, aie, xdna1]
     container:
-      image: chhzh123/allo:latest
-      options: "-v /opt:/opt:ro -v /home/sf668/usr/mlir-aie:/mlir-aie:ro -v /usr/lib/x86_64-linux-gnu/libboost_filesystem.so.1.74.0:/usr/lib/x86_64-linux-gnu/libboost_filesystem.so.1.74.0:ro"
+      image: shihanfang/allo-ci:test
+      options: "-v /opt:/opt:ro -v /home/sf668/usr/mlir-aie:/mlir-aie:ro"
     steps:
     # https://github.com/actions/checkout/issues/363#issuecomment-1915075699
     - name: Install git in container
