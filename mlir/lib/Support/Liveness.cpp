@@ -14,6 +14,7 @@ namespace allo {
 // ! These functions may fail if multiple first/last use are in branches
 Operation *getFirstUse(Value value, Operation &func) {
   func::FuncOp funcOp = llvm::cast<mlir::func::FuncOp>(func);
+  (void)funcOp; // Suppress unused variable warning
   DominanceInfo domInfo(&func);
   OpOperand *firstUse = nullptr;
   for (auto &use : value.getUses()) {
@@ -31,6 +32,7 @@ Operation *getFirstUse(Value value, Operation &func) {
 
 Operation *getLastUse(Value value, Operation &func) {
   func::FuncOp funcOp = llvm::cast<mlir::func::FuncOp>(func);
+  (void)funcOp; // Suppress unused variable warning
   PostDominanceInfo postDom(&func);
   OpOperand *lastUse = nullptr;
   for (auto &use : value.getUses()) {
@@ -48,6 +50,7 @@ Operation *getLastUse(Value value, Operation &func) {
 
 Operation *getNextUse(Value value, Operation *curUse, Operation &func) {
   func::FuncOp funcOp = llvm::cast<mlir::func::FuncOp>(func);
+  (void)funcOp; // Suppress unused variable warning
   DominanceInfo domInfo(&func);
   OpOperand *nextUse = nullptr;
   for (auto &use : value.getUses()) {

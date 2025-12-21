@@ -81,7 +81,8 @@ bool applyLegalizeCast(ModuleOp &module) {
 
 namespace {
 struct AlloLegalizeCastTransformation
-    : public LegalizeCastBase<AlloLegalizeCastTransformation> {
+    : public mlir::allo::impl::LegalizeCastBase<
+          AlloLegalizeCastTransformation> {
   void runOnOperation() override {
     auto mod = getOperation();
     if (!applyLegalizeCast(mod)) {

@@ -6,7 +6,7 @@
 //===----------------------------------------------------------------------===//
 // Lower TransformLayout Ops
 //===----------------------------------------------------------------------===//
-#include "allo/Conversion/Passes.h"
+#include "PassDetail.h"
 #include "allo/Dialect/AlloDialect.h"
 #include "allo/Dialect/AlloOps.h"
 #include "allo/Dialect/AlloTypes.h"
@@ -18,6 +18,13 @@
 
 using namespace mlir;
 using namespace allo;
+
+namespace mlir {
+namespace allo {
+#define GEN_PASS_DEF_LOWERTRANSFORMLAYOUTOPS
+#include "allo/Conversion/Passes.h.inc"
+} // namespace allo
+} // namespace mlir
 
 namespace mlir {
 namespace allo {
@@ -34,7 +41,7 @@ bool applyLowerTransformLayoutOps(ModuleOp &mod) {
     for (auto op : setTransformLayoutOps) {
       Value input = op->getOperands()[0];
       Value output = op->getResults()[0];
-      MemRefType memRefType = output.getType().dyn_cast<MemRefType>();
+      MemRefType memRefType = llvm::dyn_cast<MemRefType>(output.getType());
       auto result_shape = memRefType.getShape();
       auto offsets = op.getOffsets();
       auto sizes = op.getSizes();
@@ -123,7 +130,7 @@ bool applyLowerTransformLayoutOps(ModuleOp &mod) {
 
 namespace {
 struct AlloLowerTransformLayoutOpsTransformation
-    : public LowerTransformLayoutOpsBase<
+    : public mlir::allo::impl::LowerTransformLayoutOpsBase<
           AlloLowerTransformLayoutOpsTransformation> {
   void runOnOperation() override {
     auto mod = getOperation();

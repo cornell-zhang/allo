@@ -73,7 +73,7 @@ Below are the exact commands to set up the environment:
    ```
 
 6. Clone the allo repository and install.
-   - You may want to set up environment variables to use a custom CMake and LLVM build. For example, `export PATH=/opt/cmake-3.31.5-linux-x86_64/bin:/opt/llvm-project-19.x/build/bin:$PATH` and `export LLVM_BUILD_DIR=/opt/llvm-project-19.x/build`.
+   - You may want to set up environment variables to use a custom CMake and LLVM build. For example, `export PATH=/opt/cmake-3.31.5-linux-x86_64/bin:/opt/llvm-project/build/bin:$PATH` and `export LLVM_BUILD_DIR=/opt/llvm-project/build`.
    ```bash
    git clone https://github.com/cornell-zhang/allo.git
    cd allo

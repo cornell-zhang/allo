@@ -373,5 +373,143 @@ def test_getloops_scf():
     s2.get_loops(s2.top_func_name)["scf_out"]["k"]
 
 
+def test_inline_pipeline():
+    """Test inline pipeline annotation in allo.grid()"""
+
+    def kernel(A: int32[10, 20], B: int32[10, 20]) -> int32[10, 20]:
+        C: int32[10, 20] = 0
+        for i, j in allo.grid(10, 20, pipeline=True):
+            C[i, j] = A[i, j] + B[i, j]
+        return C
+
+    s = allo.customize(kernel)
+    ir = str(s.module)
+    # pipeline=True should annotate innermost loop with pipeline_ii=1
+    assert "pipeline_ii = 1" in ir
+
+
+def test_inline_pipeline_with_ii():
+    """Test inline pipeline annotation with custom II"""
+
+    def kernel(A: int32[10, 20], B: int32[10, 20]) -> int32[10, 20]:
+        C: int32[10, 20] = 0
+        for i, j in allo.grid(10, 20, pipeline=4):
+            C[i, j] = A[i, j] + B[i, j]
+        return C
+
+    s = allo.customize(kernel)
+    ir = str(s.module)
+    assert "pipeline_ii = 4" in ir
+
+
+def test_inline_unroll():
+    """Test inline unroll annotation in allo.grid()"""
+
+    def kernel(A: int32[10, 20], B: int32[10, 20]) -> int32[10, 20]:
+        C: int32[10, 20] = 0
+        for i, j in allo.grid(10, 20, unroll=True):
+            C[i, j] = A[i, j] + B[i, j]
+        return C
+
+    s = allo.customize(kernel)
+    ir = str(s.module)
+    # unroll=True should annotate innermost loop with unroll=0 (fully unroll)
+    assert "unroll = 0" in ir
+
+
+def test_inline_unroll_with_factor():
+    """Test inline unroll annotation with custom factor"""
+
+    def kernel(A: int32[10, 20], B: int32[10, 20]) -> int32[10, 20]:
+        C: int32[10, 20] = 0
+        for i, j in allo.grid(10, 20, unroll=4):
+            C[i, j] = A[i, j] + B[i, j]
+        return C
+
+    s = allo.customize(kernel)
+    ir = str(s.module)
+    assert "unroll = 4" in ir
+
+
+def test_inline_pipeline_list():
+    """Test inline pipeline annotation with list for loop nest"""
+
+    def kernel(A: int32[10, 20, 30]) -> int32[10, 20, 30]:
+        B: int32[10, 20, 30] = 0
+        for i, j, k in allo.grid(10, 20, 30, pipeline=[False, True, False]):
+            B[i, j, k] = A[i, j, k] + 1
+        return B
+
+    s = allo.customize(kernel)
+    ir = str(s.module)
+    # Only the 'j' loop (index 1) should have pipeline_ii
+    assert 'loop_name = "j", pipeline_ii' in ir
+    # 'i' and 'k' loops should NOT have pipeline_ii
+    assert 'loop_name = "k"}' in ir  # k has no pipeline
+
+
+def test_inline_pipeline_list_with_ii():
+    """Test inline pipeline annotation with list of II values"""
+
+    def kernel(A: int32[10, 20, 30]) -> int32[10, 20, 30]:
+        B: int32[10, 20, 30] = 0
+        for i, j, k in allo.grid(10, 20, 30, pipeline=[2, 0, 4]):
+            B[i, j, k] = A[i, j, k] + 1
+        return B
+
+    s = allo.customize(kernel)
+    ir = str(s.module)
+    assert "pipeline_ii = 2" in ir  # i loop
+    assert "pipeline_ii = 4" in ir  # k loop
+
+
+def test_inline_unroll_list():
+    """Test inline unroll annotation with list for loop nest"""
+
+    def kernel(A: int32[10, 20, 30]) -> int32[10, 20, 30]:
+        B: int32[10, 20, 30] = 0
+        for i, j, k in allo.grid(10, 20, 30, unroll=[True, False, True]):
+            B[i, j, k] = A[i, j, k] + 1
+        return B
+
+    s = allo.customize(kernel)
+    ir = str(s.module)
+    # i and k loops should have unroll = 0 (fully unroll)
+    assert 'loop_name = "i", op_name = "S_i_j_k_0", unroll = 0' in ir
+    assert 'loop_name = "k", unroll = 0' in ir
+
+
+def test_inline_unroll_list_with_factor():
+    """Test inline unroll annotation with list of factor values"""
+
+    def kernel(A: int32[10, 20, 30]) -> int32[10, 20, 30]:
+        B: int32[10, 20, 30] = 0
+        for i, j, k in allo.grid(10, 20, 30, unroll=[0, 4, 2]):
+            B[i, j, k] = A[i, j, k] + 1
+        return B
+
+    s = allo.customize(kernel)
+    ir = str(s.module)
+    assert "unroll = 4" in ir  # j loop
+    assert "unroll = 2" in ir  # k loop
+
+
+def test_inline_combined_annotations():
+    """Test combined inline pipeline and unroll annotations"""
+
+    def kernel(A: int32[10, 20, 30]) -> int32[10, 20, 30]:
+        B: int32[10, 20, 30] = 0
+        for i, j, k in allo.grid(
+            10, 20, 30, pipeline=[False, True, False], unroll=[True, False, False]
+        ):
+            B[i, j, k] = A[i, j, k] + 1
+        return B
+
+    s = allo.customize(kernel)
+    ir = str(s.module)
+    assert 'loop_name = "j", pipeline_ii' in ir  # j is pipelined
+    assert "unroll = 0" in ir  # i is fully unrolled
+
+
 if __name__ == "__main__":
     pytest.main([__file__])

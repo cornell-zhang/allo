@@ -1,7 +1,8 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-import os
+import tempfile
+
 import pytest
 import numpy as np
 import allo
@@ -77,8 +78,9 @@ def test_shared_lib():
     allo_C = mod(np_A, np_B)
     np.testing.assert_allclose(np_A + np_B, allo_C, atol=1e-6)
     print("Passed CPU simulation!")
-    s.build(target="vitis_hls", mode="csyn", project="vadd.prj")
-    print("Passed generating HLS project!")
+    with tempfile.TemporaryDirectory() as tmpdir:
+        s.build(target="vitis_hls", mode="csyn", project=tmpdir)
+        print("Passed generating HLS project!")
 
 
 def test_scalar():
@@ -125,20 +127,20 @@ def test_lib_gemm():
     print("Passed!")
 
     if hls.is_available():
-        hls_mod = s.build(target="vivado_hls", mode="debug", project="gemm_ext.prj")
-        print(hls_mod)
-        hls_mod()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            hls_mod = s.build(target="vivado_hls", mode="debug", project=tmpdir)
+            print(hls_mod)
+            hls_mod()
     else:
         print("Vivado HLS not found, skipping...")
 
     if hls.is_available("vitis_hls"):
-        hls_mod = s.build(
-            target="vitis_hls", mode="sw_emu", project="gemm_ext_vitis.prj"
-        )
-        print(hls_mod)
-        c = np.zeros((16, 16)).astype(np.float32)
-        hls_mod(a, b, c)
-        np.testing.assert_allclose(np.matmul(a, b) + 1, c, atol=1e-4)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            hls_mod = s.build(target="vitis_hls", mode="sw_emu", project=tmpdir)
+            print(hls_mod)
+            c = np.zeros((16, 16)).astype(np.float32)
+            hls_mod(a, b, c)
+            np.testing.assert_allclose(np.matmul(a, b) + 1, c, atol=1e-4)
     else:
         print("Vitis HLS not found, skipping...")
 

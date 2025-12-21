@@ -36,9 +36,35 @@ class CMakeBuild(build_ext):
         if not llvm_build_dir:
             raise RuntimeError("LLVM_BUILD_DIR environment variable is not set")
 
+        pybind11_cmake_dir = os.environ.get("PYBIND11_CMAKE_DIR")
+        if not pybind11_cmake_dir:
+            try:
+                import pybind11
+
+                pybind11_cmake_dir = pybind11.get_cmake_dir()
+            except ImportError:
+                raise RuntimeError(
+                    "pybind11 is not installed. Please run:\n\n"
+                    "  python3 -m pip install pybind11"
+                )
+
+        # Auto-detect nanobind cmake directory if not set
+        nanobind_cmake_dir = os.environ.get("NANOBIND_CMAKE_DIR")
+        if not nanobind_cmake_dir:
+            try:
+                import nanobind
+
+                nanobind_cmake_dir = nanobind.cmake_dir()
+            except ImportError:
+                raise RuntimeError(
+                    "nanobind is not installed. Please run:\n\n"
+                    "  python3 -m pip install nanobind"
+                )
         cmake_args = [
             f"-DMLIR_DIR={llvm_build_dir}/lib/cmake/mlir",
             f"-DPython3_EXECUTABLE={sys.executable}",
+            f"-Dpybind11_DIR={pybind11_cmake_dir}",
+            f"-Dnanobind_DIR={nanobind_cmake_dir}",
         ]
 
         build_temp = os.path.join(ext.sourcedir, "build")
