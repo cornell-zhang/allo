@@ -39,7 +39,8 @@ jobs:
         source activate allo
         python3 -m pip install mlir_aie -f https://github.com/Xilinx/mlir-aie/releases/expanded_assets/v1.0
         python3 -m pip install https://github.com/Xilinx/llvm-aie/releases/download/nightly/llvm_aie-19.0.0.2025041501+b2a279c1-py3-none-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
-        source scripts/aie-setup.sh --clone-dir externals/
+        echo "mlir-aie path is $PWD"
+        source scripts/aie-setup.sh --clone-dir ${PWD}/externals/
         source /host-opt/common/setupVitis.sh
         source /host-opt/common/setupXRT.sh
         export MLIR_AIE_EXTERNAL_KERNEL_DIR=${PWD}/externals/mlir-aie/aie_kernels/
