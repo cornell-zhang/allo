@@ -238,16 +238,12 @@ def get_affine_loop_nests(func):
                 DFS(op.body.operations, band)
             elif isinstance(op, affine_d.AffineIfOp):
                 DFS(op.thenRegion.blocks[0].operations, band)
-                try:
-                    DFS(op.elseRegion.blocks[0].operations, band)
-                except IndexError:
-                    pass
+                if op.else_block is not None:
+                    DFS(op.else_block.operations, band)
             elif isinstance(op, scf_d.IfOp):
                 DFS(op.then_block.operations, band)
-                try:
+                if op.else_block is not None:
                     DFS(op.else_block.operations, band)
-                except IndexError:
-                    pass
 
     results = LoopBand()
     # get function name
