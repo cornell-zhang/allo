@@ -465,19 +465,40 @@ class Schedule:
                 ip=InsertionPoint.at_block_terminator(func.entry_block),
             )
 
-            # If the target is a function call, we need to update the function's return type
-            # and recursively partition the buffer that the function actually returns
-            if isinstance(mlir_target, func_d.CallOp):
-                # Find the function being called
-                callee_name = FlatSymbolRefAttr(mlir_target.attributes["callee"]).value
-                callee_func = self._find_function(callee_name)
+            # Check if this buffer is returned by the function
+            # If so, we need to update the function's return type and all call sites
+            return_op = None
+            for op in func.entry_block.operations:
+                if isinstance(op, func_d.ReturnOp):
+                    return_op = op
+                    break
 
-                # Find the return operation in the callee function
-                return_op = None
-                for op in callee_func.entry_block.operations:
-                    if isinstance(op, func_d.ReturnOp):
-                        return_op = op
-                        break
+            is_return_value = False
+            if return_op is not None and len(return_op.operands) > 0:
+                # Check if mlir_target.result is returned by this function
+                if mlir_target.result in return_op.operands:
+                    is_return_value = True
+                    callee_name = func.name.value
+                    callee_func = func
+
+            # If the target is a function call or a return value, we need to update the function's return type
+            # and recursively partition the buffer that the function actually returns
+            if isinstance(mlir_target, func_d.CallOp) or is_return_value:
+                # Find the function being called or the function that returns this value
+                if isinstance(mlir_target, func_d.CallOp):
+                    callee_name = FlatSymbolRefAttr(
+                        mlir_target.attributes["callee"]
+                    ).value
+                    callee_func = self._find_function(callee_name)
+                    # Find the return operation in the callee function
+                    return_op = None
+                    for op in callee_func.entry_block.operations:
+                        if isinstance(op, func_d.ReturnOp):
+                            return_op = op
+                            break
+                else:
+                    # is_return_value is True, we already have callee_name, callee_func, and return_op
+                    pass
 
                 if return_op is not None and len(return_op.operands) > 0:
                     # Find what buffer is being returned
@@ -508,15 +529,17 @@ class Schedule:
 
                 # Find all uses of this function call's result and recursively partition downstream calls
                 downstream_uses = []
-                for use in mlir_target.result.uses:
-                    user_op = use.owner
-                    # If the result is used as input to another function call, partition that call too
-                    if (
-                        isinstance(user_op, func_d.CallOp)
-                        and "name" in user_op.attributes
-                    ):
-                        # Store downstream calls for later processing
-                        downstream_uses.append(user_op)
+                if isinstance(mlir_target, func_d.CallOp):
+                    # Only check downstream uses if mlir_target is a CallOp
+                    for use in mlir_target.result.uses:
+                        user_op = use.owner
+                        # If the result is used as input to another function call, partition that call too
+                        if (
+                            isinstance(user_op, func_d.CallOp)
+                            and "name" in user_op.attributes
+                        ):
+                            # Store downstream calls for later processing
+                            downstream_uses.append(user_op)
 
                 # Calculate the new return type with partition layout
                 shape = mlir_target.result.type.shape
@@ -578,35 +601,105 @@ class Schedule:
                 new_func_type = FunctionType.get(new_input_types, [new_return_type])
                 callee_func.attributes["function_type"] = TypeAttr.get(new_func_type)
 
+                # Update all call sites that call this function to match the new return type
+                call_ops_to_update = []
+
+                def collect_call_sites_recursive(block):
+                    """Recursively collect all call operations in a block and nested blocks."""
+                    for op in block.operations:
+                        if (
+                            isinstance(op, func_d.CallOp)
+                            and FlatSymbolRefAttr(op.attributes["callee"]).value
+                            == callee_name
+                        ):
+                            call_ops_to_update.append(op)
+                        # Recursively search nested blocks
+                        for region in op.regions:
+                            for nested_block in region.blocks:
+                                collect_call_sites_recursive(nested_block)
+
+                # Collect all call sites first
+                for func in self.module.body.operations:
+                    if isinstance(func, func_d.FuncOp):
+                        collect_call_sites_recursive(func.entry_block)
+
+                # Update call operations by recreating them with new result types
+                updated_results = {}  # Map old result to new result
+                for call_op in call_ops_to_update:
+                    if len(call_op.results) > 0:
+                        old_result = call_op.results[0]
+                        # Create new call operation with updated result type
+                        new_result_types = [new_return_type]
+                        callee_attr = FlatSymbolRefAttr(call_op.attributes["callee"])
+                        new_call_op = func_d.CallOp(
+                            new_result_types,
+                            callee_attr,
+                            call_op.operands,
+                            ip=InsertionPoint(call_op),
+                        )
+                        # Copy attributes from old call op
+                        for attr_name, attr_value in call_op.attributes.items():
+                            if attr_name != "callee":  # callee is set in constructor
+                                new_call_op.attributes[attr_name] = attr_value
+                        # Store mapping for later use
+                        updated_results[old_result] = new_call_op.results[0]
+                        # Replace all uses of old result with new result
+                        old_result.replace_all_uses_with(new_call_op.results[0])
+                        # Erase old call operation
+                        call_op.operation.erase()
+
                 # Update downstream function parameter types
+                # Find all functions that receive the partitioned return value as an argument
+                functions_to_update = set()  # Use set to avoid duplicates
+
+                # After updating call sites, find all uses of the new results
+                for old_result, new_result in updated_results.items():
+                    for use in new_result.uses:
+                        user_op = use.owner
+                        if isinstance(user_op, func_d.CallOp):
+                            # This partitioned value is passed as an argument to another function
+                            downstream_callee_name = FlatSymbolRefAttr(
+                                user_op.attributes["callee"]
+                            ).value
+                            downstream_callee_func = self._find_function(
+                                downstream_callee_name, error=False
+                            )
+                            if downstream_callee_func is not None:
+                                # Find which parameter index this operand corresponds to
+                                for i, operand in enumerate(user_op.operands):
+                                    if operand == new_result:
+                                        functions_to_update.add(
+                                            (downstream_callee_name, i)
+                                        )
+                                        break
+
+                # Also include downstream_uses from the original logic (for CallOp case)
                 for user_op in downstream_uses:
                     downstream_callee_name = FlatSymbolRefAttr(
                         user_op.attributes["callee"]
                     ).value
-                    downstream_callee_func = self._find_function(downstream_callee_name)
-
-                    # Find which parameter index this operand corresponds to
                     for i, operand in enumerate(user_op.operands):
                         if operand == mlir_target.result:
-                            # Update the parameter type to match the new partitioned type
-                            downstream_callee_func.arguments[i].set_type(
-                                new_return_type
-                            )
-
-                            # Update function signature
-                            new_downstream_input_types = list(
-                                downstream_callee_func.type.inputs
-                            )
-                            new_downstream_input_types[i] = new_return_type
-
-                            new_downstream_func_type = FunctionType.get(
-                                new_downstream_input_types,
-                                downstream_callee_func.type.results,
-                            )
-                            downstream_callee_func.attributes["function_type"] = (
-                                TypeAttr.get(new_downstream_func_type)
-                            )
+                            functions_to_update.add((downstream_callee_name, i))
                             break
+
+                # Update all functions that receive the partitioned type
+                for func_name, param_idx in functions_to_update:
+                    func_to_update = self._find_function(func_name, error=False)
+                    if func_to_update is not None and param_idx < len(
+                        func_to_update.arguments
+                    ):
+                        # Update the parameter type to match the new partitioned type
+                        func_to_update.arguments[param_idx].set_type(new_return_type)
+                        # Update function signature
+                        new_input_types = list(func_to_update.type.inputs)
+                        new_input_types[param_idx] = new_return_type
+                        new_func_type = FunctionType.get(
+                            new_input_types, func_to_update.type.results
+                        )
+                        func_to_update.attributes["function_type"] = TypeAttr.get(
+                            new_func_type
+                        )
 
         # Calculate layout map
         # first N: partition index
