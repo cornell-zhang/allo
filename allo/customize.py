@@ -393,10 +393,7 @@ class Schedule:
 
                     # Update ALL call sites to this function
                     func_name = func.attributes["sym_name"].value
-                    # pylint: disable=too-many-function-args
-                    self._update_all_call_sites(
-                        func_name, new_return_type, list(func.type.inputs)
-                    )
+                    self._update_all_call_sites(func_name, new_return_type)
 
                 break
 
