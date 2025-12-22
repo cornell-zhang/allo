@@ -33,25 +33,9 @@ jobs:
         conda activate allo-ci
         which python3
         python3 --version
-        cd $GITHUB_WORKSPACE
-        export PATH=/opt/cmake/bin:$PATH
-        git clone https://github.com/llvm/llvm-project.git
-        cd llvm-project
-        mkdir build && cd build
-        cmake -G Ninja ../llvm \
-          -DLLVM_ENABLE_PROJECTS="clang;mlir;openmp" \
-          -DLLVM_BUILD_EXAMPLES=ON \
-          -DLLVM_TARGETS_TO_BUILD="host" \
-          -DCMAKE_BUILD_TYPE=Release \
-          -DLLVM_ENABLE_ASSERTIONS=ON \
-          -DLLVM_INSTALL_UTILS=ON \
-          -DMLIR_ENABLE_BINDINGS_PYTHON=ON \
-          -DPython3_EXECUTABLE=`which python3`
-        ninja -j8
-        export LLVM_BUILD_DIR=${GITHUB_WORKSPACE}/llvm-project/build
-        export PATH=${GITHUB_WORKSPACE}/llvm-project/build/bin:$PATH
+        export PATH=/opt/cmake/bin:/opt/llvm-project/build/bin:$PATH
+        export LLVM_BUILD_DIR=/opt/llvm-project/build/
         echo "Install allo"
-        cd $GITHUB_WORKSPACE
         python3 -m pip install -v -e .
         python3 -m pip install mlir_aie -f https://github.com/Xilinx/mlir-aie/releases/expanded_assets/v1.0
         python3 -m pip install https://github.com/Xilinx/llvm-aie/releases/download/nightly/llvm_aie-19.0.0.2025041501+b2a279c1-py3-none-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
