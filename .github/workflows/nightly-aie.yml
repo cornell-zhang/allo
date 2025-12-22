@@ -49,8 +49,14 @@ jobs:
         export LD_LIBRARY_PATH=${MLIR_AIE_INSTALL_DIR}/lib:${LD_LIBRARY_PATH}
         export INSTALL_PY_MAIN="$MLIR_AIE_INSTALL_DIR/python/aie/compiler/aiecc/main.py"
         cp /opt/mlir-aie/python/compiler/aiecc/main.py "$INSTALL_PY_MAIN"
-        source /opt/common/setupVitis.sh
-        source /opt/common/setupXRT.sh
+        export XILINX_LOC=/opt/xilinx/Vitis/2024.2
+        export AIETOOLS_ROOT=$XILINX_LOC/aietools
+        export PATH=$PATH:${AIETOOLS_ROOT}/bin:$XILINX_LOC/bin
+        export VITIS=${XILINX_LOC}
+        export XILINX_VITIS=${XILINX_LOC}
+        export VITIS_ROOT=${XILINX_LOC}
+        source ${XILINX_LOC}/settings64.sh
+        source /opt/xilinx/xrt/setup.sh
         export MLIR_AIE_EXTERNAL_KERNEL_DIR=/opt/mlir-aie/aie_kernels/
         export RUNTIME_LIB_DIR=/opt/mlir-aie/runtime_lib/
         export NPU2=1
