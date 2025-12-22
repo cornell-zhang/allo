@@ -182,7 +182,7 @@
   <h1>Source code for allo.customize</h1><div class="highlight"><pre>
 <span></span><span class="c1"># Copyright Allo authors. All Rights Reserved.</span>
 <span class="c1"># SPDX-License-Identifier: Apache-2.0</span>
-<span class="c1"># pylint: disable=no-name-in-module</span>
+<span class="c1"># pylint: disable=no-name-in-module, too-many-nested-blocks</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">inspect</span>
@@ -464,394 +464,406 @@
 <div class="viewcode-block" id="Schedule.partition">
 <a class="viewcode-back" href="../../api/index.html#allo.customize.Schedule.partition">[docs]</a>
     <span class="nd">@wrapped_apply</span>
-    <span class="c1"># pylint: disable=too-many-branches</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">partition</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">target</span><span class="p">,</span> <span class="n">partition_type</span><span class="o">=</span><span class="n">Partition</span><span class="o">.</span><span class="n">Complete</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">factor</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Partitions a given array, for example if the array is `B`, this would be `&lt;schedule&gt;.B`.</span>
-<span class="sd">        There are three types, `Partition.Complete`, `Partition.Block`, and `Partition.cyclic`.</span>
-<span class="sd">        block: The original array is split into `factor` equally sized blocks of consecutive elements of the original array</span>
-<span class="sd">        cyclic:The original array is split into `factor` equally sized blocks interleaving the elements of the original array.</span>
-<span class="sd">        complete: The original array is split into its individual elements. This corresponds to resolving a memory into registers.</span>
+<span class="sd">        Partitions a given array and propagates to all callers and callees.</span>
 
 <span class="sd">        Parameters</span>
 <span class="sd">        ----------</span>
 <span class="sd">        target: allo.ir.utils.MockBuffer | str</span>
 <span class="sd">            The array to partition.</span>
-
 <span class="sd">        partition_type: allo.customize.Partition</span>
-<span class="sd">            The type of partition.</span>
-
+<span class="sd">            Complete, Block, or Cyclic partition type.</span>
 <span class="sd">        factor: int</span>
 <span class="sd">            The number of arrays created by a block or cyclic partition.</span>
-
 <span class="sd">        dim: int</span>
-<span class="sd">            The dimension of `target` to partition. If `dim=0`, all dimensions are partitioned.</span>
+<span class="sd">            The dimension to partition. If dim=0, all dimensions are partitioned.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="c1"># TODO: test whether the partition has conflicts for different functions</span>
-        <span class="k">if</span> <span class="n">partition_type</span> <span class="o">&gt;</span> <span class="mi">2</span><span class="p">:</span>
+        <span class="c1"># Validate inputs</span>
+        <span class="k">if</span> <span class="n">partition_type</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span>
+            <span class="n">Partition</span><span class="o">.</span><span class="n">Complete</span><span class="p">,</span>
+            <span class="n">Partition</span><span class="o">.</span><span class="n">Block</span><span class="p">,</span>
+            <span class="n">Partition</span><span class="o">.</span><span class="n">Cyclic</span><span class="p">,</span>
+        <span class="p">):</span>
             <span class="k">raise</span> <span class="n">AlloValueError</span><span class="p">(</span><span class="s2">&quot;Invalid partition type&quot;</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">dim</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
             <span class="k">raise</span> <span class="n">AlloValueError</span><span class="p">(</span><span class="s2">&quot;Invalid dimension&quot;</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">factor</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
             <span class="k">raise</span> <span class="n">AlloValueError</span><span class="p">(</span><span class="s2">&quot;Invalid factor&quot;</span><span class="p">)</span>
-        <span class="k">match</span> <span class="n">partition_type</span><span class="p">:</span>
-            <span class="k">case</span> <span class="n">Partition</span><span class="o">.</span><span class="n">Complete</span><span class="p">:</span>
-                <span class="n">partition_type</span> <span class="o">=</span> <span class="mi">0</span>
-            <span class="k">case</span> <span class="n">Partition</span><span class="o">.</span><span class="n">Block</span><span class="p">:</span>
-                <span class="n">partition_type</span> <span class="o">=</span> <span class="mi">1</span>
-            <span class="k">case</span> <span class="n">Partition</span><span class="o">.</span><span class="n">Cyclic</span><span class="p">:</span>
-                <span class="n">partition_type</span> <span class="o">=</span> <span class="mi">2</span>
-            <span class="k">case</span><span class="w"> </span><span class="k">_</span><span class="p">:</span>
-                <span class="k">raise</span> <span class="n">AlloValueError</span><span class="p">(</span><span class="s2">&quot;Not supported partition type&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Convert partition type to integer</span>
+        <span class="n">partition_type_int</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="n">Partition</span><span class="o">.</span><span class="n">Complete</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+            <span class="n">Partition</span><span class="o">.</span><span class="n">Block</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+            <span class="n">Partition</span><span class="o">.</span><span class="n">Cyclic</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span>
+        <span class="p">}[</span><span class="n">partition_type</span><span class="p">]</span>
+
+        <span class="c1"># Normalize target to MockBuffer</span>
         <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">target</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
-            <span class="n">target</span> <span class="o">=</span> <span class="n">MockBuffer</span><span class="p">(</span><span class="n">target</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;:&quot;</span><span class="p">)[</span><span class="mi">0</span><span class="p">],</span> <span class="n">target</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;:&quot;</span><span class="p">)[</span><span class="mi">1</span><span class="p">])</span>
-        <span class="c1"># test whether partitioning the same array</span>
-        <span class="k">for</span> <span class="n">parray</span><span class="p">,</span> <span class="n">items</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">partitioned_arrays</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-            <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">items</span><span class="p">:</span>
-                <span class="k">if</span> <span class="p">(</span>
-                    <span class="n">parray</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;:&quot;</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="n">target</span><span class="o">.</span><span class="n">func</span>
-                    <span class="ow">and</span> <span class="n">parray</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;:&quot;</span><span class="p">)[</span><span class="mi">1</span><span class="p">]</span> <span class="o">==</span> <span class="n">target</span><span class="o">.</span><span class="n">name</span>
-                <span class="p">):</span>
-                    <span class="k">if</span> <span class="n">item</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="n">Partition</span><span class="o">.</span><span class="n">Complete</span> <span class="ow">and</span> <span class="n">item</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-                        <span class="c1"># this array has been completely partitioned along all the axes</span>
-                        <span class="k">return</span>
-                    <span class="k">raise</span> <span class="n">AlloValueError</span><span class="p">(</span>
-                        <span class="sa">f</span><span class="s2">&quot;Cannot partition the same array twice: </span><span class="si">{</span><span class="n">parray</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">item</span><span class="si">}</span><span class="s2"> vs (</span><span class="si">{</span><span class="n">partition_type</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">dim</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">factor</span><span class="si">}</span><span class="s2">)&quot;</span>
-                    <span class="p">)</span>
-        <span class="c1"># actual partition</span>
+            <span class="n">func_name</span><span class="p">,</span> <span class="n">buf_name</span> <span class="o">=</span> <span class="n">target</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;:&quot;</span><span class="p">)</span>
+            <span class="n">target</span> <span class="o">=</span> <span class="n">MockBuffer</span><span class="p">(</span><span class="n">func_name</span><span class="p">,</span> <span class="n">buf_name</span><span class="p">)</span>
+
+        <span class="c1"># Check for duplicate partitioning</span>
+        <span class="n">target_key</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">target</span><span class="o">.</span><span class="n">func</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">target</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="k">if</span> <span class="n">target_key</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">partitioned_arrays</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">partitioned_arrays</span><span class="p">[</span><span class="n">target_key</span><span class="p">]:</span>
+                <span class="k">if</span> <span class="n">item</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="n">Partition</span><span class="o">.</span><span class="n">Complete</span> <span class="ow">and</span> <span class="n">item</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                    <span class="k">return</span>  <span class="c1"># Already completely partitioned</span>
+                <span class="k">raise</span> <span class="n">AlloValueError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;Cannot partition the same array twice: </span><span class="si">{</span><span class="n">target_key</span><span class="si">}</span><span class="s2">&quot;</span>
+                <span class="p">)</span>
+
+        <span class="c1"># Collect all buffers that need partitioning via propagation</span>
+        <span class="n">buffers_to_partition</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_collect_partition_targets</span><span class="p">(</span><span class="n">target</span><span class="p">)</span>
+
+        <span class="c1"># Apply partitioning to all collected buffers</span>
         <span class="n">i32</span> <span class="o">=</span> <span class="n">IntegerType</span><span class="o">.</span><span class="n">get_signless</span><span class="p">(</span><span class="mi">32</span><span class="p">)</span>
         <span class="n">ui32</span> <span class="o">=</span> <span class="n">IntegerType</span><span class="o">.</span><span class="n">get_unsigned</span><span class="p">(</span><span class="mi">32</span><span class="p">)</span>
-        <span class="c1"># find all the tensors that need to be partitioned</span>
-        <span class="n">visited_target_names</span> <span class="o">=</span> <span class="p">[]</span>
-        <span class="n">visited_func_calls</span> <span class="o">=</span> <span class="p">[]</span>
 
-        <span class="c1"># pylint: disable=too-many-branches</span>
-        <span class="k">def</span><span class="w"> </span><span class="nf">recursive_partition</span><span class="p">(</span><span class="n">inner_target</span><span class="p">):</span>
-            <span class="n">name</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">inner_target</span><span class="o">.</span><span class="n">func</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">inner_target</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span>
-            <span class="k">if</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">visited_target_names</span><span class="p">:</span>
-                <span class="k">return</span>
-            <span class="n">visited_target_names</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
-            <span class="n">_</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">mlir_target</span> <span class="o">=</span> <span class="n">find_buffer</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">module</span><span class="p">,</span> <span class="n">inner_target</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">func_args</span><span class="p">)</span>
-            <span class="c1"># equivalent users</span>
-            <span class="n">arg_names</span> <span class="o">=</span> <span class="p">[</span>
-                <span class="n">dtensor</span><span class="o">.</span><span class="n">name</span> <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">dtensor</span><span class="p">,</span> <span class="s2">&quot;name&quot;</span><span class="p">)</span> <span class="k">else</span> <span class="n">dtensor</span>
-                <span class="k">for</span> <span class="n">dtensor</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">func_args</span><span class="p">[</span><span class="n">inner_target</span><span class="o">.</span><span class="n">func</span><span class="p">]</span>
-            <span class="p">]</span>
-            <span class="k">if</span> <span class="n">inner_target</span><span class="o">.</span><span class="n">name</span> <span class="ow">in</span> <span class="n">arg_names</span><span class="p">:</span>
-                <span class="c1"># is a function argument</span>
-                <span class="n">idx</span> <span class="o">=</span> <span class="n">arg_names</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="n">inner_target</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
-                <span class="n">name</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">inner_target</span><span class="o">.</span><span class="n">func</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">idx</span><span class="si">}</span><span class="s2">&quot;</span>
-            <span class="k">for</span> <span class="n">buf_name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_equivalent_variables</span><span class="p">(</span><span class="n">name</span><span class="p">):</span>
-                <span class="n">path</span><span class="p">,</span> <span class="n">buf_name</span> <span class="o">=</span> <span class="n">buf_name</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;:&quot;</span><span class="p">)</span>
-                <span class="k">if</span> <span class="n">buf_name</span><span class="o">.</span><span class="n">isdigit</span><span class="p">():</span>
-                    <span class="c1"># function argument</span>
-                    <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">func_args</span><span class="p">[</span><span class="n">path</span><span class="p">][</span><span class="nb">int</span><span class="p">(</span><span class="n">buf_name</span><span class="p">)],</span> <span class="s2">&quot;name&quot;</span><span class="p">):</span>
-                        <span class="n">buf_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">func_args</span><span class="p">[</span><span class="n">path</span><span class="p">][</span><span class="nb">int</span><span class="p">(</span><span class="n">buf_name</span><span class="p">)]</span><span class="o">.</span><span class="n">name</span>
-                    <span class="k">else</span><span class="p">:</span>
-                        <span class="n">buf_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">func_args</span><span class="p">[</span><span class="n">path</span><span class="p">][</span><span class="nb">int</span><span class="p">(</span><span class="n">buf_name</span><span class="p">)]</span>
-                <span class="n">recursive_partition</span><span class="p">(</span><span class="n">MockBuffer</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">buf_name</span><span class="p">))</span>
-            <span class="c1"># calling the same function</span>
-            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">mlir_target</span><span class="p">,</span> <span class="n">func_d</span><span class="o">.</span><span class="n">CallOp</span><span class="p">):</span>
-                <span class="n">visited_func_calls</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">mlir_target</span><span class="p">)</span>
-                <span class="k">for</span> <span class="n">func</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">module</span><span class="o">.</span><span class="n">body</span><span class="o">.</span><span class="n">operations</span><span class="p">:</span>
-                    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">func</span><span class="p">,</span> <span class="n">func_d</span><span class="o">.</span><span class="n">FuncOp</span><span class="p">):</span>
-                        <span class="k">for</span> <span class="n">call_op</span> <span class="ow">in</span> <span class="n">func</span><span class="o">.</span><span class="n">entry_block</span><span class="o">.</span><span class="n">operations</span><span class="p">:</span>
-                            <span class="k">if</span> <span class="p">(</span>
-                                <span class="nb">isinstance</span><span class="p">(</span><span class="n">call_op</span><span class="p">,</span> <span class="n">func_d</span><span class="o">.</span><span class="n">CallOp</span><span class="p">)</span>
-                                <span class="ow">and</span> <span class="n">mlir_target</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;callee&quot;</span><span class="p">]</span>
-                                <span class="o">==</span> <span class="n">call_op</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;callee&quot;</span><span class="p">]</span>
-                                <span class="ow">and</span> <span class="n">call_op</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">visited_func_calls</span>
-                            <span class="p">):</span>
-                                <span class="n">visited_func_calls</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">call_op</span><span class="p">)</span>
-                                <span class="n">buffer</span> <span class="o">=</span> <span class="n">MockBuffer</span><span class="p">(</span>
-                                    <span class="n">func</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;sym_name&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">value</span><span class="p">,</span>
-                                    <span class="n">call_op</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">value</span><span class="p">,</span>
-                                <span class="p">)</span>
-                                <span class="n">recursive_partition</span><span class="p">(</span><span class="n">buffer</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">buf</span> <span class="ow">in</span> <span class="n">buffers_to_partition</span><span class="p">:</span>
+            <span class="n">buf_key</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">buf</span><span class="o">.</span><span class="n">func</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">buf</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="n">func</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">mlir_target</span> <span class="o">=</span> <span class="n">find_buffer</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">module</span><span class="p">,</span> <span class="n">buf</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">func_args</span><span class="p">)</span>
 
-            <span class="c1"># Handle data flow: if we partitioned a value, find where it&#39;s used as an argument</span>
-            <span class="c1"># and ensure the receiving function parameters are also partitioned</span>
-            <span class="c1"># pylint: disable=too-many-nested-blocks</span>
-            <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">mlir_target</span><span class="p">,</span> <span class="s2">&quot;result&quot;</span><span class="p">)</span> <span class="ow">and</span> <span class="n">mlir_target</span><span class="o">.</span><span class="n">result</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="c1"># Find all uses of this partitioned value</span>
-                <span class="k">for</span> <span class="n">use</span> <span class="ow">in</span> <span class="n">mlir_target</span><span class="o">.</span><span class="n">result</span><span class="o">.</span><span class="n">uses</span><span class="p">:</span>
-                    <span class="n">user_op</span> <span class="o">=</span> <span class="n">use</span><span class="o">.</span><span class="n">owner</span>
-                    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">user_op</span><span class="p">,</span> <span class="n">func_d</span><span class="o">.</span><span class="n">CallOp</span><span class="p">):</span>
-                        <span class="c1"># This partitioned value is passed as an argument to another function</span>
-                        <span class="n">callee_name</span> <span class="o">=</span> <span class="n">FlatSymbolRefAttr</span><span class="p">(</span>
-                            <span class="n">user_op</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;callee&quot;</span><span class="p">]</span>
-                        <span class="p">)</span><span class="o">.</span><span class="n">value</span>
-                        <span class="n">callee_func</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_find_function</span><span class="p">(</span><span class="n">callee_name</span><span class="p">,</span> <span class="n">error</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-                        <span class="k">if</span> <span class="n">callee_func</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                            <span class="c1"># Find which parameter index this operand corresponds to</span>
-                            <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">operand</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">user_op</span><span class="o">.</span><span class="n">operands</span><span class="p">):</span>
-                                <span class="k">if</span> <span class="n">operand</span> <span class="o">==</span> <span class="n">mlir_target</span><span class="o">.</span><span class="n">result</span><span class="p">:</span>
-                                    <span class="c1"># The partitioned value is passed as the i-th argument</span>
-                                    <span class="c1"># We need to partition the i-th parameter of the callee function</span>
-                                    <span class="k">if</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">func_args</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">callee_name</span><span class="p">,</span> <span class="p">[])):</span>
-                                        <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span>
-                                            <span class="bp">self</span><span class="o">.</span><span class="n">func_args</span><span class="p">[</span><span class="n">callee_name</span><span class="p">][</span><span class="n">i</span><span class="p">],</span> <span class="s2">&quot;name&quot;</span>
-                                        <span class="p">):</span>
-                                            <span class="n">param_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">func_args</span><span class="p">[</span><span class="n">callee_name</span><span class="p">][</span>
-                                                <span class="n">i</span>
-                                            <span class="p">]</span><span class="o">.</span><span class="n">name</span>
-                                        <span class="k">else</span><span class="p">:</span>
-                                            <span class="n">param_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">func_args</span><span class="p">[</span><span class="n">callee_name</span><span class="p">][</span><span class="n">i</span><span class="p">]</span>
-                                        <span class="n">param_buffer</span> <span class="o">=</span> <span class="n">MockBuffer</span><span class="p">(</span>
-                                            <span class="n">callee_name</span><span class="p">,</span> <span class="n">param_name</span>
-                                        <span class="p">)</span>
-                                        <span class="n">recursive_partition</span><span class="p">(</span><span class="n">param_buffer</span><span class="p">)</span>
-                                    <span class="k">break</span>
+            <span class="c1"># Record partition info</span>
+            <span class="k">if</span> <span class="n">buf_key</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">partitioned_arrays</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">partitioned_arrays</span><span class="p">[</span><span class="n">buf_key</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">partitioned_arrays</span><span class="p">[</span><span class="n">buf_key</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">partition_type_int</span><span class="p">,</span> <span class="n">dim</span><span class="p">,</span> <span class="n">factor</span><span class="p">))</span>
 
-            <span class="c1"># Also handle the case where this is a function parameter that gets used</span>
-            <span class="c1"># Find the function that contains this parameter</span>
-            <span class="c1"># pylint: disable=too-many-nested-blocks</span>
-            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">mlir_target</span><span class="p">,</span> <span class="n">BlockArgument</span><span class="p">):</span>
-                <span class="c1"># This is a function parameter</span>
-                <span class="n">parent_func</span> <span class="o">=</span> <span class="n">mlir_target</span><span class="o">.</span><span class="n">owner</span><span class="o">.</span><span class="n">parent_op</span>
-                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">parent_func</span><span class="p">,</span> <span class="n">func_d</span><span class="o">.</span><span class="n">FuncOp</span><span class="p">):</span>
-                    <span class="c1"># Find all uses of this parameter within the function</span>
-                    <span class="k">for</span> <span class="n">use</span> <span class="ow">in</span> <span class="n">mlir_target</span><span class="o">.</span><span class="n">uses</span><span class="p">:</span>
-                        <span class="n">user_op</span> <span class="o">=</span> <span class="n">use</span><span class="o">.</span><span class="n">owner</span>
-                        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">user_op</span><span class="p">,</span> <span class="n">func_d</span><span class="o">.</span><span class="n">CallOp</span><span class="p">):</span>
-                            <span class="c1"># This parameter is passed to another function call</span>
-                            <span class="n">callee_name</span> <span class="o">=</span> <span class="n">FlatSymbolRefAttr</span><span class="p">(</span>
-                                <span class="n">user_op</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;callee&quot;</span><span class="p">]</span>
-                            <span class="p">)</span><span class="o">.</span><span class="n">value</span>
-                            <span class="n">callee_func</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_find_function</span><span class="p">(</span><span class="n">callee_name</span><span class="p">,</span> <span class="n">error</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-                            <span class="k">if</span> <span class="n">callee_func</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                                <span class="c1"># Find which parameter index this operand corresponds to</span>
-                                <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">operand</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">user_op</span><span class="o">.</span><span class="n">operands</span><span class="p">):</span>
-                                    <span class="k">if</span> <span class="n">operand</span> <span class="o">==</span> <span class="n">mlir_target</span><span class="p">:</span>
-                                        <span class="c1"># The partitioned parameter is passed as the i-th argument</span>
-                                        <span class="c1"># We need to partition the i-th parameter of the callee function</span>
-                                        <span class="k">if</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">func_args</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">callee_name</span><span class="p">,</span> <span class="p">[])):</span>
-                                            <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span>
-                                                <span class="bp">self</span><span class="o">.</span><span class="n">func_args</span><span class="p">[</span><span class="n">callee_name</span><span class="p">][</span><span class="n">i</span><span class="p">],</span> <span class="s2">&quot;name&quot;</span>
-                                            <span class="p">):</span>
-                                                <span class="n">param_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">func_args</span><span class="p">[</span>
-                                                    <span class="n">callee_name</span>
-                                                <span class="p">][</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">name</span>
-                                            <span class="k">else</span><span class="p">:</span>
-                                                <span class="n">param_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">func_args</span><span class="p">[</span>
-                                                    <span class="n">callee_name</span>
-                                                <span class="p">][</span><span class="n">i</span><span class="p">]</span>
-                                            <span class="n">param_buffer</span> <span class="o">=</span> <span class="n">MockBuffer</span><span class="p">(</span>
-                                                <span class="n">callee_name</span><span class="p">,</span> <span class="n">param_name</span>
-                                            <span class="p">)</span>
-                                            <span class="n">recursive_partition</span><span class="p">(</span><span class="n">param_buffer</span><span class="p">)</span>
-                                        <span class="k">break</span>
-
-        <span class="n">recursive_partition</span><span class="p">(</span><span class="n">target</span><span class="p">)</span>
-        <span class="k">for</span> <span class="n">inner_target</span> <span class="ow">in</span> <span class="n">visited_target_names</span><span class="p">:</span>
-            <span class="n">func</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">mlir_target</span> <span class="o">=</span> <span class="n">find_buffer</span><span class="p">(</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">module</span><span class="p">,</span>
-                <span class="n">MockBuffer</span><span class="p">(</span><span class="n">inner_target</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;:&quot;</span><span class="p">)[</span><span class="mi">0</span><span class="p">],</span> <span class="n">inner_target</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;:&quot;</span><span class="p">)[</span><span class="mi">1</span><span class="p">]),</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">func_args</span><span class="p">,</span>
-            <span class="p">)</span>
-            <span class="k">if</span> <span class="n">inner_target</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">partitioned_arrays</span><span class="p">:</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">partitioned_arrays</span><span class="p">[</span><span class="n">inner_target</span><span class="p">]</span> <span class="o">=</span> <span class="p">[(</span><span class="n">partition_type</span><span class="p">,</span> <span class="n">dim</span><span class="p">,</span> <span class="n">factor</span><span class="p">)]</span>
-            <span class="k">else</span><span class="p">:</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">partitioned_arrays</span><span class="p">[</span><span class="n">inner_target</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
-                    <span class="p">(</span><span class="n">partition_type</span><span class="p">,</span> <span class="n">dim</span><span class="p">,</span> <span class="n">factor</span><span class="p">)</span>
-                <span class="p">)</span>
+            <span class="c1"># Create partition operation</span>
             <span class="n">allo_d</span><span class="o">.</span><span class="n">PartitionOp</span><span class="p">(</span>
                 <span class="n">mlir_target</span><span class="o">.</span><span class="n">result</span><span class="p">,</span>
-                <span class="n">partition_kind</span><span class="o">=</span><span class="n">IntegerAttr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">i32</span><span class="p">,</span> <span class="n">partition_type</span><span class="p">),</span>
+                <span class="n">partition_kind</span><span class="o">=</span><span class="n">IntegerAttr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">i32</span><span class="p">,</span> <span class="n">partition_type_int</span><span class="p">),</span>
                 <span class="n">dim</span><span class="o">=</span><span class="n">IntegerAttr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">ui32</span><span class="p">,</span> <span class="n">dim</span><span class="p">),</span>
                 <span class="n">factor</span><span class="o">=</span><span class="n">IntegerAttr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">ui32</span><span class="p">,</span> <span class="n">factor</span><span class="p">),</span>
                 <span class="n">ip</span><span class="o">=</span><span class="n">InsertionPoint</span><span class="o">.</span><span class="n">at_block_terminator</span><span class="p">(</span><span class="n">func</span><span class="o">.</span><span class="n">entry_block</span><span class="p">),</span>
             <span class="p">)</span>
 
-            <span class="c1"># If the target is a function call, we need to update the function&#39;s return type</span>
-            <span class="c1"># and recursively partition the buffer that the function actually returns</span>
+            <span class="c1"># Update types for function calls</span>
             <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">mlir_target</span><span class="p">,</span> <span class="n">func_d</span><span class="o">.</span><span class="n">CallOp</span><span class="p">):</span>
-                <span class="c1"># Find the function being called</span>
-                <span class="n">callee_name</span> <span class="o">=</span> <span class="n">FlatSymbolRefAttr</span><span class="p">(</span><span class="n">mlir_target</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;callee&quot;</span><span class="p">])</span><span class="o">.</span><span class="n">value</span>
-                <span class="n">callee_func</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_find_function</span><span class="p">(</span><span class="n">callee_name</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_update_call_types</span><span class="p">(</span><span class="n">mlir_target</span><span class="p">,</span> <span class="n">partition_type_int</span><span class="p">,</span> <span class="n">dim</span><span class="p">,</span> <span class="n">factor</span><span class="p">)</span>
 
-                <span class="c1"># Find the return operation in the callee function</span>
-                <span class="n">return_op</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="c1"># If this buffer is returned by a function, update the function&#39;s return type</span>
+            <span class="c1"># and all call sites to that function</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_propagate_return_type_to_callers</span><span class="p">(</span>
+                <span class="n">func</span><span class="p">,</span> <span class="n">mlir_target</span><span class="p">,</span> <span class="n">partition_type_int</span><span class="p">,</span> <span class="n">dim</span><span class="p">,</span> <span class="n">factor</span>
+            <span class="p">)</span>
+
+        <span class="c1"># Update global memory references</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_update_global_types</span><span class="p">(</span><span class="n">buffers_to_partition</span><span class="p">,</span> <span class="n">partition_type_int</span><span class="p">,</span> <span class="n">dim</span><span class="p">,</span> <span class="n">factor</span><span class="p">)</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_propagate_return_type_to_callers</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">func</span><span class="p">,</span> <span class="n">mlir_target</span><span class="p">,</span> <span class="n">partition_type</span><span class="p">,</span> <span class="n">dim</span><span class="p">,</span> <span class="n">factor</span>
+    <span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;If a partitioned buffer is returned, update function signature and all call sites.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">func</span><span class="p">,</span> <span class="n">func_d</span><span class="o">.</span><span class="n">FuncOp</span><span class="p">):</span>
+            <span class="k">return</span>
+
+        <span class="c1"># Check if this buffer is returned by the function</span>
+        <span class="k">for</span> <span class="n">op</span> <span class="ow">in</span> <span class="n">func</span><span class="o">.</span><span class="n">entry_block</span><span class="o">.</span><span class="n">operations</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">func_d</span><span class="o">.</span><span class="n">ReturnOp</span><span class="p">)</span> <span class="ow">and</span> <span class="n">op</span><span class="o">.</span><span class="n">operands</span><span class="p">:</span>
+                <span class="n">returned_value</span> <span class="o">=</span> <span class="n">op</span><span class="o">.</span><span class="n">operands</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+                <span class="c1"># Check if the partitioned buffer is what&#39;s being returned</span>
+                <span class="k">if</span> <span class="p">(</span>
+                    <span class="nb">hasattr</span><span class="p">(</span><span class="n">mlir_target</span><span class="p">,</span> <span class="s2">&quot;result&quot;</span><span class="p">)</span>
+                    <span class="ow">and</span> <span class="n">returned_value</span> <span class="o">==</span> <span class="n">mlir_target</span><span class="o">.</span><span class="n">result</span>
+                <span class="p">):</span>
+
+                    <span class="c1"># Compute new return type with partition layout</span>
+                    <span class="n">shape</span> <span class="o">=</span> <span class="n">mlir_target</span><span class="o">.</span><span class="n">result</span><span class="o">.</span><span class="n">type</span><span class="o">.</span><span class="n">shape</span>
+                    <span class="n">layout_attr</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_compute_partition_layout</span><span class="p">(</span>
+                        <span class="n">shape</span><span class="p">,</span> <span class="n">partition_type</span><span class="p">,</span> <span class="n">dim</span><span class="p">,</span> <span class="n">factor</span>
+                    <span class="p">)</span>
+
+                    <span class="n">old_type</span> <span class="o">=</span> <span class="n">func</span><span class="o">.</span><span class="n">type</span><span class="o">.</span><span class="n">results</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+                    <span class="n">new_return_type</span> <span class="o">=</span> <span class="n">MemRefType</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+                        <span class="n">old_type</span><span class="o">.</span><span class="n">shape</span><span class="p">,</span>
+                        <span class="n">old_type</span><span class="o">.</span><span class="n">element_type</span><span class="p">,</span>
+                        <span class="n">layout_attr</span><span class="p">,</span>
+                        <span class="n">old_type</span><span class="o">.</span><span class="n">memory_space</span><span class="p">,</span>
+                    <span class="p">)</span>
+
+                    <span class="c1"># Update function signature</span>
+                    <span class="n">new_func_type</span> <span class="o">=</span> <span class="n">FunctionType</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+                        <span class="nb">list</span><span class="p">(</span><span class="n">func</span><span class="o">.</span><span class="n">type</span><span class="o">.</span><span class="n">inputs</span><span class="p">),</span> <span class="p">[</span><span class="n">new_return_type</span><span class="p">]</span>
+                    <span class="p">)</span>
+                    <span class="n">func</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;function_type&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">TypeAttr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">new_func_type</span><span class="p">)</span>
+
+                    <span class="c1"># Update ALL call sites to this function</span>
+                    <span class="n">func_name</span> <span class="o">=</span> <span class="n">func</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;sym_name&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">value</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_update_all_call_sites</span><span class="p">(</span><span class="n">func_name</span><span class="p">,</span> <span class="n">new_return_type</span><span class="p">)</span>
+
+                <span class="k">break</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_collect_partition_targets</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">target</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Collect all buffers that need partitioning by traversing call graph.&quot;&quot;&quot;</span>
+        <span class="n">visited</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+        <span class="n">to_partition</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">worklist</span> <span class="o">=</span> <span class="p">[</span><span class="n">target</span><span class="p">]</span>
+
+        <span class="k">while</span> <span class="n">worklist</span><span class="p">:</span>
+            <span class="n">buf</span> <span class="o">=</span> <span class="n">worklist</span><span class="o">.</span><span class="n">pop</span><span class="p">()</span>
+            <span class="n">buf_key</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">buf</span><span class="o">.</span><span class="n">func</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">buf</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span>
+
+            <span class="k">if</span> <span class="n">buf_key</span> <span class="ow">in</span> <span class="n">visited</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">visited</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">buf_key</span><span class="p">)</span>
+            <span class="n">to_partition</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">buf</span><span class="p">)</span>
+
+            <span class="n">_</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">mlir_target</span> <span class="o">=</span> <span class="n">find_buffer</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">module</span><span class="p">,</span> <span class="n">buf</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">func_args</span><span class="p">)</span>
+
+            <span class="c1"># Add equivalent variables (aliases)</span>
+            <span class="k">for</span> <span class="n">equiv</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_equivalent_buffers</span><span class="p">(</span><span class="n">buf</span><span class="p">):</span>
+                <span class="k">if</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">equiv</span><span class="o">.</span><span class="n">func</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">equiv</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">visited</span><span class="p">:</span>
+                    <span class="n">worklist</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">equiv</span><span class="p">)</span>
+
+            <span class="c1"># Propagate through function calls (callees)</span>
+            <span class="n">worklist</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_get_callee_buffers</span><span class="p">(</span><span class="n">mlir_target</span><span class="p">))</span>
+
+            <span class="c1"># Propagate to callers</span>
+            <span class="n">worklist</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_get_caller_buffers</span><span class="p">(</span><span class="n">mlir_target</span><span class="p">))</span>
+
+        <span class="k">return</span> <span class="n">to_partition</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_get_equivalent_buffers</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">buf</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get all buffers that are aliases of the given buffer.&quot;&quot;&quot;</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">arg_names</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">dtensor</span><span class="o">.</span><span class="n">name</span> <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">dtensor</span><span class="p">,</span> <span class="s2">&quot;name&quot;</span><span class="p">)</span> <span class="k">else</span> <span class="n">dtensor</span>
+            <span class="k">for</span> <span class="n">dtensor</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">func_args</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">buf</span><span class="o">.</span><span class="n">func</span><span class="p">,</span> <span class="p">[])</span>
+        <span class="p">]</span>
+
+        <span class="c1"># Convert to argument index if it&#39;s a function argument</span>
+        <span class="k">if</span> <span class="n">buf</span><span class="o">.</span><span class="n">name</span> <span class="ow">in</span> <span class="n">arg_names</span><span class="p">:</span>
+            <span class="n">idx</span> <span class="o">=</span> <span class="n">arg_names</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="n">buf</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+            <span class="n">lookup_key</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">buf</span><span class="o">.</span><span class="n">func</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">idx</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">lookup_key</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">buf</span><span class="o">.</span><span class="n">func</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">buf</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span>
+
+        <span class="k">for</span> <span class="n">equiv_key</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_equivalent_variables</span><span class="p">(</span><span class="n">lookup_key</span><span class="p">):</span>
+            <span class="n">path</span><span class="p">,</span> <span class="n">name</span> <span class="o">=</span> <span class="n">equiv_key</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;:&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">name</span><span class="o">.</span><span class="n">isdigit</span><span class="p">():</span>
+                <span class="c1"># Convert argument index back to name</span>
+                <span class="n">arg</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">func_args</span><span class="p">[</span><span class="n">path</span><span class="p">][</span><span class="nb">int</span><span class="p">(</span><span class="n">name</span><span class="p">)]</span>
+                <span class="n">name</span> <span class="o">=</span> <span class="n">arg</span><span class="o">.</span><span class="n">name</span> <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">arg</span><span class="p">,</span> <span class="s2">&quot;name&quot;</span><span class="p">)</span> <span class="k">else</span> <span class="n">arg</span>
+            <span class="n">result</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">MockBuffer</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">name</span><span class="p">))</span>
+
+        <span class="k">return</span> <span class="n">result</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_get_callee_buffers</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">mlir_target</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get buffers in called functions that correspond to this buffer.&quot;&quot;&quot;</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="c1"># If this is a call result, partition the returned buffer in callee</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">mlir_target</span><span class="p">,</span> <span class="n">func_d</span><span class="o">.</span><span class="n">CallOp</span><span class="p">):</span>
+            <span class="n">callee_name</span> <span class="o">=</span> <span class="n">FlatSymbolRefAttr</span><span class="p">(</span><span class="n">mlir_target</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;callee&quot;</span><span class="p">])</span><span class="o">.</span><span class="n">value</span>
+            <span class="n">callee_func</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_find_function</span><span class="p">(</span><span class="n">callee_name</span><span class="p">,</span> <span class="n">error</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">callee_func</span><span class="p">:</span>
+                <span class="c1"># Find the returned buffer</span>
                 <span class="k">for</span> <span class="n">op</span> <span class="ow">in</span> <span class="n">callee_func</span><span class="o">.</span><span class="n">entry_block</span><span class="o">.</span><span class="n">operations</span><span class="p">:</span>
-                    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">func_d</span><span class="o">.</span><span class="n">ReturnOp</span><span class="p">):</span>
-                        <span class="n">return_op</span> <span class="o">=</span> <span class="n">op</span>
+                    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">func_d</span><span class="o">.</span><span class="n">ReturnOp</span><span class="p">)</span> <span class="ow">and</span> <span class="n">op</span><span class="o">.</span><span class="n">operands</span><span class="p">:</span>
+                        <span class="n">returned</span> <span class="o">=</span> <span class="n">op</span><span class="o">.</span><span class="n">operands</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+                        <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">returned</span><span class="p">,</span> <span class="s2">&quot;owner&quot;</span><span class="p">)</span> <span class="ow">and</span> <span class="n">returned</span><span class="o">.</span><span class="n">owner</span><span class="p">:</span>
+                            <span class="n">owner</span> <span class="o">=</span> <span class="n">returned</span><span class="o">.</span><span class="n">owner</span>
+                            <span class="n">op_name</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span>
+                                <span class="n">owner</span><span class="p">,</span>
+                                <span class="s2">&quot;name&quot;</span><span class="p">,</span>
+                                <span class="nb">getattr</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">owner</span><span class="p">,</span> <span class="s2">&quot;operation&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span> <span class="s2">&quot;name&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">),</span>
+                            <span class="p">)</span>
+                            <span class="k">if</span> <span class="n">op_name</span> <span class="o">==</span> <span class="s2">&quot;memref.alloc&quot;</span> <span class="ow">and</span> <span class="s2">&quot;name&quot;</span> <span class="ow">in</span> <span class="n">owner</span><span class="o">.</span><span class="n">attributes</span><span class="p">:</span>
+                                <span class="n">buf_name</span> <span class="o">=</span> <span class="n">StringAttr</span><span class="p">(</span><span class="n">owner</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">])</span><span class="o">.</span><span class="n">value</span>
+                                <span class="n">result</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">MockBuffer</span><span class="p">(</span><span class="n">callee_name</span><span class="p">,</span> <span class="n">buf_name</span><span class="p">))</span>
                         <span class="k">break</span>
 
-                <span class="k">if</span> <span class="n">return_op</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">return_op</span><span class="o">.</span><span class="n">operands</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
-                    <span class="c1"># Find what buffer is being returned</span>
-                    <span class="n">returned_value</span> <span class="o">=</span> <span class="n">return_op</span><span class="o">.</span><span class="n">operands</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="c1"># If value is passed to a call, partition corresponding parameter</span>
+        <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">mlir_target</span><span class="p">,</span> <span class="s2">&quot;result&quot;</span><span class="p">)</span> <span class="ow">and</span> <span class="n">mlir_target</span><span class="o">.</span><span class="n">result</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">use</span> <span class="ow">in</span> <span class="n">mlir_target</span><span class="o">.</span><span class="n">result</span><span class="o">.</span><span class="n">uses</span><span class="p">:</span>
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">use</span><span class="o">.</span><span class="n">owner</span><span class="p">,</span> <span class="n">func_d</span><span class="o">.</span><span class="n">CallOp</span><span class="p">):</span>
+                    <span class="n">call_op</span> <span class="o">=</span> <span class="n">use</span><span class="o">.</span><span class="n">owner</span>
+                    <span class="n">callee_name</span> <span class="o">=</span> <span class="n">FlatSymbolRefAttr</span><span class="p">(</span><span class="n">call_op</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;callee&quot;</span><span class="p">])</span><span class="o">.</span><span class="n">value</span>
 
-                    <span class="c1"># Find the buffer operation (alloc, etc.) that produces this value</span>
-                    <span class="k">if</span> <span class="p">(</span>
-                        <span class="nb">hasattr</span><span class="p">(</span><span class="n">returned_value</span><span class="p">,</span> <span class="s2">&quot;owner&quot;</span><span class="p">)</span>
-                        <span class="ow">and</span> <span class="n">returned_value</span><span class="o">.</span><span class="n">owner</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-                    <span class="p">):</span>
-                        <span class="n">returned_buffer_op</span> <span class="o">=</span> <span class="n">returned_value</span><span class="o">.</span><span class="n">owner</span>
-
-                        <span class="c1"># If it&#39;s an alloc operation with a name, recursively partition it</span>
-                        <span class="n">op_name</span> <span class="o">=</span> <span class="p">(</span>
-                            <span class="n">returned_buffer_op</span><span class="o">.</span><span class="n">operation</span><span class="o">.</span><span class="n">name</span>
-                            <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">returned_buffer_op</span><span class="p">,</span> <span class="s2">&quot;operation&quot;</span><span class="p">)</span>
-                            <span class="k">else</span> <span class="n">returned_buffer_op</span><span class="o">.</span><span class="n">name</span>
-                        <span class="p">)</span>
-                        <span class="k">if</span> <span class="p">(</span>
-                            <span class="n">op_name</span> <span class="o">==</span> <span class="s2">&quot;memref.alloc&quot;</span>
-                            <span class="ow">and</span> <span class="s2">&quot;name&quot;</span> <span class="ow">in</span> <span class="n">returned_buffer_op</span><span class="o">.</span><span class="n">attributes</span>
-                        <span class="p">):</span>
-                            <span class="n">buffer_name</span> <span class="o">=</span> <span class="n">StringAttr</span><span class="p">(</span>
-                                <span class="n">returned_buffer_op</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">]</span>
-                            <span class="p">)</span><span class="o">.</span><span class="n">value</span>
-                            <span class="c1"># Recursively partition the buffer inside the function</span>
-                            <span class="n">recursive_partition</span><span class="p">(</span><span class="n">MockBuffer</span><span class="p">(</span><span class="n">callee_name</span><span class="p">,</span> <span class="n">buffer_name</span><span class="p">))</span>
-
-                <span class="c1"># Find all uses of this function call&#39;s result and recursively partition downstream calls</span>
-                <span class="n">downstream_uses</span> <span class="o">=</span> <span class="p">[]</span>
-                <span class="k">for</span> <span class="n">use</span> <span class="ow">in</span> <span class="n">mlir_target</span><span class="o">.</span><span class="n">result</span><span class="o">.</span><span class="n">uses</span><span class="p">:</span>
-                    <span class="n">user_op</span> <span class="o">=</span> <span class="n">use</span><span class="o">.</span><span class="n">owner</span>
-                    <span class="c1"># If the result is used as input to another function call, partition that call too</span>
-                    <span class="k">if</span> <span class="p">(</span>
-                        <span class="nb">isinstance</span><span class="p">(</span><span class="n">user_op</span><span class="p">,</span> <span class="n">func_d</span><span class="o">.</span><span class="n">CallOp</span><span class="p">)</span>
-                        <span class="ow">and</span> <span class="s2">&quot;name&quot;</span> <span class="ow">in</span> <span class="n">user_op</span><span class="o">.</span><span class="n">attributes</span>
-                    <span class="p">):</span>
-                        <span class="c1"># Store downstream calls for later processing</span>
-                        <span class="n">downstream_uses</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">user_op</span><span class="p">)</span>
-
-                <span class="c1"># Calculate the new return type with partition layout</span>
-                <span class="n">shape</span> <span class="o">=</span> <span class="n">mlir_target</span><span class="o">.</span><span class="n">result</span><span class="o">.</span><span class="n">type</span><span class="o">.</span><span class="n">shape</span>
-                <span class="n">partition_idx</span> <span class="o">=</span> <span class="p">[]</span>
-                <span class="n">address_idx</span> <span class="o">=</span> <span class="p">[]</span>
-                <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">shape</span><span class="p">):</span>
-                    <span class="k">if</span> <span class="n">dim</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">or</span> <span class="p">(</span><span class="n">dim</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">i</span> <span class="o">==</span> <span class="n">dim</span> <span class="o">-</span> <span class="mi">1</span><span class="p">):</span>
-                        <span class="k">if</span> <span class="n">partition_type</span> <span class="o">==</span> <span class="n">Partition</span><span class="o">.</span><span class="n">Cyclic</span><span class="p">:</span>
-                            <span class="n">partition_idx</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">AffineDimExpr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="o">%</span> <span class="n">factor</span><span class="p">)</span>
-                            <span class="n">address_idx</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
-                                <span class="n">AffineExpr</span><span class="o">.</span><span class="n">get_floor_div</span><span class="p">(</span><span class="n">AffineDimExpr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">i</span><span class="p">),</span> <span class="n">factor</span><span class="p">)</span>
-                            <span class="p">)</span>
-                        <span class="k">elif</span> <span class="n">partition_type</span> <span class="o">==</span> <span class="n">Partition</span><span class="o">.</span><span class="n">Block</span><span class="p">:</span>
-                            <span class="c1"># block factor N means partition into N blocks</span>
-                            <span class="c1"># each block has shape[dim] / factor elements</span>
-                            <span class="n">block_factor</span> <span class="o">=</span> <span class="p">(</span><span class="n">shape</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">+</span> <span class="n">factor</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">//</span> <span class="n">factor</span>
-                            <span class="n">partition_idx</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
-                                <span class="n">AffineExpr</span><span class="o">.</span><span class="n">get_floor_div</span><span class="p">(</span>
-                                    <span class="n">AffineDimExpr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">i</span><span class="p">),</span> <span class="n">block_factor</span>
-                                <span class="p">)</span>
-                            <span class="p">)</span>
-                            <span class="n">address_idx</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">AffineDimExpr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="o">%</span> <span class="n">block_factor</span><span class="p">)</span>
-                        <span class="k">else</span><span class="p">:</span>  <span class="c1"># Partition.Complete</span>
-                            <span class="n">partition_idx</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">AffineDimExpr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">i</span><span class="p">))</span>
-                            <span class="n">address_idx</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">AffineExpr</span><span class="o">.</span><span class="n">get_constant</span><span class="p">(</span><span class="mi">0</span><span class="p">))</span>
-                    <span class="k">else</span><span class="p">:</span>
-                        <span class="n">partition_idx</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">AffineExpr</span><span class="o">.</span><span class="n">get_constant</span><span class="p">(</span><span class="mi">0</span><span class="p">))</span>
-                        <span class="n">address_idx</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">AffineDimExpr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">i</span><span class="p">))</span>
-
-                <span class="n">affine_map</span> <span class="o">=</span> <span class="n">AffineMap</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
-                    <span class="n">dim_count</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">shape</span><span class="p">),</span>
-                    <span class="n">symbol_count</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
-                    <span class="n">exprs</span><span class="o">=</span><span class="n">partition_idx</span> <span class="o">+</span> <span class="n">address_idx</span><span class="p">,</span>
-                <span class="p">)</span>
-                <span class="n">affine_attr</span> <span class="o">=</span> <span class="n">AffineMapAttr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">affine_map</span><span class="p">)</span>
-
-                <span class="c1"># Create new return type with partition layout</span>
-                <span class="n">old_return_type</span> <span class="o">=</span> <span class="n">callee_func</span><span class="o">.</span><span class="n">type</span><span class="o">.</span><span class="n">results</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
-                <span class="n">new_return_type</span> <span class="o">=</span> <span class="n">MemRefType</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
-                    <span class="n">old_return_type</span><span class="o">.</span><span class="n">shape</span><span class="p">,</span>
-                    <span class="n">old_return_type</span><span class="o">.</span><span class="n">element_type</span><span class="p">,</span>
-                    <span class="n">affine_attr</span><span class="p">,</span>
-                    <span class="n">old_return_type</span><span class="o">.</span><span class="n">memory_space</span><span class="p">,</span>
-                <span class="p">)</span>
-
-                <span class="c1"># Check if any input operands are partitioned and update input types accordingly</span>
-                <span class="n">new_input_types</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">callee_func</span><span class="o">.</span><span class="n">type</span><span class="o">.</span><span class="n">inputs</span><span class="p">)</span>
-                <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">operand</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">mlir_target</span><span class="o">.</span><span class="n">operands</span><span class="p">):</span>
-                    <span class="k">if</span> <span class="p">(</span>
-                        <span class="nb">hasattr</span><span class="p">(</span><span class="n">operand</span><span class="o">.</span><span class="n">type</span><span class="p">,</span> <span class="s2">&quot;layout&quot;</span><span class="p">)</span>
-                        <span class="ow">and</span> <span class="n">operand</span><span class="o">.</span><span class="n">type</span><span class="o">.</span><span class="n">layout</span> <span class="o">!=</span> <span class="n">callee_func</span><span class="o">.</span><span class="n">type</span><span class="o">.</span><span class="n">inputs</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">layout</span>
-                    <span class="p">):</span>
-                        <span class="c1"># Input operand has partitioned layout, update the function parameter type</span>
-                        <span class="n">new_input_types</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">operand</span><span class="o">.</span><span class="n">type</span>
-                        <span class="c1"># Also update the function argument type</span>
-                        <span class="n">callee_func</span><span class="o">.</span><span class="n">arguments</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">set_type</span><span class="p">(</span><span class="n">operand</span><span class="o">.</span><span class="n">type</span><span class="p">)</span>
-
-                <span class="c1"># Update function type</span>
-                <span class="n">new_func_type</span> <span class="o">=</span> <span class="n">FunctionType</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">new_input_types</span><span class="p">,</span> <span class="p">[</span><span class="n">new_return_type</span><span class="p">])</span>
-                <span class="n">callee_func</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;function_type&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">TypeAttr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">new_func_type</span><span class="p">)</span>
-
-                <span class="c1"># Update downstream function parameter types</span>
-                <span class="k">for</span> <span class="n">user_op</span> <span class="ow">in</span> <span class="n">downstream_uses</span><span class="p">:</span>
-                    <span class="n">downstream_callee_name</span> <span class="o">=</span> <span class="n">FlatSymbolRefAttr</span><span class="p">(</span>
-                        <span class="n">user_op</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;callee&quot;</span><span class="p">]</span>
-                    <span class="p">)</span><span class="o">.</span><span class="n">value</span>
-                    <span class="n">downstream_callee_func</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_find_function</span><span class="p">(</span><span class="n">downstream_callee_name</span><span class="p">)</span>
-
-                    <span class="c1"># Find which parameter index this operand corresponds to</span>
-                    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">operand</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">user_op</span><span class="o">.</span><span class="n">operands</span><span class="p">):</span>
+                    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">operand</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">call_op</span><span class="o">.</span><span class="n">operands</span><span class="p">):</span>
                         <span class="k">if</span> <span class="n">operand</span> <span class="o">==</span> <span class="n">mlir_target</span><span class="o">.</span><span class="n">result</span><span class="p">:</span>
-                            <span class="c1"># Update the parameter type to match the new partitioned type</span>
-                            <span class="n">downstream_callee_func</span><span class="o">.</span><span class="n">arguments</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">set_type</span><span class="p">(</span>
-                                <span class="n">new_return_type</span>
-                            <span class="p">)</span>
-
-                            <span class="c1"># Update function signature</span>
-                            <span class="n">new_downstream_input_types</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span>
-                                <span class="n">downstream_callee_func</span><span class="o">.</span><span class="n">type</span><span class="o">.</span><span class="n">inputs</span>
-                            <span class="p">)</span>
-                            <span class="n">new_downstream_input_types</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">new_return_type</span>
-
-                            <span class="n">new_downstream_func_type</span> <span class="o">=</span> <span class="n">FunctionType</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
-                                <span class="n">new_downstream_input_types</span><span class="p">,</span>
-                                <span class="n">downstream_callee_func</span><span class="o">.</span><span class="n">type</span><span class="o">.</span><span class="n">results</span><span class="p">,</span>
-                            <span class="p">)</span>
-                            <span class="n">downstream_callee_func</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;function_type&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
-                                <span class="n">TypeAttr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">new_downstream_func_type</span><span class="p">)</span>
-                            <span class="p">)</span>
+                            <span class="n">param</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_param_buffer</span><span class="p">(</span><span class="n">callee_name</span><span class="p">,</span> <span class="n">i</span><span class="p">)</span>
+                            <span class="k">if</span> <span class="n">param</span><span class="p">:</span>
+                                <span class="n">result</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">param</span><span class="p">)</span>
                             <span class="k">break</span>
 
-        <span class="c1"># Calculate layout map</span>
-        <span class="c1"># first N: partition index</span>
-        <span class="c1"># last N : physical index</span>
-        <span class="n">shape</span> <span class="o">=</span> <span class="n">mlir_target</span><span class="o">.</span><span class="n">result</span><span class="o">.</span><span class="n">type</span><span class="o">.</span><span class="n">shape</span>
+        <span class="c1"># Handle BlockArgument (function parameter) passed to calls</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">mlir_target</span><span class="p">,</span> <span class="n">BlockArgument</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">use</span> <span class="ow">in</span> <span class="n">mlir_target</span><span class="o">.</span><span class="n">uses</span><span class="p">:</span>
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">use</span><span class="o">.</span><span class="n">owner</span><span class="p">,</span> <span class="n">func_d</span><span class="o">.</span><span class="n">CallOp</span><span class="p">):</span>
+                    <span class="n">call_op</span> <span class="o">=</span> <span class="n">use</span><span class="o">.</span><span class="n">owner</span>
+                    <span class="n">callee_name</span> <span class="o">=</span> <span class="n">FlatSymbolRefAttr</span><span class="p">(</span><span class="n">call_op</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;callee&quot;</span><span class="p">])</span><span class="o">.</span><span class="n">value</span>
+
+                    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">operand</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">call_op</span><span class="o">.</span><span class="n">operands</span><span class="p">):</span>
+                        <span class="k">if</span> <span class="n">operand</span> <span class="o">==</span> <span class="n">mlir_target</span><span class="p">:</span>
+                            <span class="n">param</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_param_buffer</span><span class="p">(</span><span class="n">callee_name</span><span class="p">,</span> <span class="n">i</span><span class="p">)</span>
+                            <span class="k">if</span> <span class="n">param</span><span class="p">:</span>
+                                <span class="n">result</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">param</span><span class="p">)</span>
+                            <span class="k">break</span>
+
+        <span class="k">return</span> <span class="n">result</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_get_caller_buffers</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">mlir_target</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get buffers in calling functions that correspond to this buffer.&quot;&quot;&quot;</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="c1"># Find calls to the same function and propagate</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">mlir_target</span><span class="p">,</span> <span class="n">func_d</span><span class="o">.</span><span class="n">CallOp</span><span class="p">):</span>
+            <span class="n">callee_attr</span> <span class="o">=</span> <span class="n">mlir_target</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;callee&quot;</span><span class="p">]</span>
+            <span class="k">for</span> <span class="n">func</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">module</span><span class="o">.</span><span class="n">body</span><span class="o">.</span><span class="n">operations</span><span class="p">:</span>
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">func</span><span class="p">,</span> <span class="n">func_d</span><span class="o">.</span><span class="n">FuncOp</span><span class="p">):</span>
+                    <span class="k">for</span> <span class="n">op</span> <span class="ow">in</span> <span class="n">func</span><span class="o">.</span><span class="n">entry_block</span><span class="o">.</span><span class="n">operations</span><span class="p">:</span>
+                        <span class="k">if</span> <span class="p">(</span>
+                            <span class="nb">isinstance</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">func_d</span><span class="o">.</span><span class="n">CallOp</span><span class="p">)</span>
+                            <span class="ow">and</span> <span class="n">op</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;callee&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="n">callee_attr</span>
+                            <span class="ow">and</span> <span class="n">op</span> <span class="o">!=</span> <span class="n">mlir_target</span>
+                            <span class="ow">and</span> <span class="s2">&quot;name&quot;</span> <span class="ow">in</span> <span class="n">op</span><span class="o">.</span><span class="n">attributes</span>
+                        <span class="p">):</span>
+                            <span class="n">func_name</span> <span class="o">=</span> <span class="n">func</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;sym_name&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">value</span>
+                            <span class="n">call_name</span> <span class="o">=</span> <span class="n">op</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">value</span>
+                            <span class="n">result</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">MockBuffer</span><span class="p">(</span><span class="n">func_name</span><span class="p">,</span> <span class="n">call_name</span><span class="p">))</span>
+
+        <span class="k">return</span> <span class="n">result</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_get_param_buffer</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">func_name</span><span class="p">,</span> <span class="n">param_idx</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get MockBuffer for a function parameter by index.&quot;&quot;&quot;</span>
+        <span class="n">args</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">func_args</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">func_name</span><span class="p">,</span> <span class="p">[])</span>
+        <span class="k">if</span> <span class="n">param_idx</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">args</span><span class="p">):</span>
+            <span class="n">arg</span> <span class="o">=</span> <span class="n">args</span><span class="p">[</span><span class="n">param_idx</span><span class="p">]</span>
+            <span class="n">name</span> <span class="o">=</span> <span class="n">arg</span><span class="o">.</span><span class="n">name</span> <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">arg</span><span class="p">,</span> <span class="s2">&quot;name&quot;</span><span class="p">)</span> <span class="k">else</span> <span class="n">arg</span>
+            <span class="k">return</span> <span class="n">MockBuffer</span><span class="p">(</span><span class="n">func_name</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">None</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_compute_partition_layout</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">shape</span><span class="p">,</span> <span class="n">partition_type</span><span class="p">,</span> <span class="n">dim</span><span class="p">,</span> <span class="n">factor</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Compute the affine map for partitioned memory layout.&quot;&quot;&quot;</span>
         <span class="n">partition_idx</span> <span class="o">=</span> <span class="p">[]</span>
         <span class="n">address_idx</span> <span class="o">=</span> <span class="p">[]</span>
-        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">shape</span><span class="p">):</span>
-            <span class="k">if</span> <span class="n">dim</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">or</span> <span class="p">(</span><span class="n">dim</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">i</span> <span class="o">==</span> <span class="n">dim</span> <span class="o">-</span> <span class="mi">1</span><span class="p">):</span>
+
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">size</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">shape</span><span class="p">):</span>
+            <span class="n">applies_to_dim</span> <span class="o">=</span> <span class="p">(</span><span class="n">dim</span> <span class="o">==</span> <span class="mi">0</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span><span class="n">i</span> <span class="o">==</span> <span class="n">dim</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">applies_to_dim</span><span class="p">:</span>
                 <span class="k">if</span> <span class="n">partition_type</span> <span class="o">==</span> <span class="n">Partition</span><span class="o">.</span><span class="n">Cyclic</span><span class="p">:</span>
                     <span class="n">partition_idx</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">AffineDimExpr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="o">%</span> <span class="n">factor</span><span class="p">)</span>
                     <span class="n">address_idx</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
                         <span class="n">AffineExpr</span><span class="o">.</span><span class="n">get_floor_div</span><span class="p">(</span><span class="n">AffineDimExpr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">i</span><span class="p">),</span> <span class="n">factor</span><span class="p">)</span>
                     <span class="p">)</span>
                 <span class="k">elif</span> <span class="n">partition_type</span> <span class="o">==</span> <span class="n">Partition</span><span class="o">.</span><span class="n">Block</span><span class="p">:</span>
-                    <span class="c1"># block factor N means partition into N blocks</span>
-                    <span class="c1"># each block has shape[dim] / factor elements</span>
-                    <span class="n">block_factor</span> <span class="o">=</span> <span class="p">(</span><span class="n">shape</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">+</span> <span class="n">factor</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">//</span> <span class="n">factor</span>
+                    <span class="n">block_size</span> <span class="o">=</span> <span class="p">(</span><span class="n">size</span> <span class="o">+</span> <span class="n">factor</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">//</span> <span class="n">factor</span>
                     <span class="n">partition_idx</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
-                        <span class="n">AffineExpr</span><span class="o">.</span><span class="n">get_floor_div</span><span class="p">(</span><span class="n">AffineDimExpr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">i</span><span class="p">),</span> <span class="n">block_factor</span><span class="p">)</span>
+                        <span class="n">AffineExpr</span><span class="o">.</span><span class="n">get_floor_div</span><span class="p">(</span><span class="n">AffineDimExpr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">i</span><span class="p">),</span> <span class="n">block_size</span><span class="p">)</span>
                     <span class="p">)</span>
-                    <span class="n">address_idx</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">AffineDimExpr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="o">%</span> <span class="n">block_factor</span><span class="p">)</span>
-                <span class="k">else</span><span class="p">:</span>  <span class="c1"># Partition.Complete</span>
+                    <span class="n">address_idx</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">AffineDimExpr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="o">%</span> <span class="n">block_size</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>  <span class="c1"># Complete</span>
                     <span class="n">partition_idx</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">AffineDimExpr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">i</span><span class="p">))</span>
                     <span class="n">address_idx</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">AffineExpr</span><span class="o">.</span><span class="n">get_constant</span><span class="p">(</span><span class="mi">0</span><span class="p">))</span>
             <span class="k">else</span><span class="p">:</span>
                 <span class="n">partition_idx</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">AffineExpr</span><span class="o">.</span><span class="n">get_constant</span><span class="p">(</span><span class="mi">0</span><span class="p">))</span>
                 <span class="n">address_idx</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">AffineDimExpr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">i</span><span class="p">))</span>
+
         <span class="n">affine_map</span> <span class="o">=</span> <span class="n">AffineMap</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
             <span class="n">dim_count</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">shape</span><span class="p">),</span> <span class="n">symbol_count</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">exprs</span><span class="o">=</span><span class="n">partition_idx</span> <span class="o">+</span> <span class="n">address_idx</span>
         <span class="p">)</span>
-        <span class="n">affine_attr</span> <span class="o">=</span> <span class="n">AffineMapAttr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">affine_map</span><span class="p">)</span>
-        <span class="n">only_target_names</span> <span class="o">=</span> <span class="p">[</span><span class="n">item</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;:&quot;</span><span class="p">)[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">visited_target_names</span><span class="p">]</span>
-        <span class="k">for</span> <span class="n">op</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">module</span><span class="o">.</span><span class="n">body</span><span class="o">.</span><span class="n">operations</span><span class="p">:</span>
-            <span class="k">if</span> <span class="p">(</span>
-                <span class="nb">isinstance</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">memref_d</span><span class="o">.</span><span class="n">GlobalOp</span><span class="p">)</span>
-                <span class="ow">and</span> <span class="n">op</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;sym_name&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">value</span> <span class="ow">in</span> <span class="n">only_target_names</span>
-            <span class="p">):</span>
-                <span class="n">op</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;type&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">TypeAttr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
-                    <span class="n">MemRefType</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
-                        <span class="n">op</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;type&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">shape</span><span class="p">,</span>
-                        <span class="n">op</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;type&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">element_type</span><span class="p">,</span>
-                        <span class="n">affine_attr</span><span class="p">,</span>
-                        <span class="n">op</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;type&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">memory_space</span><span class="p">,</span>
-                    <span class="p">)</span>
-                <span class="p">)</span></div>
+        <span class="k">return</span> <span class="n">AffineMapAttr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">affine_map</span><span class="p">)</span>
 
+    <span class="k">def</span><span class="w"> </span><span class="nf">_update_call_types</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">call_op</span><span class="p">,</span> <span class="n">partition_type</span><span class="p">,</span> <span class="n">dim</span><span class="p">,</span> <span class="n">factor</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Update function signature types after partitioning a call result.&quot;&quot;&quot;</span>
+        <span class="n">callee_name</span> <span class="o">=</span> <span class="n">FlatSymbolRefAttr</span><span class="p">(</span><span class="n">call_op</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;callee&quot;</span><span class="p">])</span><span class="o">.</span><span class="n">value</span>
+        <span class="n">callee_func</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_find_function</span><span class="p">(</span><span class="n">callee_name</span><span class="p">,</span> <span class="n">error</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">callee_func</span><span class="p">:</span>
+            <span class="k">return</span>
+
+        <span class="n">shape</span> <span class="o">=</span> <span class="n">call_op</span><span class="o">.</span><span class="n">result</span><span class="o">.</span><span class="n">type</span><span class="o">.</span><span class="n">shape</span>
+        <span class="n">layout_attr</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_compute_partition_layout</span><span class="p">(</span><span class="n">shape</span><span class="p">,</span> <span class="n">partition_type</span><span class="p">,</span> <span class="n">dim</span><span class="p">,</span> <span class="n">factor</span><span class="p">)</span>
+
+        <span class="c1"># Create new return type with partition layout</span>
+        <span class="n">old_type</span> <span class="o">=</span> <span class="n">callee_func</span><span class="o">.</span><span class="n">type</span><span class="o">.</span><span class="n">results</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">new_return_type</span> <span class="o">=</span> <span class="n">MemRefType</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+            <span class="n">old_type</span><span class="o">.</span><span class="n">shape</span><span class="p">,</span> <span class="n">old_type</span><span class="o">.</span><span class="n">element_type</span><span class="p">,</span> <span class="n">layout_attr</span><span class="p">,</span> <span class="n">old_type</span><span class="o">.</span><span class="n">memory_space</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Update input types if operands are partitioned</span>
+        <span class="n">new_input_types</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">callee_func</span><span class="o">.</span><span class="n">type</span><span class="o">.</span><span class="n">inputs</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">operand</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">call_op</span><span class="o">.</span><span class="n">operands</span><span class="p">):</span>
+            <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">operand</span><span class="o">.</span><span class="n">type</span><span class="p">,</span> <span class="s2">&quot;layout&quot;</span><span class="p">):</span>
+                <span class="k">if</span> <span class="n">operand</span><span class="o">.</span><span class="n">type</span><span class="o">.</span><span class="n">layout</span> <span class="o">!=</span> <span class="n">callee_func</span><span class="o">.</span><span class="n">type</span><span class="o">.</span><span class="n">inputs</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">layout</span><span class="p">:</span>
+                    <span class="n">new_input_types</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">operand</span><span class="o">.</span><span class="n">type</span>
+                    <span class="n">callee_func</span><span class="o">.</span><span class="n">arguments</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">set_type</span><span class="p">(</span><span class="n">operand</span><span class="o">.</span><span class="n">type</span><span class="p">)</span>
+
+        <span class="c1"># Update function type</span>
+        <span class="n">new_func_type</span> <span class="o">=</span> <span class="n">FunctionType</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">new_input_types</span><span class="p">,</span> <span class="p">[</span><span class="n">new_return_type</span><span class="p">])</span>
+        <span class="n">callee_func</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;function_type&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">TypeAttr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">new_func_type</span><span class="p">)</span>
+
+        <span class="c1"># CRITICAL: Update ALL call sites to this function with the new return type</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_update_all_call_sites</span><span class="p">(</span><span class="n">callee_name</span><span class="p">,</span> <span class="n">new_return_type</span><span class="p">)</span>
+
+        <span class="c1"># Update downstream function parameters that use this result</span>
+        <span class="k">for</span> <span class="n">use</span> <span class="ow">in</span> <span class="n">call_op</span><span class="o">.</span><span class="n">result</span><span class="o">.</span><span class="n">uses</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">use</span><span class="o">.</span><span class="n">owner</span><span class="p">,</span> <span class="n">func_d</span><span class="o">.</span><span class="n">CallOp</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_update_downstream_param_type</span><span class="p">(</span>
+                    <span class="n">use</span><span class="o">.</span><span class="n">owner</span><span class="p">,</span> <span class="n">call_op</span><span class="o">.</span><span class="n">result</span><span class="p">,</span> <span class="n">new_return_type</span>
+                <span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_update_all_call_sites</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">callee_name</span><span class="p">,</span> <span class="n">new_return_type</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Update all call sites to a function when its signature changes.&quot;&quot;&quot;</span>
+        <span class="k">for</span> <span class="n">func</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">module</span><span class="o">.</span><span class="n">body</span><span class="o">.</span><span class="n">operations</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">func</span><span class="p">,</span> <span class="n">func_d</span><span class="o">.</span><span class="n">FuncOp</span><span class="p">):</span>
+                <span class="k">continue</span>
+            <span class="k">for</span> <span class="n">op</span> <span class="ow">in</span> <span class="n">func</span><span class="o">.</span><span class="n">entry_block</span><span class="o">.</span><span class="n">operations</span><span class="p">:</span>
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">func_d</span><span class="o">.</span><span class="n">CallOp</span><span class="p">):</span>
+                    <span class="n">call_callee</span> <span class="o">=</span> <span class="n">FlatSymbolRefAttr</span><span class="p">(</span><span class="n">op</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;callee&quot;</span><span class="p">])</span><span class="o">.</span><span class="n">value</span>
+                    <span class="k">if</span> <span class="n">call_callee</span> <span class="o">==</span> <span class="n">callee_name</span><span class="p">:</span>
+                        <span class="c1"># Update the call operation&#39;s result type</span>
+                        <span class="n">op</span><span class="o">.</span><span class="n">result</span><span class="o">.</span><span class="n">set_type</span><span class="p">(</span><span class="n">new_return_type</span><span class="p">)</span>
+
+                        <span class="c1"># If this call&#39;s result is used by another function,</span>
+                        <span class="c1"># we need to update that function&#39;s parameter types too</span>
+                        <span class="k">for</span> <span class="n">use</span> <span class="ow">in</span> <span class="n">op</span><span class="o">.</span><span class="n">result</span><span class="o">.</span><span class="n">uses</span><span class="p">:</span>
+                            <span class="n">user_op</span> <span class="o">=</span> <span class="n">use</span><span class="o">.</span><span class="n">owner</span>
+                            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">user_op</span><span class="p">,</span> <span class="n">func_d</span><span class="o">.</span><span class="n">CallOp</span><span class="p">):</span>
+                                <span class="bp">self</span><span class="o">.</span><span class="n">_update_downstream_param_type</span><span class="p">(</span>
+                                    <span class="n">user_op</span><span class="p">,</span> <span class="n">op</span><span class="o">.</span><span class="n">result</span><span class="p">,</span> <span class="n">new_return_type</span>
+                                <span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_update_downstream_param_type</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">call_op</span><span class="p">,</span> <span class="n">partitioned_value</span><span class="p">,</span> <span class="n">new_type</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Update parameter type in downstream function call.&quot;&quot;&quot;</span>
+        <span class="n">callee_name</span> <span class="o">=</span> <span class="n">FlatSymbolRefAttr</span><span class="p">(</span><span class="n">call_op</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;callee&quot;</span><span class="p">])</span><span class="o">.</span><span class="n">value</span>
+        <span class="n">callee_func</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_find_function</span><span class="p">(</span><span class="n">callee_name</span><span class="p">,</span> <span class="n">error</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">callee_func</span><span class="p">:</span>
+            <span class="k">return</span>
+
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">operand</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">call_op</span><span class="o">.</span><span class="n">operands</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">operand</span> <span class="o">==</span> <span class="n">partitioned_value</span><span class="p">:</span>
+                <span class="n">callee_func</span><span class="o">.</span><span class="n">arguments</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">set_type</span><span class="p">(</span><span class="n">new_type</span><span class="p">)</span>
+
+                <span class="n">new_inputs</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">callee_func</span><span class="o">.</span><span class="n">type</span><span class="o">.</span><span class="n">inputs</span><span class="p">)</span>
+                <span class="n">new_inputs</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">new_type</span>
+                <span class="n">new_func_type</span> <span class="o">=</span> <span class="n">FunctionType</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">new_inputs</span><span class="p">,</span> <span class="n">callee_func</span><span class="o">.</span><span class="n">type</span><span class="o">.</span><span class="n">results</span><span class="p">)</span>
+                <span class="n">callee_func</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;function_type&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">TypeAttr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">new_func_type</span><span class="p">)</span>
+                <span class="k">break</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_update_global_types</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">buffers</span><span class="p">,</span> <span class="n">partition_type</span><span class="p">,</span> <span class="n">dim</span><span class="p">,</span> <span class="n">factor</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Update global memory reference types.&quot;&quot;&quot;</span>
+        <span class="n">buffer_names</span> <span class="o">=</span> <span class="p">{</span><span class="n">buf</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">buf</span> <span class="ow">in</span> <span class="n">buffers</span><span class="p">}</span>
+
+        <span class="k">for</span> <span class="n">op</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">module</span><span class="o">.</span><span class="n">body</span><span class="o">.</span><span class="n">operations</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">memref_d</span><span class="o">.</span><span class="n">GlobalOp</span><span class="p">):</span>
+                <span class="k">if</span> <span class="n">op</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;sym_name&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">value</span> <span class="ow">in</span> <span class="n">buffer_names</span><span class="p">:</span>
+                    <span class="n">old_type</span> <span class="o">=</span> <span class="n">op</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;type&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">value</span>
+                    <span class="n">layout_attr</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_compute_partition_layout</span><span class="p">(</span>
+                        <span class="n">old_type</span><span class="o">.</span><span class="n">shape</span><span class="p">,</span> <span class="n">partition_type</span><span class="p">,</span> <span class="n">dim</span><span class="p">,</span> <span class="n">factor</span>
+                    <span class="p">)</span>
+                    <span class="n">new_type</span> <span class="o">=</span> <span class="n">MemRefType</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+                        <span class="n">old_type</span><span class="o">.</span><span class="n">shape</span><span class="p">,</span>
+                        <span class="n">old_type</span><span class="o">.</span><span class="n">element_type</span><span class="p">,</span>
+                        <span class="n">layout_attr</span><span class="p">,</span>
+                        <span class="n">old_type</span><span class="o">.</span><span class="n">memory_space</span><span class="p">,</span>
+                    <span class="p">)</span>
+                    <span class="n">op</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;type&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">TypeAttr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">new_type</span><span class="p">)</span>
 
     <span class="c1"># @wrapped_apply</span>
 <div class="viewcode-block" id="Schedule.buffer_at_regular">

@@ -202,7 +202,7 @@
 <td><p>Combines loops with indices listed in <cite>args</cite> into a single loop over a single index.</p></td>
 </tr>
 <tr class="row-odd"><td><p><a class="reference internal" href="#allo.customize.Schedule.partition" title="allo.customize.Schedule.partition"><code class="xref py py-obj docutils literal notranslate"><span class="pre">partition</span></code></a>(target[, partition_type, dim, factor])</p></td>
-<td><p>Partitions a given array, for example if the array is <cite>B</cite>, this would be <cite>&lt;schedule&gt;.B</cite>.</p></td>
+<td><p>Partitions a given array and propagates to all callers and callees.</p></td>
 </tr>
 <tr class="row-even"><td><p><a class="reference internal" href="#allo.customize.Schedule.buffer_at_regular" title="allo.customize.Schedule.buffer_at_regular"><code class="xref py py-obj docutils literal notranslate"><span class="pre">buffer_at_regular</span></code></a>(target, axis)</p></td>
 <td><p>Creates a chip buffer to hold the values of <cite>target</cite> written to in loop with index <cite>axis</cite> instead of immediately writing them to memory.</p></td>
@@ -292,18 +292,14 @@ index listed in <cite>args</cite>, the second is the second outermost, and so on
 <dl class="py method">
 <dt class="sig sig-object py" id="allo.customize.Schedule.partition">
 <span class="sig-name descname"><span class="pre">partition</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">target</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">partition_type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dim</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">factor</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/allo/customize.html#Schedule.partition"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#allo.customize.Schedule.partition" title="Link to this definition"><span>¶</span></a></dt>
-<dd><p>Partitions a given array, for example if the array is <cite>B</cite>, this would be <cite>&lt;schedule&gt;.B</cite>.
-There are three types, <cite>Partition.Complete</cite>, <cite>Partition.Block</cite>, and <cite>Partition.cyclic</cite>.
-block: The original array is split into <cite>factor</cite> equally sized blocks of consecutive elements of the original array
-cyclic:The original array is split into <cite>factor</cite> equally sized blocks interleaving the elements of the original array.
-complete: The original array is split into its individual elements. This corresponds to resolving a memory into registers.</p>
+<dd><p>Partitions a given array and propagates to all callers and callees.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
 <li><p><strong>target</strong> (<em>allo.ir.utils.MockBuffer</em><em> | </em><em>str</em>) – The array to partition.</p></li>
-<li><p><strong>partition_type</strong> (<em>allo.customize.Partition</em>) – The type of partition.</p></li>
+<li><p><strong>partition_type</strong> (<em>allo.customize.Partition</em>) – Complete, Block, or Cyclic partition type.</p></li>
 <li><p><strong>factor</strong> (<em>int</em>) – The number of arrays created by a block or cyclic partition.</p></li>
-<li><p><strong>dim</strong> (<em>int</em>) – The dimension of <cite>target</cite> to partition. If <cite>dim=0</cite>, all dimensions are partitioned.</p></li>
+<li><p><strong>dim</strong> (<em>int</em>) – The dimension to partition. If dim=0, all dimensions are partitioned.</p></li>
 </ul>
 </dd>
 </dl>
