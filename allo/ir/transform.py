@@ -237,7 +237,7 @@ def get_affine_loop_nests(func):
                 band.add_loop(func_name, band_name, name, op)
                 DFS(op.body.operations, band)
             elif isinstance(op, affine_d.AffineIfOp):
-                DFS(op.thenRegion.blocks[0].operations, band)
+                DFS(op.then_block.operations, band)
                 if op.else_block is not None:
                     DFS(op.else_block.operations, band)
             elif isinstance(op, scf_d.IfOp):
