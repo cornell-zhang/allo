@@ -1866,19 +1866,17 @@ void ModuleEmitter::emitStreamGet(StreamGetOp op) {
   fixUnsignedType(result, op->hasAttr("unsigned"));
   auto stream = op->getOperand(0);
 
-  // Check if this is a stream of blocks
   StreamType streamType = nullptr;
   if (llvm::isa<StreamType>(stream.getType())) {
     streamType = llvm::dyn_cast<StreamType>(stream.getType());
   }
 
   if (streamType && isStreamOfBlocks(streamType)) {
-    // Stream of blocks - use read_lock pattern
     auto baseShapedType = llvm::dyn_cast<ShapedType>(streamType.getBaseType());
     std::string streamName = std::string(getName(stream).str());
     std::string resultName = std::string(addName(result, false).str());
 
-    // Declare the result array first
+    // 1. Declare the local result array
     indent();
     os << getTypeName(baseShapedType.getElementType()) << " " << resultName;
     for (auto dim : baseShapedType.getShape()) {
@@ -1886,18 +1884,26 @@ void ModuleEmitter::emitStreamGet(StreamGetOp op) {
     }
     os << ";\n";
 
-    // Create a scope for the read_lock and copy data out
+    // 2. Create a scope to manage lock lifetime
     indent();
     os << "{\n";
     addIndent();
 
-    // Acquire read lock
+    // 3. Define the Block Type (e.g., typedef int16_t block_t[4][4])
+    // The lock template MUST be the array type per HLS Style Guide
     indent();
-    os << "hls::read_lock< hls::stream_of_blocks< " << streamName
-       << "_block_t, " << streamType.getDepth() << " > > _read_block("
-       << streamName << ");\n";
+    os << "typedef " << getTypeName(baseShapedType.getElementType())
+       << " _block_t";
+    for (auto dim : baseShapedType.getShape()) {
+      os << "[" << dim << "]";
+    }
+    os << ";\n";
 
-    // Generate nested loops to copy the block data
+    // 4. Acquire the read lock
+    indent();
+    os << "hls::read_lock<_block_t> _read_block(" << streamName << ");\n";
+
+    // 5. Generate nested loops to copy data from the block to the local array
     unsigned dimIdx = 0;
     for (auto dim : baseShapedType.getShape()) {
       indent();
@@ -1906,7 +1912,6 @@ void ModuleEmitter::emitStreamGet(StreamGetOp op) {
       addIndent();
     }
 
-    // Copy element from read_lock block to result array
     indent();
     os << resultName;
     for (unsigned i = 0; i < baseShapedType.getRank(); ++i) {
@@ -1925,6 +1930,7 @@ void ModuleEmitter::emitStreamGet(StreamGetOp op) {
       os << "}\n";
     }
 
+    // 6. Close scope (destructor releases block back to pool)
     reduceIndent();
     indent();
     os << "} // read_lock released";
@@ -1932,7 +1938,7 @@ void ModuleEmitter::emitStreamGet(StreamGetOp op) {
     return;
   }
 
-  // Fall back to regular stream handling for scalar streams
+  // Fallback logic for regular scalar streams
   int rank = 0;
   if (llvm::isa<StreamType>(stream.getType())) {
     unsigned dimIdx = 0;
@@ -1957,11 +1963,9 @@ void ModuleEmitter::emitStreamGet(StreamGetOp op) {
   os << " = ";
   emitValue(stream, 0, false);
   if (llvm::isa<ShapedType>(stream.getType())) {
-    // array of stream
     auto denseArrayAttr = op->getAttrOfType<DenseI64ArrayAttr>("indices");
-    for (int64_t v : denseArrayAttr.asArrayRef()) {
+    for (int64_t v : denseArrayAttr.asArrayRef())
       os << "[" << v << "]";
-    }
   }
   os << ".read();";
   if (rank > 0) {
@@ -1979,30 +1983,35 @@ void ModuleEmitter::emitStreamPut(StreamPutOp op) {
   auto stream = op->getOperand(0);
   auto value = op->getOperand(1);
 
-  // Check if this is a stream of blocks
   StreamType streamType = nullptr;
   if (llvm::isa<StreamType>(stream.getType())) {
     streamType = llvm::dyn_cast<StreamType>(stream.getType());
   }
 
   if (streamType && isStreamOfBlocks(streamType)) {
-    // Stream of blocks - use write_lock pattern
     auto baseShapedType = llvm::dyn_cast<ShapedType>(streamType.getBaseType());
     std::string streamName = std::string(getName(stream).str());
     std::string valueName = std::string(getName(value).str());
 
-    // Create a scope for the write_lock
+    // 1. Create scope to manage lock lifetime
     indent();
     os << "{\n";
     addIndent();
 
-    // Acquire write lock
+    // 2. Define the Block Type (matching the stream structure)
     indent();
-    os << "hls::write_lock< hls::stream_of_blocks< " << streamName
-       << "_block_t, " << streamType.getDepth() << " > > _write_block("
-       << streamName << ");\n";
+    os << "typedef " << getTypeName(baseShapedType.getElementType())
+       << " _block_t";
+    for (auto dim : baseShapedType.getShape()) {
+      os << "[" << dim << "]";
+    }
+    os << ";\n";
 
-    // Generate nested loops to copy the block data
+    // 3. Acquire the write lock
+    indent();
+    os << "hls::write_lock<_block_t> _write_block(" << streamName << ");\n";
+
+    // 4. Generate nested loops to copy data from the value array into the block
     unsigned dimIdx = 0;
     for (auto dim : baseShapedType.getShape()) {
       indent();
@@ -2011,7 +2020,6 @@ void ModuleEmitter::emitStreamPut(StreamPutOp op) {
       addIndent();
     }
 
-    // Copy element from value array to write_lock block
     indent();
     os << "_write_block";
     for (unsigned i = 0; i < baseShapedType.getRank(); ++i) {
@@ -2030,6 +2038,7 @@ void ModuleEmitter::emitStreamPut(StreamPutOp op) {
       os << "}\n";
     }
 
+    // 5. Close scope (destructor pushes block into the stream)
     reduceIndent();
     indent();
     os << "} // write_lock released";
@@ -2037,7 +2046,7 @@ void ModuleEmitter::emitStreamPut(StreamPutOp op) {
     return;
   }
 
-  // Fall back to regular stream handling for scalar streams
+  // Fallback logic for regular scalar streams
   int rank = 0;
   if (llvm::isa<StreamType>(stream.getType())) {
     unsigned dimIdx = 0;
@@ -2056,13 +2065,11 @@ void ModuleEmitter::emitStreamPut(StreamPutOp op) {
     indent();
     emitValue(stream, 0, false);
   } else {
-    // array of stream
     indent();
     emitValue(stream, 0, false);
     auto denseArrayAttr = op->getAttrOfType<DenseI64ArrayAttr>("indices");
-    for (int64_t v : denseArrayAttr.asArrayRef()) {
+    for (int64_t v : denseArrayAttr.asArrayRef())
       os << "[" << v << "]";
-    }
   }
   os << ".write(";
   emitValue(op->getOperand(1), rank);
@@ -2990,50 +2997,50 @@ void ModuleEmitter::emitHostFunction(func::FuncOp func) {
 /// Top-level MLIR module emitter.
 void ModuleEmitter::emitModule(ModuleOp module) {
   std::string device_header = R"XXX(
-//===------------------------------------------------------------*- C++ -*-===//
-//
-// Automatically generated file for High-level Synthesis (HLS).
-//
-//===----------------------------------------------------------------------===//
-#include <algorithm>
-#include <ap_axi_sdata.h>
-#include <ap_fixed.h>
-#include <ap_int.h>
-#include <hls_math.h>
-#include <hls_stream.h>
-#include <hls_streamofblocks.h>
-#include <math.h>
-#include <stdint.h>
-using namespace std;
-)XXX";
+ //===------------------------------------------------------------*- C++ -*-===//
+ //
+ // Automatically generated file for High-level Synthesis (HLS).
+ //
+ //===----------------------------------------------------------------------===//
+ #include <algorithm>
+ #include <ap_axi_sdata.h>
+ #include <ap_fixed.h>
+ #include <ap_int.h>
+ #include <hls_math.h>
+ #include <hls_stream.h>
+ #include <hls_streamofblocks.h>
+ #include <math.h>
+ #include <stdint.h>
+ using namespace std;
+ )XXX";
 
   std::string host_header = R"XXX(
-//===------------------------------------------------------------*- C++ -*-===//
-//
-// Automatically generated file for host
-//
-//===----------------------------------------------------------------------===//
-// standard C/C++ headers
-#include <cassert>
-#include <cstdio>
-#include <cstdlib>
-#include <string>
-#include <time.h>
-
-// vivado hls headers
-#include "kernel.h"
-#include <ap_fixed.h>
-#include <ap_int.h>
-#include <hls_stream.h>
-
-#include <ap_axi_sdata.h>
-#include <ap_fixed.h>
-#include <ap_int.h>
-#include <hls_math.h>
-#include <math.h>
-#include <stdint.h>
-
-)XXX";
+ //===------------------------------------------------------------*- C++ -*-===//
+ //
+ // Automatically generated file for host
+ //
+ //===----------------------------------------------------------------------===//
+ // standard C/C++ headers
+ #include <cassert>
+ #include <cstdio>
+ #include <cstdlib>
+ #include <string>
+ #include <time.h>
+ 
+ // vivado hls headers
+ #include "kernel.h"
+ #include <ap_fixed.h>
+ #include <ap_int.h>
+ #include <hls_stream.h>
+ 
+ #include <ap_axi_sdata.h>
+ #include <ap_fixed.h>
+ #include <ap_int.h>
+ #include <hls_math.h>
+ #include <math.h>
+ #include <stdint.h>
+ 
+ )XXX";
 
   if (module.getName().has_value() && module.getName().value() == "host") {
     os << host_header;
