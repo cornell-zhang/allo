@@ -15,7 +15,7 @@ NUM_BLOCKS = 2
 
 
 @df.region()
-def test_stream_2d_blocks():
+def top_stream_2d_blocks():
     # Stream where each element is a 4x4 block of int16
     pipe: Stream[int16[M, N], 4]
 
@@ -42,7 +42,7 @@ def test_2d_blocks():
     B = np.zeros((M * NUM_BLOCKS, N), dtype=np.int16)
 
     # Test with simulator
-    sim_mod = df.build(test_stream_2d_blocks, target="simulator")
+    sim_mod = df.build(top_stream_2d_blocks, target="simulator")
     sim_mod(A, B)
     np.testing.assert_allclose(B, A, atol=1e-5)
     print("Dataflow Simulator Passed for 2D blocks!")
@@ -51,7 +51,7 @@ def test_2d_blocks():
     if hls.is_available("vitis_hls"):
         with tempfile.TemporaryDirectory() as tmpdir:
             mod = df.build(
-                test_stream_2d_blocks,
+                top_stream_2d_blocks,
                 target="vitis_hls",
                 mode="csim",
                 project=tmpdir,
@@ -61,7 +61,7 @@ def test_2d_blocks():
             print("HLS CSim Passed for 2D blocks!")
 
     # Test generated HLS code
-    mod = df.build(test_stream_2d_blocks, target="vhls")
+    mod = df.build(top_stream_2d_blocks, target="vhls")
     code = mod.hls_code
     print(code)
     assert (
@@ -76,7 +76,7 @@ def test_2d_blocks():
 
 # Test 2: Stream of blocks with computation
 @df.region()
-def test_stream_blocks_compute():
+def top_stream_block_compute():
     # Stream where each element is a 1D block of float32
     pipe: Stream[float32[M], 4]
 
@@ -105,7 +105,7 @@ def test_blocks_compute():
     expected = (A * 2.0 + 1.0).reshape(2, M).flatten()
 
     # Test with simulator
-    sim_mod = df.build(test_stream_blocks_compute, target="simulator")
+    sim_mod = df.build(top_stream_block_compute, target="simulator")
     sim_mod(A, B)
     np.testing.assert_allclose(B, expected, atol=1e-5)
     print("Dataflow Simulator Passed for blocks with computation!")
@@ -114,7 +114,7 @@ def test_blocks_compute():
     if hls.is_available("vitis_hls"):
         with tempfile.TemporaryDirectory() as tmpdir:
             mod = df.build(
-                test_stream_blocks_compute,
+                top_stream_block_compute,
                 target="vitis_hls",
                 mode="csim",
                 project=tmpdir,
@@ -123,7 +123,7 @@ def test_blocks_compute():
             mod(A, B)
             np.testing.assert_allclose(B, expected, atol=1e-5)
             print("HLS CSim Passed for blocks with computation!")
-    mod = df.build(test_stream_blocks_compute, target="vhls")
+    mod = df.build(top_stream_block_compute, target="vhls")
     code = mod.hls_code
     print(code)
     assert (
@@ -138,7 +138,7 @@ def test_blocks_compute():
 
 # Test 3: Multiple streams of blocks
 @df.region()
-def test_multiple_stream_blocks():
+def top_multiple_stream_blocks():
     pipe_A: Stream[int16[M, N], 4]
     pipe_B: Stream[int16[M, N], 4]
 
@@ -163,7 +163,7 @@ def test_multiple_blocks():
     expected = A + B
 
     # Test with simulator
-    sim_mod = df.build(test_multiple_stream_blocks, target="simulator")
+    sim_mod = df.build(top_multiple_stream_blocks, target="simulator")
     sim_mod(A, B, C)
     np.testing.assert_allclose(C, expected, atol=1e-5)
     print("Dataflow Simulator Passed for multiple streams of blocks!")
@@ -172,7 +172,7 @@ def test_multiple_blocks():
     if hls.is_available("vitis_hls"):
         with tempfile.TemporaryDirectory() as tmpdir:
             mod = df.build(
-                test_multiple_stream_blocks,
+                top_multiple_stream_blocks,
                 target="vitis_hls",
                 mode="csim",
                 project=tmpdir,
@@ -181,7 +181,7 @@ def test_multiple_blocks():
             mod(A, B, C)
             np.testing.assert_allclose(C, expected, atol=1e-5)
             print("HLS CSim Passed for multiple streams of blocks!")
-    mod = df.build(test_multiple_stream_blocks, target="vhls")
+    mod = df.build(top_multiple_stream_blocks, target="vhls")
     code = mod.hls_code
     print(code)
     assert (
