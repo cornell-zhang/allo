@@ -10,7 +10,7 @@ from allo.ir.types import int32, float32
 import allo.backend.hls as hls
 
 
-def test_pybind11():
+def test_nanobind():
     mod = allo.IPModule(top="gemm", impl="gemm.cpp", link_hls=False)
     a = np.random.random((16, 16)).astype(np.float32)
     b = np.random.random((16, 16)).astype(np.float32)
