@@ -2997,50 +2997,50 @@ void ModuleEmitter::emitHostFunction(func::FuncOp func) {
 /// Top-level MLIR module emitter.
 void ModuleEmitter::emitModule(ModuleOp module) {
   std::string device_header = R"XXX(
- //===------------------------------------------------------------*- C++ -*-===//
- //
- // Automatically generated file for High-level Synthesis (HLS).
- //
- //===----------------------------------------------------------------------===//
- #include <algorithm>
- #include <ap_axi_sdata.h>
- #include <ap_fixed.h>
- #include <ap_int.h>
- #include <hls_math.h>
- #include <hls_stream.h>
- #include <hls_streamofblocks.h>
- #include <math.h>
- #include <stdint.h>
- using namespace std;
- )XXX";
+//===------------------------------------------------------------*- C++ -*-===//
+//
+// Automatically generated file for High-level Synthesis (HLS).
+//
+//===----------------------------------------------------------------------===//
+#include <algorithm>
+#include <ap_axi_sdata.h>
+#include <ap_fixed.h>
+#include <ap_int.h>
+#include <hls_math.h>
+#include <hls_stream.h>
+#include <hls_streamofblocks.h>
+#include <math.h>
+#include <stdint.h>
+using namespace std;
+)XXX";
 
   std::string host_header = R"XXX(
- //===------------------------------------------------------------*- C++ -*-===//
- //
- // Automatically generated file for host
- //
- //===----------------------------------------------------------------------===//
- // standard C/C++ headers
- #include <cassert>
- #include <cstdio>
- #include <cstdlib>
- #include <string>
- #include <time.h>
- 
- // vivado hls headers
- #include "kernel.h"
- #include <ap_fixed.h>
- #include <ap_int.h>
- #include <hls_stream.h>
- 
- #include <ap_axi_sdata.h>
- #include <ap_fixed.h>
- #include <ap_int.h>
- #include <hls_math.h>
- #include <math.h>
- #include <stdint.h>
- 
- )XXX";
+//===------------------------------------------------------------*- C++ -*-===//
+//
+// Automatically generated file for host
+//
+//===----------------------------------------------------------------------===//
+// standard C/C++ headers
+#include <cassert>
+#include <cstdio>
+#include <cstdlib>
+#include <string>
+#include <time.h>
+
+// vivado hls headers
+#include "kernel.h"
+#include <ap_fixed.h>
+#include <ap_int.h>
+#include <hls_stream.h>
+
+#include <ap_axi_sdata.h>
+#include <ap_fixed.h>
+#include <ap_int.h>
+#include <hls_math.h>
+#include <math.h>
+#include <stdint.h>
+
+)XXX";
 
   if (module.getName().has_value() && module.getName().value() == "host") {
     os << host_header;
