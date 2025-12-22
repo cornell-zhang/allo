@@ -88,15 +88,35 @@ static SmallString<16> getTypeName(Type valType) {
         "ap_ufixed<" + std::to_string(ufixedType.getWidth()) + ", " +
         std::to_string(ufixedType.getWidth() - ufixedType.getFrac()) + ">");
 
-  else if (auto streamType = llvm::dyn_cast<StreamType>(valType))
-    return SmallString<16>(
-        "hls::stream< " +
-        std::string(getTypeName(streamType.getBaseType()).c_str()) + " >");
+  else if (auto streamType = llvm::dyn_cast<StreamType>(valType)) {
+    // Check if the base type is a shaped type (tensor/array) - stream of blocks
+    if (auto baseShapedType =
+            llvm::dyn_cast<ShapedType>(streamType.getBaseType())) {
+      // This is a stream of blocks: Stream[elementType[dims...], depth]
+      std::string blockTypeName =
+          std::string(getTypeName(baseShapedType.getElementType()).str());
+      for (auto dim : baseShapedType.getShape()) {
+        blockTypeName += "[" + std::to_string(dim) + "]";
+      }
+      return SmallString<16>("hls::stream_of_blocks< " + blockTypeName + ", " +
+                             std::to_string(streamType.getDepth()) + " >");
+    } else {
+      // Regular stream of scalars: Stream[elementType, depth]
+      return SmallString<16>(
+          "hls::stream< " +
+          std::string(getTypeName(streamType.getBaseType()).c_str()) + " >");
+    }
+  }
 
   else
     assert(1 == 0 && "Got unsupported type.");
 
   return SmallString<16>();
+}
+
+/// Check if a StreamType is a stream of blocks (contains a shaped base type)
+static bool isStreamOfBlocks(StreamType streamType) {
+  return llvm::isa<ShapedType>(streamType.getBaseType());
 }
 
 /// Check if a Value is a function block argument (i.e., a function parameter)
@@ -1780,9 +1800,45 @@ void ModuleEmitter::emitMaxMin(Operation *op, const char *syntax) {
 }
 
 void ModuleEmitter::emitStreamConstruct(StreamConstructOp op) {
-  indent();
   Value result = op.getResult();
   fixUnsignedType(result, op->hasAttr("unsigned"));
+
+  // Check if this is a stream of blocks (tensor base type)
+  if (auto streamType = llvm::dyn_cast<StreamType>(result.getType())) {
+    if (auto baseShapedType =
+            llvm::dyn_cast<ShapedType>(streamType.getBaseType())) {
+      // This is a stream of blocks: Stream[elementType[dims...], depth]
+      std::string varName = std::string(addName(result, false).str());
+
+      // Emit comment describing the block structure
+      indent();
+      os << "// Stream of blocks: each block is "
+         << getTypeName(baseShapedType.getElementType()) << " array";
+      for (auto dim : baseShapedType.getShape()) {
+        os << "[" << dim << "]";
+      }
+      os << "\n";
+
+      // Emit the block type typedef
+      indent();
+      os << "typedef " << getTypeName(baseShapedType.getElementType()) << " "
+         << varName << "_block_t";
+      for (auto dim : baseShapedType.getShape()) {
+        os << "[" << dim << "]";
+      }
+      os << ";\n";
+
+      // Emit the stream_of_blocks declaration
+      indent();
+      os << "hls::stream_of_blocks< " << varName << "_block_t, "
+         << streamType.getDepth() << " > " << varName << ";";
+      emitInfoAndNewLine(op);
+      return;
+    }
+  }
+
+  // Fall back to regular stream handling for scalar streams
+  indent();
   emitValue(result);
   if (auto shapedType = llvm::dyn_cast<ShapedType>(result.getType())) {
     for (auto shape : shapedType.getShape()) {
@@ -1806,15 +1862,83 @@ void ModuleEmitter::emitStreamConstruct(StreamConstructOp op) {
 }
 
 void ModuleEmitter::emitStreamGet(StreamGetOp op) {
-  int rank = 0;
   Value result = op.getResult();
   fixUnsignedType(result, op->hasAttr("unsigned"));
   auto stream = op->getOperand(0);
+
+  // Check if this is a stream of blocks
+  StreamType streamType = nullptr;
+  if (llvm::isa<StreamType>(stream.getType())) {
+    streamType = llvm::dyn_cast<StreamType>(stream.getType());
+  }
+
+  if (streamType && isStreamOfBlocks(streamType)) {
+    // Stream of blocks - use read_lock pattern
+    auto baseShapedType = llvm::dyn_cast<ShapedType>(streamType.getBaseType());
+    std::string streamName = std::string(getName(stream).str());
+    std::string resultName = std::string(addName(result, false).str());
+
+    // Declare the result array first
+    indent();
+    os << getTypeName(baseShapedType.getElementType()) << " " << resultName;
+    for (auto dim : baseShapedType.getShape()) {
+      os << "[" << dim << "]";
+    }
+    os << ";\n";
+
+    // Create a scope for the read_lock and copy data out
+    indent();
+    os << "{\n";
+    addIndent();
+
+    // Acquire read lock
+    indent();
+    os << "hls::read_lock< hls::stream_of_blocks< " << streamName
+       << "_block_t, " << streamType.getDepth() << " > > _read_block("
+       << streamName << ");\n";
+
+    // Generate nested loops to copy the block data
+    unsigned dimIdx = 0;
+    for (auto dim : baseShapedType.getShape()) {
+      indent();
+      os << "for (int _iv" << dimIdx << " = 0; _iv" << dimIdx << " < " << dim
+         << "; ++_iv" << dimIdx++ << ") {\n";
+      addIndent();
+    }
+
+    // Copy element from read_lock block to result array
+    indent();
+    os << resultName;
+    for (unsigned i = 0; i < baseShapedType.getRank(); ++i) {
+      os << "[_iv" << i << "]";
+    }
+    os << " = _read_block";
+    for (unsigned i = 0; i < baseShapedType.getRank(); ++i) {
+      os << "[_iv" << i << "]";
+    }
+    os << ";\n";
+
+    // Close loops
+    for (unsigned i = 0; i < baseShapedType.getRank(); ++i) {
+      reduceIndent();
+      indent();
+      os << "}\n";
+    }
+
+    reduceIndent();
+    indent();
+    os << "} // read_lock released";
+    emitInfoAndNewLine(op);
+    return;
+  }
+
+  // Fall back to regular stream handling for scalar streams
+  int rank = 0;
   if (llvm::isa<StreamType>(stream.getType())) {
     unsigned dimIdx = 0;
-    auto streamType = llvm::dyn_cast<StreamType>(stream.getType());
+    auto scalarStreamType = llvm::dyn_cast<StreamType>(stream.getType());
     if (auto shapedType =
-            llvm::dyn_cast<ShapedType>(streamType.getBaseType())) {
+            llvm::dyn_cast<ShapedType>(scalarStreamType.getBaseType())) {
       indent();
       emitArrayDecl(result, false);
       os << ";\n";
@@ -1852,13 +1976,74 @@ void ModuleEmitter::emitStreamGet(StreamGetOp op) {
 }
 
 void ModuleEmitter::emitStreamPut(StreamPutOp op) {
-  int rank = 0;
   auto stream = op->getOperand(0);
+  auto value = op->getOperand(1);
+
+  // Check if this is a stream of blocks
+  StreamType streamType = nullptr;
+  if (llvm::isa<StreamType>(stream.getType())) {
+    streamType = llvm::dyn_cast<StreamType>(stream.getType());
+  }
+
+  if (streamType && isStreamOfBlocks(streamType)) {
+    // Stream of blocks - use write_lock pattern
+    auto baseShapedType = llvm::dyn_cast<ShapedType>(streamType.getBaseType());
+    std::string streamName = std::string(getName(stream).str());
+    std::string valueName = std::string(getName(value).str());
+
+    // Create a scope for the write_lock
+    indent();
+    os << "{\n";
+    addIndent();
+
+    // Acquire write lock
+    indent();
+    os << "hls::write_lock< hls::stream_of_blocks< " << streamName
+       << "_block_t, " << streamType.getDepth() << " > > _write_block("
+       << streamName << ");\n";
+
+    // Generate nested loops to copy the block data
+    unsigned dimIdx = 0;
+    for (auto dim : baseShapedType.getShape()) {
+      indent();
+      os << "for (int _iv" << dimIdx << " = 0; _iv" << dimIdx << " < " << dim
+         << "; ++_iv" << dimIdx++ << ") {\n";
+      addIndent();
+    }
+
+    // Copy element from value array to write_lock block
+    indent();
+    os << "_write_block";
+    for (unsigned i = 0; i < baseShapedType.getRank(); ++i) {
+      os << "[_iv" << i << "]";
+    }
+    os << " = " << valueName;
+    for (unsigned i = 0; i < baseShapedType.getRank(); ++i) {
+      os << "[_iv" << i << "]";
+    }
+    os << ";\n";
+
+    // Close loops
+    for (unsigned i = 0; i < baseShapedType.getRank(); ++i) {
+      reduceIndent();
+      indent();
+      os << "}\n";
+    }
+
+    reduceIndent();
+    indent();
+    os << "} // write_lock released";
+    emitInfoAndNewLine(op);
+    return;
+  }
+
+  // Fall back to regular stream handling for scalar streams
+  int rank = 0;
   if (llvm::isa<StreamType>(stream.getType())) {
     unsigned dimIdx = 0;
-    auto streamType = llvm::dyn_cast<StreamType>(stream.getType());
+    auto scalarStreamType = llvm::dyn_cast<StreamType>(stream.getType());
     if (auto shapedType =
-            llvm::dyn_cast<ShapedType>(streamType.getBaseType())) {
+            llvm::dyn_cast<ShapedType>(scalarStreamType.getBaseType())) {
       for (auto &shape : shapedType.getShape()) {
         indent();
         os << "for (int iv" << dimIdx << " = 0; ";
@@ -2816,6 +3001,7 @@ void ModuleEmitter::emitModule(ModuleOp module) {
 #include <ap_int.h>
 #include <hls_math.h>
 #include <hls_stream.h>
+#include <hls_streamofblocks.h>
 #include <math.h>
 #include <stdint.h>
 using namespace std;
@@ -2844,7 +3030,6 @@ using namespace std;
 #include <ap_fixed.h>
 #include <ap_int.h>
 #include <hls_math.h>
-#include <hls_stream.h>
 #include <math.h>
 #include <stdint.h>
 
