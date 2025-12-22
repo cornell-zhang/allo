@@ -63,4 +63,4 @@ jobs:
         export RUNTIME_LIB_DIR=/opt/mlir-aie/runtime_lib/
         export NPU2=1
         echo "Running AIE tests..."
-        python3 -m pytest --ignore=tests/dataflow/aie/gpt2 tests/dataflow/aie -v
+        python3 -m pytest tests/dataflow/aie2 -v
