@@ -33,10 +33,12 @@ jobs:
         conda activate allo-ci
         which python3
         python3 --version
+        OLD_PATH=$PATH
         export PATH=/opt/cmake/bin:/opt/llvm-project/build/bin:$PATH
         export LLVM_BUILD_DIR=/opt/llvm-project/build/
         echo "Install allo"
         python3 -m pip install -v -e .
+        export PATH=$OLD_PATH
         python3 -m pip install mlir_aie -f https://github.com/Xilinx/mlir-aie/releases/expanded_assets/v1.0
         python3 -m pip install https://github.com/Xilinx/llvm-aie/releases/download/nightly/llvm_aie-19.0.0.2025041501+b2a279c1-py3-none-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
         python3 -m pip install -r /opt/mlir-aie/python/requirements.txt
@@ -44,7 +46,7 @@ jobs:
         python3 -m pip install -r /opt/mlir-aie/python/requirements_ml.txt
         export MLIR_AIE_INSTALL_DIR="$(pip show mlir_aie 2>/dev/null | grep ^Location: | awk '{print $2}')/mlir_aie"
         export PEANO_INSTALL_DIR="$(pip show llvm-aie 2>/dev/null | grep ^Location: | awk '{print $2}')/llvm-aie"
-        export PATH=${MLIR_AIE_INSTALL_DIR}/bin:/usr/bin:${PATH} 
+        export PATH=${MLIR_AIE_INSTALL_DIR}/bin:${PATH} 
         export PYTHONPATH=${MLIR_AIE_INSTALL_DIR}/python:${PYTHONPATH}
         export LD_LIBRARY_PATH=${MLIR_AIE_INSTALL_DIR}/lib:${LD_LIBRARY_PATH}
         export INSTALL_PY_MAIN="$MLIR_AIE_INSTALL_DIR/python/aie/compiler/aiecc/main.py"
