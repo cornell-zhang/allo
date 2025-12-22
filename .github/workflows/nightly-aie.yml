@@ -44,7 +44,7 @@ jobs:
         python3 -m pip install -r /opt/mlir-aie/python/requirements_ml.txt
         export MLIR_AIE_INSTALL_DIR="$(pip show mlir_aie 2>/dev/null | grep ^Location: | awk '{print $2}')/mlir_aie"
         export PEANO_INSTALL_DIR="$(pip show llvm-aie 2>/dev/null | grep ^Location: | awk '{print $2}')/llvm-aie"
-        export PATH=${MLIR_AIE_INSTALL_DIR}/bin:${PATH} 
+        export PATH=${MLIR_AIE_INSTALL_DIR}/bin:/usr/bin:${PATH} 
         export PYTHONPATH=${MLIR_AIE_INSTALL_DIR}/python:${PYTHONPATH}
         export LD_LIBRARY_PATH=${MLIR_AIE_INSTALL_DIR}/lib:${LD_LIBRARY_PATH}
         export INSTALL_PY_MAIN="$MLIR_AIE_INSTALL_DIR/python/aie/compiler/aiecc/main.py"
