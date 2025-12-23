@@ -6,14 +6,14 @@
 #ifndef ALLO_BINDINGS_PYTHON_IRMODULES_H
 #define ALLO_BINDINGS_PYTHON_IRMODULES_H
 
-// #include "PybindUtils.h"
-#include "mlir/Bindings/Python/PybindAdaptors.h"
+#include "mlir/Bindings/Python/Nanobind.h"
+#include "mlir/Bindings/Python/NanobindAdaptors.h"
 
 namespace mlir {
 namespace python {
 
-void populateAlloIRTypes(pybind11::module &m);
-void populateAlloAttributes(pybind11::module &m);
+void populateAlloIRTypes(nanobind::module_ &m);
+void populateAlloAttributes(nanobind::module_ &m);
 
 } // namespace python
 } // namespace mlir

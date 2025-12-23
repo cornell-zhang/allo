@@ -30,6 +30,7 @@ from .._mlir.ir import (
     AffineMap,
     AffineMapAttr,
     IntegerSet,
+    IntegerSetAttr,
     FlatSymbolRefAttr,
     DenseElementsAttr,
     TypeAttr,
@@ -2063,7 +2064,7 @@ class ASTTransformer(ASTBuilder):
             )
             eq_flags.append(True)
             if_cond_set = IntegerSet.get(1, 0, exprs, eq_flags)
-            attr = allo_d.IntegerSetAttr.get(if_cond_set)
+            attr = IntegerSetAttr.get(if_cond_set)
             return attr, ctx.get_symbol(node.left.id)
         else:
             lhs = build_stmt(ctx, node.left)
@@ -2150,7 +2151,7 @@ class ASTTransformer(ASTBuilder):
             if_op = scf_d.IfOp(
                 ASTTransformer.get_mlir_op_result(ctx, cond),
                 ip=ctx.get_ip(),
-                hasElse=len(node.orelse),
+                has_else=len(node.orelse),
             )
         ctx.set_ip(if_op.then_block)
         with ctx.block_scope_guard():

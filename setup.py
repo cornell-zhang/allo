@@ -36,18 +36,6 @@ class CMakeBuild(build_ext):
         if not llvm_build_dir:
             raise RuntimeError("LLVM_BUILD_DIR environment variable is not set")
 
-        pybind11_cmake_dir = os.environ.get("PYBIND11_CMAKE_DIR")
-        if not pybind11_cmake_dir:
-            try:
-                import pybind11
-
-                pybind11_cmake_dir = pybind11.get_cmake_dir()
-            except ImportError:
-                raise RuntimeError(
-                    "pybind11 is not installed. Please run:\n\n"
-                    "  python3 -m pip install pybind11"
-                )
-
         # Auto-detect nanobind cmake directory if not set
         nanobind_cmake_dir = os.environ.get("NANOBIND_CMAKE_DIR")
         if not nanobind_cmake_dir:
@@ -63,7 +51,6 @@ class CMakeBuild(build_ext):
         cmake_args = [
             f"-DMLIR_DIR={llvm_build_dir}/lib/cmake/mlir",
             f"-DPython3_EXECUTABLE={sys.executable}",
-            f"-Dpybind11_DIR={pybind11_cmake_dir}",
             f"-Dnanobind_DIR={nanobind_cmake_dir}",
         ]
 
@@ -111,11 +98,11 @@ if __name__ == "__main__":
     setup(
         name="allo",
         description="Allo",
-        version="0.3",
+        version="0.5",
         author="Allo Community",
         long_description=long_description,
         long_description_content_type="text/markdown",
-        setup_requires=["pybind11>=2.8.0"],
+        setup_requires=["nanobind>=2.9"],
         install_requires=parse_requirements("requirements.txt"),
         packages=find_packages(),
         ext_modules=[CMakeExtension("mlir", sourcedir="mlir")],

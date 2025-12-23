@@ -479,10 +479,10 @@ class HLSModule:
         elif self.platform == "vitis_hls":
             assert is_available("vitis_hls"), "vitis_hls is not available"
             if self.mode == "csim":
-                cwd = os.getcwd()
                 mod = IPModule(
                     top=self.top_func_name,
-                    impl=f"{cwd}/{self.project}/kernel.cpp",
+                    impl=f"{self.project}/kernel.cpp",
+                    include_paths=[self.project],
                     link_hls=True,
                 )
                 mod(*args)
