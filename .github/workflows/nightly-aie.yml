@@ -6,9 +6,9 @@ name: "Self-Hosted CI"
 on:
   schedule:
     - cron: '0 * * * *'
-  pull_request:
-    branches:
-      - main
+  # pull_request:
+  #   branches:
+  #     - main
 
 jobs:
   build-and-test:
