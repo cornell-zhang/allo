@@ -13,7 +13,7 @@ on:
 jobs:
   build:
     # This job runs on Linux
-    runs-on: [self-hosted, aie, xdna1]
+    runs-on: [self-hosted, aie, xdna2]
     container:
       image: shihanfang/allo-ci:test
       options: "--device /dev/accel/accel0:/dev/accel/accel0 --ulimit memlock=-1"
@@ -52,6 +52,7 @@ jobs:
         export MLIR_AIE_EXTERNAL_KERNEL_DIR=/ryzers/mlir-aie/aie_kernels/
         export RUNTIME_LIB_DIR=/ryzers/mlir-aie/runtime_lib/
         export PATH=/root/llvm-project/build/bin:${PATH}
+        export NPU2=1
         export LLVM_BUILD_DIR=/root/llvm-project/build
         export OMP_NUM_THREADS=128
         python3 -m pytest --ignore=tests/dataflow/aie/gpt2 tests/dataflow/aie -v
