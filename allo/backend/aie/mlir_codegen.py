@@ -193,7 +193,7 @@ class CodeGenerator:
                     argument = new_function.arguments[idx]
                     for use_ in argument.uses:
                         op = use_.owner
-                        if op.name == "allo.stream_put":
+                        if getattr(op, "name", None) == "allo.stream_put":
                             operands = op.operands
                             # store/copy
                             if sample_stream.is_tensor:
@@ -204,7 +204,7 @@ class CodeGenerator:
                                 new_op = allo_memref_d.StoreOp(
                                     operands[1], operands[0], [], ip=InsertionPoint(op)
                                 )
-                        elif op.name == "allo.stream_get":
+                        elif getattr(op, "name", None) == "allo.stream_get":
                             # load/alloc
                             if sample_stream.is_tensor:
                                 # replace use with alloc
@@ -307,7 +307,7 @@ class CodeGenerator:
                             nest_depth -= 1
                             first_use_op = first_use_op.parent
                         while (
-                            first_use_op.parent.name != "func.func"
+                            getattr(first_use_op.parent, "name", None) != "func.func"
                             and "task_nest" not in first_use_op.parent.attributes
                         ):
                             first_use_op = first_use_op.parent
@@ -354,15 +354,18 @@ class CodeGenerator:
                             parent = parent.parent
                         with aie_ir.InsertionPoint(op.operation):
                             is_put, is_tensor = None, None
-                            if op.name == "memref.store" or (
-                                op.name == "memref.copy" and argument == op.operands[1]
+                            if getattr(op, "name", None) == "memref.store" or (
+                                getattr(op, "name", None) == "memref.copy"
+                                and argument == op.operands[1]
                             ):  # allo.stream_put
                                 is_put = True
                             elif (
-                                op.name == "memref.load"
+                                getattr(op, "name", None) == "memref.load"
                             ):  # allo.stream_get, non-tensor
                                 is_put, is_tensor = False, False
-                            elif op.name == "memref.copy":  # allo.stream_get, tensor
+                            elif (
+                                getattr(op, "name", None) == "memref.copy"
+                            ):  # allo.stream_get, tensor
                                 is_put, is_tensor = False, True
                             else:
                                 continue
@@ -371,12 +374,15 @@ class CodeGenerator:
                                     fifo = fifo[0 if is_put else 1]
                                 if is_put:
                                     if (
-                                        op.name == "memref.copy"
+                                        getattr(op, "name", None) == "memref.copy"
                                         and len(list(op.operands[1].uses)) == 1
                                     ):
                                         alloc_op = op.operands[0].owner
                                         # put once
-                                        if alloc_op.name == "memref.alloc":
+                                        if (
+                                            getattr(alloc_op, "name", None)
+                                            == "memref.alloc"
+                                        ):
                                             uses = list(op.operands[0].uses)
                                             with aie_ir.InsertionPoint(alloc_op):
                                                 acquired = fifo.acquire(0, 1)
@@ -500,7 +506,7 @@ class CodeGenerator:
             with aie_ir.InsertionPoint(loop.body):
                 for parsed_func_block in parsed_function.body:
                     for op in parsed_func_block.operations:
-                        if op.name == "func.return":
+                        if getattr(op, "name", None) == "func.return":
                             continue
                         new_op = op.clone()
                         for old, new in zip(op.results, new_op.results):
@@ -509,7 +515,7 @@ class CodeGenerator:
                 alloc_ops = []
 
                 def collect_allocs(op):
-                    if op.name == "memref.alloc":
+                    if getattr(op, "name", None) == "memref.alloc":
                         alloc_ops.append(op.operation)
                         return
                     for region in op.regions:

@@ -987,7 +987,7 @@ class ComputationGraph:
                     def is_op_in_func(op_, target_func):
                         parent = op_
                         while parent is not None:
-                            if parent.operation.name == "func.func":
+                            if getattr(parent, "name", None) == "func.func":
                                 return parent == target_func
                             parent = parent.parent
                         return False

@@ -483,7 +483,7 @@ class AIE_MLIRModule:
                 ):
                     excuse_operands.add(op.operands[0])
                     return
-                if op.name == "allo.transform_layout":
+                if getattr(op, "name", None) == "allo.transform_layout":
                     if op.operands[0] in excuse_operands:
                         op.result.replace_all_uses_with(op.operands[0])
                         excuse_operands.remove(op.operands[0])
@@ -507,7 +507,7 @@ class AIE_MLIRModule:
                                         dead_ops.append(next_use_op)
                                 # memcpy to another memref
                                 elif (
-                                    next_use_op.name == "memref.copy"
+                                    getattr(next_use_op, "name", None) == "memref.copy"
                                     and op.result == next_use_op.operands[0]
                                 ):
                                     memcpy_op = next_use_op
@@ -521,11 +521,15 @@ class AIE_MLIRModule:
                                     ):
                                         if is_inverse_transform_layout(op, next_use_op):
                                             if (
-                                                allo_d.get_next_use_in_function(
-                                                    memcpy_op.operands[1],
-                                                    next_use_op,
-                                                    function,
-                                                ).name
+                                                getattr(
+                                                    allo_d.get_next_use_in_function(
+                                                        memcpy_op.operands[1],
+                                                        next_use_op,
+                                                        function,
+                                                    ),
+                                                    "name",
+                                                    None,
+                                                )
                                                 == "memref.copy"
                                             ):
                                                 next_use_op.result.replace_all_uses_with(
@@ -563,7 +567,10 @@ class AIE_MLIRModule:
                             var = list(arg.uses)[0].owner.result
                         op = None
                         for use in var.uses:
-                            if use.owner.name == "allo.transform_layout":
+                            if (
+                                getattr(use.owner, "name", None)
+                                == "allo.transform_layout"
+                            ):
                                 if op is not None:
                                     if (
                                         op.attributes["offsets"]
@@ -605,12 +612,12 @@ class AIE_MLIRModule:
                         operand_idx = 0 if is_dtensor else 1
                         if (
                             (
-                                op.name == "memref.copy"
+                                getattr(op, "name", None) == "memref.copy"
                                 if is_dtensor
-                                else op.name == "allo.stream_put"
+                                else getattr(op, "name", None) == "allo.stream_put"
                             )
                             and op.operands[operand_idx] not in func.arguments
-                            and op.operands[operand_idx].owner.name
+                            and getattr(op.operands[operand_idx].owner, "name", None)
                             == "allo.transform_layout"
                         ):
                             transform_layout_op = op.operands[operand_idx].owner

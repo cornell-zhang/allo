@@ -770,7 +770,7 @@ def analyze_read_write_patterns(mlir_func, external_kernel_lib: dict = {}):
 
             for use in value.uses:
                 user = use.owner
-                if user.name == "memref.subview":
+                if getattr(user, "name", None) == "memref.subview":
                     subview_map[user.result] = arg.arg_number
                     work_list.append(user.result)
 

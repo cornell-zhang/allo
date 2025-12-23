@@ -12,7 +12,10 @@ from allo.memory import Layout
 from allo.backend.aie.external_kernel import ExternalModule
 
 KERNEL_LIB_PATH = os.path.join(
-    os.path.dirname(__file__), "../../../../allo/library/aie/"
+    os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "../../../../allo/library/aie")
+    ),
+    "",
 )
 Ly = Layout("S1S0")
 Ly_1 = Layout("S1")
