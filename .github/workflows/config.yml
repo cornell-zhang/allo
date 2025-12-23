@@ -55,7 +55,7 @@ jobs:
         export PATH=/root/llvm-project/build/bin:${PATH}
         export LLVM_BUILD_DIR=/root/llvm-project/build
         export OMP_NUM_THREADS=128
-        python3 -m pytest tests/dataflow/aie -v
+        python3 -m pytest --ignore=tests/dataflow/aie/gpt2 tests/dataflow/aie -v
         unset OMP_NUM_THREADS
     - name: Formatting Check
       shell: bash

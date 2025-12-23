@@ -29,7 +29,9 @@ RUN cd /ryzers/xdna-driver/tools && \
 # Build XRT
 RUN cd /ryzers/xdna-driver/xrt/build && \
     export CXXFLAGS="-std=c++17" && \
-    ./build.sh -npu -opt -noctest
+    ./build.sh -npu -opt -noctest && \
+    cd Release && \
+    cmake --install .
 
 # Build XDNA driver
 RUN cd /ryzers/xdna-driver/build && \
