@@ -27,11 +27,13 @@ RUN cd /ryzers/xdna-driver/tools && \
     ./amdxdna_deps.sh -docker
 
 # Build XRT
-RUN cd /ryzers/xdna-driver/xrt/build/ && \
+RUN cd /ryzers/xdna-driver/xrt/build && \
+    export CXXFLAGS="-std=c++17" && \
     ./build.sh -npu -opt -noctest
 
 # Build XDNA driver
 RUN cd /ryzers/xdna-driver/build && \
+    export CXXFLAGS="-std=c++17" && \
     ./build.sh -release && \
     ./build.sh -package
 

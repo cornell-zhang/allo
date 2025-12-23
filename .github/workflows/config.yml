@@ -6,9 +6,9 @@ on:
   push:
     branches:
       - main
-  # pull_request:
-  #   branches:
-  #     - main
+  pull_request:
+    branches:
+      - main
 
 jobs:
   build:
@@ -16,7 +16,7 @@ jobs:
     runs-on: [self-hosted, aie, xdna1]
     container:
       image: shihanfang/allo-ci:test
-      options: "-v /opt:/opt:ro -v /home/sf668/usr/mlir-aie:/mlir-aie:ro"
+      options: "--device /dev/accel/accel0:/dev/accel/accel0 --ulimit memlock=-1 -v /home/sf668/usr/mlir-aie:/mlir-aie:ro"
     steps:
     # https://github.com/actions/checkout/issues/363#issuecomment-1915075699
     - name: Install git in container
@@ -49,8 +49,7 @@ jobs:
         export LD_LIBRARY_PATH=${MLIR_AIE_INSTALL_DIR}/lib:${LD_LIBRARY_PATH}
         export INSTALL_PY_MAIN="$MLIR_AIE_INSTALL_DIR/python/aie/compiler/aiecc/main.py"
         cp /mlir-aie/python/compiler/aiecc/main.py "$INSTALL_PY_MAIN"
-        source /opt/common/setupVitis.sh
-        source /opt/common/setupXRT.sh
+        source /opt/xilinx/xrt/setup.sh
         export MLIR_AIE_EXTERNAL_KERNEL_DIR=/mlir-aie/aie_kernels/
         export RUNTIME_LIB_DIR=/mlir-aie/runtime_lib/
         export PATH=/root/llvm-project/build/bin:${PATH}
