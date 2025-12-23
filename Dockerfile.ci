@@ -1,6 +1,9 @@
 FROM chhzh123/allo:latest
 
+COPY scripts/ /ryzers/scripts/
+
 ARG DRIVER_VERSION="0ad5aa3"
+ARG PATCH_FILE="/ryzers/scripts//mlir-aie-patch.diff"
 
 # required by rocm driver
 RUN groupadd -f render && usermod -aG render root
@@ -46,3 +49,19 @@ RUN mkdir /ryzers/debs && \
     cp /ryzers/xdna-driver/build/Release/xrt_plugin.2.20.0_24.04-amd64-amdxdna.deb /ryzers/debs/ && \
     cp /ryzers/xdna-driver/xrt/build/Release/xrt_202520.2.20.0_24.04-amd64-base.deb /ryzers/debs/ && \
 	dpkg -i /ryzers/debs/*.deb
+
+RUN eval "$(/root/miniconda/bin/conda shell.bash hook)" && \
+    conda activate allo && \
+    python3 -m pip install mlir_aie -f https://github.com/Xilinx/mlir-aie/releases/expanded_assets/v1.0 && \
+    python3 -m pip install https://github.com/Xilinx/llvm-aie/releases/download/nightly/llvm_aie-19.0.0.2025041501+b2a279c1-py3-none-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
+
+
+RUN git clone https://github.com/Xilinx/mlir-aie.git "/ryzers/mlir-aie" && \
+    cd "/ryzers/mlir-aie" && \
+    git checkout 07320d6 && \
+    patch -p1 < "$PATCH_FILE"
+    # python3 -m pip install -r python/requirements.txt && \
+    # HOST_MLIR_PYTHON_PACKAGE_PREFIX=aie python3 -m pip install -r python/requirements_extras.txt && \
+    # python3 -m pip install -r python/requirements_ml.txt && \
+    # export MLIR_AIE_INSTALL_DIR="$(pip show mlir_aie 2>/dev/null | grep ^Location: | awk '{print $2}')/mlir_aie" && \
+    # cp python/compiler/aiecc/main.py "$MLIR_AIE_INSTALL_DIR/python/aie/compiler/aiecc/main.py" 

@@ -16,7 +16,7 @@ jobs:
     runs-on: [self-hosted, aie, xdna1]
     container:
       image: shihanfang/allo-ci:test
-      options: "--device /dev/accel/accel0:/dev/accel/accel0 --ulimit memlock=-1 -v /home/sf668/usr/mlir-aie:/mlir-aie:ro"
+      options: "--device /dev/accel/accel0:/dev/accel/accel0 --ulimit memlock=-1"
     steps:
     # https://github.com/actions/checkout/issues/363#issuecomment-1915075699
     - name: Install git in container
@@ -37,21 +37,20 @@ jobs:
       shell: bash
       run: |
         source activate allo
-        python3 -m pip install mlir_aie -f https://github.com/Xilinx/mlir-aie/releases/expanded_assets/v1.0
-        python3 -m pip install https://github.com/Xilinx/llvm-aie/releases/download/nightly/llvm_aie-19.0.0.2025041501+b2a279c1-py3-none-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
-        python3 -m pip install -r /mlir-aie/python/requirements.txt
-        HOST_MLIR_PYTHON_PACKAGE_PREFIX=aie python3 -m pip install -r /mlir-aie/python/requirements_extras.txt
-        python3 -m pip install -r /mlir-aie/python/requirements_ml.txt
+        python3 -m pip install -r /ryzers/mlir-aie/python/requirements.txt
+        HOST_MLIR_PYTHON_PACKAGE_PREFIX=aie python3 -m pip install -r /ryzers/mlir-aie/python/requirements_extras.txt
+        python3 -m pip install -r /ryzers/mlir-aie/python/requirements_ml.txt
         export MLIR_AIE_INSTALL_DIR="$(pip show mlir_aie 2>/dev/null | grep ^Location: | awk '{print $2}')/mlir_aie"
         export PEANO_INSTALL_DIR="$(pip show llvm-aie 2>/dev/null | grep ^Location: | awk '{print $2}')/llvm-aie"
         export PATH=${MLIR_AIE_INSTALL_DIR}/bin:${PATH} 
         export PYTHONPATH=${MLIR_AIE_INSTALL_DIR}/python:${PYTHONPATH}
         export LD_LIBRARY_PATH=${MLIR_AIE_INSTALL_DIR}/lib:${LD_LIBRARY_PATH}
         export INSTALL_PY_MAIN="$MLIR_AIE_INSTALL_DIR/python/aie/compiler/aiecc/main.py"
-        cp /mlir-aie/python/compiler/aiecc/main.py "$INSTALL_PY_MAIN"
+        cp /ryzers/mlir-aie/python/compiler/aiecc/main.py "$INSTALL_PY_MAIN"
         source /opt/xilinx/xrt/setup.sh
-        export MLIR_AIE_EXTERNAL_KERNEL_DIR=/mlir-aie/aie_kernels/
-        export RUNTIME_LIB_DIR=/mlir-aie/runtime_lib/
+        xrt-smi examine
+        export MLIR_AIE_EXTERNAL_KERNEL_DIR=/ryzers/mlir-aie/aie_kernels/
+        export RUNTIME_LIB_DIR=/ryzers/mlir-aie/runtime_lib/
         export PATH=/root/llvm-project/build/bin:${PATH}
         export LLVM_BUILD_DIR=/root/llvm-project/build
         export OMP_NUM_THREADS=128
