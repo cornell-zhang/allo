@@ -2,12 +2,15 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import allo
+import pytest
 from allo.ir.types import int16, int32, float32, int8, Stream
 import allo.dataflow as df
 import numpy as np
 from allo.memory import Layout
+from allo.backend.aie import is_available
 
 
+@pytest.mark.parametrize("Ty", [int8, int16, int32, float32])
 def test_cooperative_gemm(Ty):
     M, N, K = 32, 32, 32
     Pm, Pn, Pk = 2, 2, 2
@@ -35,27 +38,30 @@ def test_cooperative_gemm(Ty):
             with allo.meta_elif(pk == Pk - 1):
                 C[:, :] = C_out
 
-    mod = df.build(top, target="aie")
-    if Ty == int8:
-        A = np.random.randint(-2, 2, (M, K)).astype(np.int8)
-        B = np.random.randint(-2, 2, (K, N)).astype(np.int8)
-        C = np.zeros((M, N)).astype(np.int8)
-    elif Ty == int16:
-        A = np.random.randint(-32, 32, (M, K)).astype(np.int16)
-        B = np.random.randint(-32, 32, (K, N)).astype(np.int16)
-        C = np.zeros((M, N)).astype(np.int16)
-    elif Ty == int32:
-        A = np.random.randint(-32, 32, (M, K)).astype(np.int32)
-        B = np.random.randint(-32, 32, (K, N)).astype(np.int32)
-        C = np.zeros((M, N)).astype(np.int32)
-    elif Ty == float32:
-        A = np.random.random((M, K)).astype(np.float32)
-        B = np.random.random((K, N)).astype(np.float32)
-        C = np.zeros((M, N)).astype(np.float32)
+    if is_available():
+        mod = df.build(top, target="aie")
+        if Ty == int8:
+            A = np.random.randint(-2, 2, (M, K)).astype(np.int8)
+            B = np.random.randint(-2, 2, (K, N)).astype(np.int8)
+            C = np.zeros((M, N)).astype(np.int8)
+        elif Ty == int16:
+            A = np.random.randint(-32, 32, (M, K)).astype(np.int16)
+            B = np.random.randint(-32, 32, (K, N)).astype(np.int16)
+            C = np.zeros((M, N)).astype(np.int16)
+        elif Ty == int32:
+            A = np.random.randint(-32, 32, (M, K)).astype(np.int32)
+            B = np.random.randint(-32, 32, (K, N)).astype(np.int32)
+            C = np.zeros((M, N)).astype(np.int32)
+        elif Ty == float32:
+            A = np.random.random((M, K)).astype(np.float32)
+            B = np.random.random((K, N)).astype(np.float32)
+            C = np.zeros((M, N)).astype(np.float32)
 
-    mod(A, B, C)
-    np.testing.assert_allclose(C, A @ B, atol=1e-5)
-    print("PASSED!")
+        mod(A, B, C)
+        np.testing.assert_allclose(C, A @ B, atol=1e-5)
+        print("PASSED!")
+    else:
+        print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 
 
 if __name__ == "__main__":

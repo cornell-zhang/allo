@@ -3,21 +3,34 @@
 
 import numpy as np
 import os
+
+import pytest
 import allo
 from allo.ir.types import int4, int8, Stream
 import allo.dataflow as df
 from allo.memory import Layout
+from allo.backend.aie import is_available
 
 
-def _test_gemm_1D():
+@pytest.fixture(scope="module", autouse=True)
+def setup_env():
+    dir_path = os.path.dirname(os.path.abspath(__file__))
+    os.environ["ALLO_EXTERNAL_KERNEL_DIR"] = f"{dir_path}/../../../allo/library/aie/"
+    yield
+    del os.environ["ALLO_EXTERNAL_KERNEL_DIR"]
+
+
+@pytest.mark.skipif(
+    os.environ.get("NPU2") == "1",
+    reason="Skipped because external kernel not supported on XDNA2",
+)
+def test_gemm_1D():
     TyI = int4
     TyO = int8
     M, N, K = 64, 64, 64
     P0 = 2
 
     LyA = Layout("S0R")
-    LyB = Layout("RS1")
-    LyC = Layout("S0S1")
 
     @df.region()
     def top():
@@ -25,16 +38,23 @@ def _test_gemm_1D():
         def gemm(A: TyI[M, K] @ LyA, B: TyI[K, N], C: TyO[M, N] @ LyA):
             C[:, :] = allo.matmul(A, B)
 
-    mod = df.build(top, target="aie")
-    A = np.random.randint(-2, 2, (M, K)).astype(np.int8)
-    B = np.random.randint(-2, 2, (K, N)).astype(np.int8)
-    C = np.zeros((M, N)).astype(np.int8)
-    mod(A, B, C)
-    np.testing.assert_allclose(C, A @ B, atol=1e-5)
-    print("PASSED!")
+    if is_available():
+        mod = df.build(top, target="aie")
+        A = np.random.randint(-2, 2, (M, K)).astype(np.int8)
+        B = np.random.randint(-2, 2, (K, N)).astype(np.int8)
+        C = np.zeros((M, N)).astype(np.int8)
+        mod(A, B, C)
+        np.testing.assert_allclose(C, A @ B, atol=1e-5)
+        print("PASSED!")
+    else:
+        print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 
 
-def _test_gemm_2D():
+@pytest.mark.skipif(
+    os.environ.get("NPU2") == "1",
+    reason="Skipped because external kernel not supported on XDNA2",
+)
+def test_gemm_2D():
     TyI = int4
     TyO = int8
     M, N, K = 64, 64, 64
@@ -49,25 +69,30 @@ def _test_gemm_2D():
         def gemm(A: TyI[M, K] @ LyA, B: TyI[K, N] @ LyB, C: TyO[M, N] @ LyC):
             C[:, :] = allo.matmul(A, B)
 
-    mod = df.build(top, target="aie")
-    A = np.random.randint(-4, 4, (M, K)).astype(np.int8)
-    B = np.random.randint(-4, 4, (K, N)).astype(np.int8)
-    C = np.zeros((M, N)).astype(np.int8)
-    mod(A, B, C)
-    np_C = A.astype(np.int8) @ B.astype(np.int8)
-    np.testing.assert_allclose(C, np_C, atol=1e-5)
-    print("PASSED!")
+    if is_available():
+        mod = df.build(top, target="aie")
+        A = np.random.randint(-4, 4, (M, K)).astype(np.int8)
+        B = np.random.randint(-4, 4, (K, N)).astype(np.int8)
+        C = np.zeros((M, N)).astype(np.int8)
+        mod(A, B, C)
+        np_C = A.astype(np.int8) @ B.astype(np.int8)
+        np.testing.assert_allclose(C, np_C, atol=1e-5)
+        print("PASSED!")
+    else:
+        print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 
 
-def _test_mixed_gemm_1D():
+@pytest.mark.skipif(
+    os.environ.get("NPU2") == "1",
+    reason="Skipped because external kernel not supported on XDNA2",
+)
+def test_mixed_gemm_1D():
     Ty = int8
     Ty_l = int4
     M, N, K = 64, 64, 64
     P0 = 2
 
     LyA = Layout("S0R")
-    LyB = Layout("RS1")
-    LyC = Layout("S0S1")
 
     @df.region()
     def top():
@@ -75,16 +100,23 @@ def _test_mixed_gemm_1D():
         def gemm(A: Ty_l[M, K] @ LyA, B: Ty_l[K, N], C: Ty[M, N] @ LyA):
             C[:, :] = allo.matmul(A, B)
 
-    mod = df.build(top, target="aie")
-    A = np.random.randint(-2, 2, (M, K)).astype(np.int8)
-    B = np.random.randint(-2, 2, (K, N)).astype(np.int8)
-    C = np.zeros((M, N)).astype(np.int8)
-    mod(A, B, C)
-    np.testing.assert_allclose(C, A @ B, atol=1e-5)
-    print("PASSED!")
+    if is_available():
+        mod = df.build(top, target="aie")
+        A = np.random.randint(-2, 2, (M, K)).astype(np.int8)
+        B = np.random.randint(-2, 2, (K, N)).astype(np.int8)
+        C = np.zeros((M, N)).astype(np.int8)
+        mod(A, B, C)
+        np.testing.assert_allclose(C, A @ B, atol=1e-5)
+        print("PASSED!")
+    else:
+        print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 
 
-def _test_mixed_gemm_2D():
+@pytest.mark.skipif(
+    os.environ.get("NPU2") == "1",
+    reason="Skipped because external kernel not supported on XDNA2",
+)
+def test_mixed_gemm_2D():
     Ty = int8
     Ty_l = int4
     M, N, K = 64, 64, 64
@@ -99,14 +131,17 @@ def _test_mixed_gemm_2D():
         def gemm(A: Ty[M, K] @ LyA, B: Ty_l[K, N] @ LyB, C: Ty[M, N] @ LyC):
             C[:, :] = allo.matmul(A, B)
 
-    mod = df.build(top, target="aie")
-    A = np.random.randint(-4, 4, (M, K)).astype(np.int8)
-    B = np.random.randint(-4, 4, (K, N)).astype(np.int8)
-    C = np.zeros((M, N)).astype(np.int8)
-    mod(A, B, C)
-    np_C = A.astype(np.int8) @ B.astype(np.int8)
-    np.testing.assert_allclose(C, np_C, atol=1e-5)
-    print("PASSED!")
+    if is_available():
+        mod = df.build(top, target="aie")
+        A = np.random.randint(-4, 4, (M, K)).astype(np.int8)
+        B = np.random.randint(-4, 4, (K, N)).astype(np.int8)
+        C = np.zeros((M, N)).astype(np.int8)
+        mod(A, B, C)
+        np_C = A.astype(np.int8) @ B.astype(np.int8)
+        np.testing.assert_allclose(C, np_C, atol=1e-5)
+        print("PASSED!")
+    else:
+        print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 
 
 def gen_gemm_mapping_primitive(Pm, Pn, Pk, col_num=4, row_num=4):
@@ -140,7 +175,17 @@ def gen_gemm_mapping_primitive(Pm, Pn, Pk, col_num=4, row_num=4):
     return mapping_primitives
 
 
-def _test_pingpong_mixed_gemm(M, N, K, Pm, Pn, Pk):
+@pytest.mark.skipif(
+    os.environ.get("NPU2") == "1",
+    reason="Skipped because external kernel not supported on XDNA2",
+)
+@pytest.mark.parametrize(
+    "M, N, K, Pm, Pn, Pk",
+    [
+        (512, 512, 512, 8, 4, 4),
+    ],
+)
+def test_pingpong_mixed_gemm(M, N, K, Pm, Pn, Pk):
     TyI = int8
     TyI_l = int4
     TyO = int8
@@ -170,20 +215,23 @@ def _test_pingpong_mixed_gemm(M, N, K, Pm, Pn, Pk):
 
     mapping_primitives = gen_gemm_mapping_primitive(Pm, Pn, Pk)
 
-    mod = df.build(
-        top,
-        target="aie",
-        mapping_primitives=mapping_primitives,
-        profile=False,
-        warmup=200,
-        num_iters=1000,
-    )
-    A = np.random.randint(-2, 2, (M, K)).astype(np.int8)
-    B = np.random.randint(-2, 2, (K, N)).astype(np.int8)
-    C = np.zeros((M, N)).astype(np.int8)
-    mod(A, B, C)
-    np.testing.assert_allclose(C, A @ B, atol=1e-5)
-    print("PASSED!")
+    if is_available():
+        mod = df.build(
+            top,
+            target="aie",
+            mapping_primitives=mapping_primitives,
+            profile=False,
+            warmup=200,
+            num_iters=1000,
+        )
+        A = np.random.randint(-2, 2, (M, K)).astype(np.int8)
+        B = np.random.randint(-2, 2, (K, N)).astype(np.int8)
+        C = np.zeros((M, N)).astype(np.int8)
+        mod(A, B, C)
+        np.testing.assert_allclose(C, A @ B, atol=1e-5)
+        print("PASSED!")
+    else:
+        print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 
 
 if __name__ == "__main__":
@@ -191,10 +239,10 @@ if __name__ == "__main__":
     dir_path = os.path.dirname(os.path.abspath(__file__))
     os.environ["ALLO_EXTERNAL_KERNEL_DIR"] = f"{dir_path}/../../../allo/library/aie/"
 
-    _test_gemm_1D()
-    _test_gemm_2D()
-    _test_mixed_gemm_1D()
-    _test_mixed_gemm_2D()
-    _test_pingpong_mixed_gemm(512, 512, 512, 8, 4, 4)
+    test_gemm_1D()
+    test_gemm_2D()
+    test_mixed_gemm_1D()
+    test_mixed_gemm_2D()
+    test_pingpong_mixed_gemm(512, 512, 512, 8, 4, 4)
 
     del os.environ["ALLO_EXTERNAL_KERNEL_DIR"]

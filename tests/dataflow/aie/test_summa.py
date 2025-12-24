@@ -6,9 +6,10 @@ import allo.dataflow as df
 from allo.ir.types import int32, Stream
 from allo.memory import Layout
 import numpy as np
+from allo.backend.aie import is_available
 
 
-def _test_summa_2x2():
+def test_summa_2x2():
     Ty = int32
     M, K, N = 8, 8, 8
     P0, P1 = 2, 2
@@ -48,15 +49,16 @@ def _test_summa_2x2():
     A = np.random.randint(0, 64, (M, K)).astype(np.int32)
     B = np.random.randint(0, 64, (K, N)).astype(np.int32)
     C = np.zeros((M, N), dtype=np.int32)
+    if is_available():
+        mod = df.build(top, target="aie")
+        mod(A, B, C)
+        np.testing.assert_allclose(C, A @ B, atol=1e-5)
+        print("PASSED!")
+    else:
+        print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 
-    mod = df.build(top, target="aie")
-    mod(A, B, C)
 
-    np.testing.assert_allclose(C, A @ B, atol=1e-5)
-    print("PASSED!")
-
-
-def _test_summa():
+def test_summa():
     Ty = int32
     M, K, N = 32, 32, 32
     P0, P1 = 4, 4
@@ -87,13 +89,15 @@ def _test_summa():
     A = np.random.randint(0, 64, (M, K)).astype(np.int32)
     B = np.random.randint(0, 64, (K, N)).astype(np.int32)
     C = np.zeros((M, N), dtype=np.int32)
-
-    mod = df.build(top, target="aie")
-    mod(B, A, C)
-    np.testing.assert_allclose(C, A @ B, atol=1e-5)
-    print("PASSED!")
+    if is_available():
+        mod = df.build(top, target="aie")
+        mod(B, A, C)
+        np.testing.assert_allclose(C, A @ B, atol=1e-5)
+        print("PASSED!")
+    else:
+        print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 
 
 if __name__ == "__main__":
-    _test_summa_2x2()
-    _test_summa()
+    test_summa_2x2()
+    test_summa()

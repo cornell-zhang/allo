@@ -6,6 +6,7 @@ import allo.dataflow as df
 from allo.ir.types import int32, Stream
 from allo.memory import Layout
 import numpy as np
+from allo.backend.aie import is_available
 
 # RRxRS->RS
 # RSxSR->RR
@@ -13,7 +14,7 @@ LyW1 = Layout("RS0")
 LyW2 = Layout("S0R")
 
 
-def _test_tensor_parallelism():
+def test_tensor_parallelism():
     Ty = int32
     M, K, N, L = 8, 8, 8, 8
     P0 = 2
@@ -44,12 +45,14 @@ def _test_tensor_parallelism():
     X = np.random.randint(0, 64, (M, K)).astype(np.int32)
     W1 = np.random.randint(0, 64, (K, N)).astype(np.int32)
     W2 = np.random.randint(0, 64, (N, L)).astype(np.int32)
-
-    mod = df.build(top, target="aie")
-    Z = np.zeros((M, L)).astype(np.int32)
-    mod(X, W1, W2, Z)
-    np.testing.assert_allclose(Z, X @ W1 @ W2, atol=1e-5)
-    print("PASSED!")
+    if is_available():
+        mod = df.build(top, target="aie")
+        Z = np.zeros((M, L)).astype(np.int32)
+        mod(X, W1, W2, Z)
+        np.testing.assert_allclose(Z, X @ W1 @ W2, atol=1e-5)
+        print("PASSED!")
+    else:
+        print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 
     # simulator broken right now
     # sim_mod = df.build(top, target="simulator")
@@ -60,4 +63,4 @@ def _test_tensor_parallelism():
 
 
 if __name__ == "__main__":
-    _test_tensor_parallelism()
+    test_tensor_parallelism()
