@@ -58,6 +58,10 @@ def kernel_paths():
     ]
 
 
+@pytest.mark.skipif(
+    os.environ.get("NPU2") == "1",
+    reason="[FIXME]: seems that this test may crash the device",
+)
 @pytest.mark.parametrize("kernel_path", kernel_paths())
 def test_trace_conv2d(kernel_path: str):
 

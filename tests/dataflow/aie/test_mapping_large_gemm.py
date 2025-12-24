@@ -113,11 +113,10 @@ def test_pingpong_gemm(M, N, K, Pm, Pn, Pk, TyI, TyO):
             with allo.meta_elif(pk == Pk - 1):
                 C[:, :] = C_out
 
-    mapping_primitives = gen_gemm_mapping_primitive(
-        Pm, Pn, Pk, col_num=8 if os.environ.get("NPU2") == "1" else 4
-    )
+    mapping_primitives = gen_gemm_mapping_primitive(Pm, Pn, Pk)
 
     if is_available():
+        os.environ["ENABLE_AGGRESSIVE_PORT_UTILIZATION_PATCH"] = "1"
         mod = df.build(
             top,
             project="top.prj",
@@ -149,6 +148,7 @@ def test_pingpong_gemm(M, N, K, Pm, Pn, Pk, TyI, TyO):
         else:
             np.testing.assert_allclose(C, A @ B, atol=1e-5)
         print("PASSED!")
+        del os.environ["ENABLE_AGGRESSIVE_PORT_UTILIZATION_PATCH"]
     else:
         print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 
@@ -160,16 +160,16 @@ if __name__ == "__main__":
     test_pingpong_gemm(M, N, K, M // m, N // n, K // k, int8, int8)
 
     # - i16
-    # test_pingpong_gemm(M, N, K, M // m, N // n, K // k, int16, int16)
+    test_pingpong_gemm(M, N, K, M // m, N // n, K // k, int16, int16)
 
-    # # - bf16
-    # try:
-    #     test_pingpong_gemm(M, N, K, M // m, N // n, K // k, bfloat16, bfloat16)
-    # except:
-    #     print("[NOTE]: bfloat16 have accuracy issue")
+    # - bf16
+    try:
+        test_pingpong_gemm(M, N, K, M // m, N // n, K // k, bfloat16, bfloat16)
+    except:
+        print("[NOTE]: bfloat16 have accuracy issue")
 
-    # # - i4
-    # dir_path = os.path.dirname(os.path.abspath(__file__))
-    # os.environ["ALLO_EXTERNAL_KERNEL_DIR"] = f"{dir_path}/../../../allo/library/aie/"
-    # test_pingpong_gemm(M, N, K, M // m, N // n, K // k, int4, int8)
-    # del os.environ["ALLO_EXTERNAL_KERNEL_DIR"]
+    # - i4
+    dir_path = os.path.dirname(os.path.abspath(__file__))
+    os.environ["ALLO_EXTERNAL_KERNEL_DIR"] = f"{dir_path}/../../../allo/library/aie/"
+    test_pingpong_gemm(M, N, K, M // m, N // n, K // k, int4, int8)
+    del os.environ["ALLO_EXTERNAL_KERNEL_DIR"]

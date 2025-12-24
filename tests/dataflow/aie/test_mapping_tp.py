@@ -10,14 +10,6 @@ from allo.memory import Layout
 import numpy as np
 from allo.backend.aie import is_available
 
-
-@pytest.fixture(scope="module", autouse=True)
-def setup_env():
-    os.environ["FORCE_UNROLL_INDEX"] = "1"
-    yield
-    del os.environ["FORCE_UNROLL_INDEX"]
-
-
 # RRxRS->RS
 # RSxSR->RR
 LyW1 = Layout("RS0")
@@ -25,6 +17,14 @@ LyW2 = Layout("S0R")
 
 
 def test_tp_v1():
+    """
+    aie backend by default tries to avoid unrolling `meta_for` to optimize code size.
+    When the iterator of a rolled `meta_for` is used as the index of a pipe,
+    current virtual mapping (especially chain) faces significant restrictions.
+
+    If you prefer to sacrifice code size in exchange for using more mapping primitives,
+    you can set `FORCE_UNROLL_INDEX` to prevent `meta_for` with index-based iterators from being optimized.
+    """
     Ty = int32
     M, K, N, L = 8, 8, 8, 8
     P0 = 2
@@ -56,6 +56,7 @@ def test_tp_v1():
     W1 = np.random.randint(0, 64, (K, N)).astype(np.int32)
     W2 = np.random.randint(0, 64, (N, L)).astype(np.int32)
 
+    os.environ["FORCE_UNROLL_INDEX"] = "1"
     if is_available():
         mod = df.build(
             top,
@@ -102,6 +103,7 @@ def test_tp_v1():
         print("PASSED!")
     else:
         print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
+    del os.environ["FORCE_UNROLL_INDEX"]
 
 
 def test_tp_v2():
@@ -153,15 +155,5 @@ def test_tp_v2():
 
 
 if __name__ == "__main__":
-    """
-    aie backend by default tries to avoid unrolling `meta_for` to optimize code size.
-    When the iterator of a rolled `meta_for` is used as the index of a pipe,
-    current virtual mapping (especially chain) faces significant restrictions.
-
-    If you prefer to sacrifice code size in exchange for using more mapping primitives,
-    you can set `FORCE_UNROLL_INDEX` to prevent `meta_for` with index-based iterators from being optimized.
-    """
-    os.environ["FORCE_UNROLL_INDEX"] = "1"
     test_tp_v1()
-    del os.environ["FORCE_UNROLL_INDEX"]
     test_tp_v2()

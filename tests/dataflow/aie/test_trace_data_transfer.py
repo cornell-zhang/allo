@@ -1,6 +1,7 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-
+import pytest
+import os
 from allo.ir.types import int16, Stream
 import allo.dataflow as df
 import numpy as np
@@ -23,6 +24,10 @@ def top():
         B[:, :] = pipe.get()
 
 
+@pytest.mark.skipif(
+    os.environ.get("NPU2") == "1",
+    reason="[FIXME]: seems that this test may crash the device",
+)
 def test_trace_data_transfer():
     if is_available():
         mod = df.build(
