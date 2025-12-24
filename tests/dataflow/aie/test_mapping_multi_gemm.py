@@ -54,6 +54,10 @@ def gen_gemm_mapping_primitive(prefix, Pm, Pn, Pk, col_num=4, row_num=4):
     return mapping_primitives
 
 
+@pytest.mark.skipif(
+    os.environ.get("NPU2") == "1",
+    reason="Skipped because this test is not supported on XDNA2",
+)
 @pytest.mark.parametrize(
     "M, N, K, Pm, Pn, Pk, TyI, TyO",
     [

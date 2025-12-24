@@ -121,7 +121,7 @@ def test_gemm_1D_mixed():
 
 def test_gemm_2D():
     TyI, TyO = int16, int32
-    M, N, K = 32, 32, 32
+    M, N, K = 64, 64, 32
     P0, P1 = 4, 4
 
     @df.region()

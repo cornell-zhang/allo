@@ -20,6 +20,10 @@ def setup_env():
     del os.environ["ALLO_EXTERNAL_KERNEL_DIR"]
 
 
+@pytest.mark.skipif(
+    os.environ.get("NPU2") == "1",
+    reason="Skipped because external kernel not supported on XDNA2",
+)
 def test_gemm_1D():
     TyI = int4
     TyO = int8
@@ -46,6 +50,10 @@ def test_gemm_1D():
         print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 
 
+@pytest.mark.skipif(
+    os.environ.get("NPU2") == "1",
+    reason="Skipped because external kernel not supported on XDNA2",
+)
 def test_gemm_2D():
     TyI = int4
     TyO = int8
@@ -74,6 +82,10 @@ def test_gemm_2D():
         print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 
 
+@pytest.mark.skipif(
+    os.environ.get("NPU2") == "1",
+    reason="Skipped because external kernel not supported on XDNA2",
+)
 def test_mixed_gemm_1D():
     Ty = int8
     Ty_l = int4
@@ -100,6 +112,10 @@ def test_mixed_gemm_1D():
         print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 
 
+@pytest.mark.skipif(
+    os.environ.get("NPU2") == "1",
+    reason="Skipped because external kernel not supported on XDNA2",
+)
 def test_mixed_gemm_2D():
     Ty = int8
     Ty_l = int4
@@ -159,6 +175,10 @@ def gen_gemm_mapping_primitive(Pm, Pn, Pk, col_num=4, row_num=4):
     return mapping_primitives
 
 
+@pytest.mark.skipif(
+    os.environ.get("NPU2") == "1",
+    reason="Skipped because external kernel not supported on XDNA2",
+)
 @pytest.mark.parametrize(
     "M, N, K, Pm, Pn, Pk",
     [

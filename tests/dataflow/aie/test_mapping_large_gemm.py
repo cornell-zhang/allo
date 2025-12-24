@@ -113,7 +113,9 @@ def test_pingpong_gemm(M, N, K, Pm, Pn, Pk, TyI, TyO):
             with allo.meta_elif(pk == Pk - 1):
                 C[:, :] = C_out
 
-    mapping_primitives = gen_gemm_mapping_primitive(Pm, Pn, Pk)
+    mapping_primitives = gen_gemm_mapping_primitive(
+        Pm, Pn, Pk, col_num=8 if os.environ.get("NPU2") == "1" else 4
+    )
 
     if is_available():
         mod = df.build(
@@ -124,7 +126,6 @@ def test_pingpong_gemm(M, N, K, Pm, Pn, Pk, TyI, TyO):
             profile=True,
             warmup=200,
             num_iters=1000,
-            device_type="npu1_4col",
         )
         if TyI is bfloat16:
             A = (np.random.random((M, K)) * 0.1).astype(np_bfloat16)
@@ -159,16 +160,16 @@ if __name__ == "__main__":
     test_pingpong_gemm(M, N, K, M // m, N // n, K // k, int8, int8)
 
     # - i16
-    test_pingpong_gemm(M, N, K, M // m, N // n, K // k, int16, int16)
+    # test_pingpong_gemm(M, N, K, M // m, N // n, K // k, int16, int16)
 
-    # - bf16
-    try:
-        test_pingpong_gemm(M, N, K, M // m, N // n, K // k, bfloat16, bfloat16)
-    except:
-        print("[NOTE]: bfloat16 have accuracy issue")
+    # # - bf16
+    # try:
+    #     test_pingpong_gemm(M, N, K, M // m, N // n, K // k, bfloat16, bfloat16)
+    # except:
+    #     print("[NOTE]: bfloat16 have accuracy issue")
 
-    # - i4
-    dir_path = os.path.dirname(os.path.abspath(__file__))
-    os.environ["ALLO_EXTERNAL_KERNEL_DIR"] = f"{dir_path}/../../../allo/library/aie/"
-    test_pingpong_gemm(M, N, K, M // m, N // n, K // k, int4, int8)
-    del os.environ["ALLO_EXTERNAL_KERNEL_DIR"]
+    # # - i4
+    # dir_path = os.path.dirname(os.path.abspath(__file__))
+    # os.environ["ALLO_EXTERNAL_KERNEL_DIR"] = f"{dir_path}/../../../allo/library/aie/"
+    # test_pingpong_gemm(M, N, K, M // m, N // n, K // k, int4, int8)
+    # del os.environ["ALLO_EXTERNAL_KERNEL_DIR"]
