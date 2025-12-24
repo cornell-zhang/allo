@@ -138,7 +138,6 @@ def unified_gemm_daisy_chain():
             inst_chain[i, j].put(flowtag)
 
         with allo.meta_else():
-            flowtag: bool
             with allo.meta_if(i == 0):
                 flowtag = inst_broad[j - 1].get()
             with allo.meta_else():
@@ -310,7 +309,6 @@ def unified_gemm_tiling():
 
         flowtag: bool
         with allo.meta_else():
-            flowtag: bool
             with allo.meta_if(i == 0):
                 flowtag = inst_broad[j - 1].get()
             with allo.meta_else():

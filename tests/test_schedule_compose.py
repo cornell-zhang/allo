@@ -25,7 +25,7 @@ def test_use_def_chain():
         return E
 
     s = allo.customize(kernel)
-    assert s.get_equivalent_variables("kernel:D") >= set(
+    assert s.get_equivalent_variables("kernel:D") == set(
         ["foo2:0", "foo:0", "kernel:D"]
     )
 
@@ -43,7 +43,7 @@ def test_use_def_chain_array():
         return ret
 
     s = allo.customize(gemm, verbose=True)
-    assert s.get_equivalent_variables("kernel:0") >= set(["kernel:0", "gemm:0"])
+    assert s.get_equivalent_variables("kernel:0") == set(["kernel:0", "gemm:0"])
 
 
 def test_nested_functions():

@@ -1,5 +1,10 @@
+# Copyright Allo authors. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+# Reference: https://github.com/AMDResearch/Ryzers/blob/b601f8789660f8418f7caeb3e8f3dbe9b17d9323/packages/npu/xdna/Dockerfile
+
 FROM chhzh123/allo:latest
 
+# Copy the scripts/ directory from the root of the allo project to /ryzers/scripts/ in the container
 COPY scripts/ /ryzers/scripts/
 
 ARG DRIVER_VERSION="0ad5aa3"
@@ -60,8 +65,3 @@ RUN git clone https://github.com/Xilinx/mlir-aie.git "/ryzers/mlir-aie" && \
     cd "/ryzers/mlir-aie" && \
     git checkout 07320d6 && \
     patch -p1 < "$PATCH_FILE"
-    # python3 -m pip install -r python/requirements.txt && \
-    # HOST_MLIR_PYTHON_PACKAGE_PREFIX=aie python3 -m pip install -r python/requirements_extras.txt && \
-    # python3 -m pip install -r python/requirements_ml.txt && \
-    # export MLIR_AIE_INSTALL_DIR="$(pip show mlir_aie 2>/dev/null | grep ^Location: | awk '{print $2}')/mlir_aie" && \
-    # cp python/compiler/aiecc/main.py "$MLIR_AIE_INSTALL_DIR/python/aie/compiler/aiecc/main.py" 
