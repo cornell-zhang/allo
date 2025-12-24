@@ -11,7 +11,7 @@ on:
       - main
 
 jobs:
-  build:
+  aie_test:
     # This job runs on Linux
     runs-on: [self-hosted, aie, xdna2]
     container:
