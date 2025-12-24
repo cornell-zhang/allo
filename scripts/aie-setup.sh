@@ -35,7 +35,6 @@ python3 -m pip install -r python/requirements_ml.txt
 # === Source environment ===
 source utils/env_setup.sh
 
-echo "================================================"
 # === Apply patch to python/compiler/aiecc/main.py ===
 patch -p1 < "$PATCH_FILE"
 
