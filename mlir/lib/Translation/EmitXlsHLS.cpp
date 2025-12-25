@@ -450,7 +450,7 @@ void XLSModuleEmitter::emitLoopDirectives(Operation *op) {
   if (auto factor = getLoopDirective(op, "unroll")) {
     indent();
     os << "#pragma hls_unroll yes";
-    auto val = factor.cast<IntegerAttr>().getValue();
+    auto val = llvm::cast<IntegerAttr>(factor).getValue();
     if (val != 0) {
       os << " factor=" << val;
     }
@@ -466,7 +466,7 @@ void XLSModuleEmitter::emitAffineFor(AffineForOp op) {
   auto iterVar = op.getInductionVar();
   std::string loop_name = "";
   if (op->hasAttr("loop_name")) {
-    loop_name = op->getAttr("loop_name").cast<StringAttr>().getValue().str();
+    loop_name = llvm::dyn_cast<StringAttr>(op->getAttr("loop_name")).getValue().str();
   }
 
   // Memory mode compute state: emit normal for loops with local declarations
@@ -765,7 +765,7 @@ void XLSModuleEmitter::emitAffineLoad(AffineLoadOp op) {
   indent();
   std::string load_from_name = "";
   if (op->hasAttr("from")) {
-    load_from_name = op->getAttr("from").cast<StringAttr>().getValue().str();
+    load_from_name = llvm::dyn_cast<StringAttr>(op->getAttr("from")).getValue().str();
   }
   Value result = op.getResult();
   fixUnsignedType(result, op->hasAttr("unsigned"));
@@ -809,7 +809,7 @@ void XLSModuleEmitter::emitAffineStore(AffineStoreOp op) {
   indent();
   std::string store_to_name = "";
   if (op->hasAttr("to")) {
-    store_to_name = op->getAttr("to").cast<StringAttr>().getValue().str();
+    store_to_name = llvm::dyn_cast<StringAttr>(op->getAttr("to")).getValue().str();
   }
   
   auto memref = op.getMemRef();
@@ -867,7 +867,7 @@ void XLSModuleEmitter::emitFunction(func::FuncOp func) {
   Value returnValue = nullptr;
   std::string otypes = "";
   if (func->hasAttr("otypes"))
-    otypes = func->getAttr("otypes").cast<StringAttr>().getValue().str();
+    otypes = llvm::dyn_cast<StringAttr>(func->getAttr("otypes")).getValue().str();
   else {
     for (unsigned i = 0; i < func.getNumArguments(); ++i)
       otypes += "x";
@@ -967,7 +967,7 @@ void XLSModuleEmitter::emitFunction(func::FuncOp func) {
       // Generate state-based code for loading each input array
       unsigned stateNum = 0;
       for (auto &arg : arrayArgs) {
-        auto st = arg.getType().cast<ShapedType>();
+        auto st = llvm::cast<ShapedType>(arg.getType());
         auto shape = st.getShape();
         std::string localName = arrayArgToLocalName[arg];
         std::string channelName = arrayArgToChannelName[arg];
@@ -1061,7 +1061,7 @@ void XLSModuleEmitter::emitFunction(func::FuncOp func) {
     if (returnIsArray && returnValue) {
       returnArray = returnValue;
       if (func->hasAttr("outputs")) {
-        outputChannelName = func->getAttr("outputs").cast<StringAttr>().getValue().str();
+        outputChannelName = llvm::dyn_cast<StringAttr>(func->getAttr("outputs")).getValue().str();
       }
     }
     
@@ -1229,18 +1229,18 @@ void XLSModuleEmitter::emitFunction(func::FuncOp func) {
   std::vector<std::string> input_args;
   if (func->hasAttr("inputs")) {
     std::string input_names =
-        func->getAttr("inputs").cast<StringAttr>().getValue().str();
+        llvm::dyn_cast<StringAttr>(func->getAttr("inputs")).getValue().str();
     input_args = split_names(input_names);
   }
   std::string output_names;
   if (func->hasAttr("outputs")) {
-    output_names = func->getAttr("outputs").cast<StringAttr>().getValue().str();
+    output_names = llvm::dyn_cast<StringAttr>(func->getAttr("outputs")).getValue().str();
     // suppose only one output
     input_args.push_back(output_names);
   }
   std::string itypes = "";
   if (func->hasAttr("itypes"))
-    itypes = func->getAttr("itypes").cast<StringAttr>().getValue().str();
+    itypes = llvm::dyn_cast<StringAttr>(func->getAttr("itypes")).getValue().str();
   else {
     for (unsigned i = 0; i < func.getNumArguments(); ++i)
       itypes += "x";
@@ -1289,7 +1289,7 @@ void XLSModuleEmitter::emitFunction(func::FuncOp func) {
     fixUnsignedType(returnValue, otypes.size() > 0 && otypes[0] == 'u');
     // Generate a name for the output parameter
     if (func->hasAttr("outputs")) {
-      outputParamName = func->getAttr("outputs").cast<StringAttr>().getValue().str();
+      outputParamName = llvm::dyn_cast<StringAttr>(func->getAttr("outputs")).getValue().str();
     } else {
       // Use a simple default name - try to get from return value or use "out"
       outputParamName = "out";  // Simple default name
@@ -1330,7 +1330,7 @@ void XLSModuleEmitter::emitFunction(func::FuncOp func) {
         // Compute output parameter name (same logic as above)
         std::string outParamName = "";
         if (func->hasAttr("outputs")) {
-          outParamName = func->getAttr("outputs").cast<StringAttr>().getValue().str();
+          outParamName = llvm::dyn_cast<StringAttr>(func->getAttr("outputs")).getValue().str();
         } else {
           outParamName = "out";  // Simple default name
         }
@@ -1446,8 +1446,7 @@ void allo::registerEmitXlsHLSTranslation() {
           mlir::scf::SCFDialect,
           mlir::affine::AffineDialect,
           mlir::math::MathDialect,
-          mlir::memref::MemRefDialect,
-          mlir::linalg::LinalgDialect
+          mlir::memref::MemRefDialect
         >();
         // clang-format on
       });

@@ -33,6 +33,8 @@ public:
   /// SCF statement emitters.
   virtual void emitScfFor(scf::ForOp op);
   void emitScfIf(scf::IfOp op);
+  void emitScfWhile(scf::WhileOp op);
+  void emitScfCondition(scf::ConditionOp op);
   void emitScfYield(scf::YieldOp op);
 
   /// Affine statement emitters.

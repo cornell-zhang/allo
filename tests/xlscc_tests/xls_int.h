@@ -36,8 +36,10 @@ public:
     XlsInt() : value(0) {}
     XlsInt(int v) : value(normalize(v)) {}
     XlsInt(int64_t v) : value(normalize(v)) {}
+    XlsInt(long long v) : value(normalize(static_cast<int64_t>(v))) {}
     XlsInt(unsigned int v) : value(normalize(static_cast<int64_t>(v))) {}
     XlsInt(uint64_t v) : value(normalize(static_cast<int64_t>(v))) {}
+    XlsInt(unsigned long long v) : value(normalize(static_cast<int64_t>(v))) {}
     
     // Cross-width copy constructor (for width extension/truncation)
     template <int OtherWidth, bool OtherSigned>

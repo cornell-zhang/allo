@@ -873,6 +873,10 @@ void allo::vhls::ModuleEmitter::emitScfIf(scf::IfOp op) {
   os << "}\n";
 }
 
+namespace mlir {
+namespace allo {
+namespace vhls {
+
 void ModuleEmitter::emitScfWhile(scf::WhileOp op) {
   // Declare all loop-carried values (results of while loop)
   for (auto result : op.getResults()) {
@@ -994,6 +998,10 @@ void ModuleEmitter::emitScfYield(scf::YieldOp op) {
     }
   }
 }
+
+} // namespace vhls
+} // namespace allo
+} // namespace mlir
 
 /// Affine statement emitters.
 void allo::vhls::ModuleEmitter::emitAffineFor(AffineForOp op) {
@@ -1729,7 +1737,7 @@ void allo::vhls::ModuleEmitter::emitDim(memref::DimOp op) {
     emitError(op, "index is not a constant.");
 }
 
-void ModuleEmitter::emitRank(memref::RankOp op) {
+void allo::vhls::ModuleEmitter::emitRank(memref::RankOp op) {
   auto type = llvm::dyn_cast<ShapedType>(op.getOperand().getType());
   if (type.hasRank()) {
     indent();
@@ -1799,7 +1807,7 @@ void allo::vhls::ModuleEmitter::emitMaxMin(Operation *op, const char *syntax) {
   emitNestedLoopTail(rank);
 }
 
-void ModuleEmitter::emitStreamConstruct(StreamConstructOp op) {
+void allo::vhls::ModuleEmitter::emitStreamConstruct(StreamConstructOp op) {
   Value result = op.getResult();
   fixUnsignedType(result, op->hasAttr("unsigned"));
 
@@ -1861,7 +1869,7 @@ void ModuleEmitter::emitStreamConstruct(StreamConstructOp op) {
   emitInfoAndNewLine(op);
 }
 
-void ModuleEmitter::emitStreamGet(StreamGetOp op) {
+void allo::vhls::ModuleEmitter::emitStreamGet(StreamGetOp op) {
   Value result = op.getResult();
   fixUnsignedType(result, op->hasAttr("unsigned"));
   auto stream = op->getOperand(0);
@@ -1979,7 +1987,7 @@ void ModuleEmitter::emitStreamGet(StreamGetOp op) {
   emitInfoAndNewLine(op);
 }
 
-void ModuleEmitter::emitStreamPut(StreamPutOp op) {
+void allo::vhls::ModuleEmitter::emitStreamPut(StreamPutOp op) {
   auto stream = op->getOperand(0);
   auto value = op->getOperand(1);
 
@@ -3072,7 +3080,7 @@ LogicalResult allo::emitVivadoHLSWithFlag(ModuleOp module,
                                           bool linearize_pointers) {
   AlloEmitterState state(os);
   state.linearize_pointers = linearize_pointers;
-  ModuleEmitter(state).emitModule(module);
+  vhls::ModuleEmitter(state).emitModule(module);
   return failure(state.encounteredError);
 }
 
