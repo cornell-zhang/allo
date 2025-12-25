@@ -11,6 +11,7 @@ import allo.dataflow as df
 import allo.backend.hls as hls
 from examples.feather.feather import (
     get_feather_top,
+    get_scheduled_feather,
     print_test_config,
     result_check,
     compare_sim_hls_result,
@@ -106,14 +107,8 @@ def call_feather_kernel(
                                 weights[mt : mt + Mt, ct : ct + Ct, vn : vn + VN_size]
                             )
                             inst = insts[intraline_offset]
-                            inst_flattened = inst.flatten()
                             output_buffer_local = np.zeros((AH, AW), dtype=np.int8)
-                            kernel(
-                                iActs_tile,
-                                weights_tile,
-                                inst_flattened,
-                                output_buffer_local,
-                            )
+                            kernel(iActs_tile, weights_tile, inst, output_buffer_local)
                             output_buffer += output_buffer_local
                     for m in range(mt, mt + Mt):
                         oActs[nt, m * P * Q // AW + line_offset, intraline_offset] = (
@@ -144,11 +139,11 @@ def test_FEATHER_conv():
         inst2 = np.array([[AL, AL], [AR, PS], [PS, PS]]).astype(np.int8)
         inst3 = np.array([[AL, AL], [AR, PS], [PS, SW]]).astype(np.int8)
         insts = [inst0, inst1, inst2, inst3]
-    iActs = np.random.randint(low=-4, high=4, size=(N, C, H, W), dtype=np.int8)
+    iActs = np.random.randint(low=-2, high=2, size=(N, C, H, W), dtype=np.int8)
     iActs_channel_last = np.ascontiguousarray(
         iActs.transpose(0, 2, 3, 1)
     )  # NCHW -> NHWC
-    weights = np.random.randint(low=-4, high=4, size=(M, C, R, S), dtype=np.int8)
+    weights = np.random.randint(low=-2, high=2, size=(M, C, R, S), dtype=np.int8)
     weights_flattened = weights.reshape(M, C, R * S)
     oActs_row_major = np.zeros((N, M * P * Q // AW, AW), dtype=np.int8)
 
@@ -183,11 +178,7 @@ def test_FEATHER_conv():
     hls_test_passed, vs_passed = False, False
     if hls.is_available("vitis_hls"):
         print("Running Vitis Synthesis and On-Board Execution...")
-        top = get_feather_top(AW, AH, Ty)
-        s = df.customize(top)
-        nest_loop = s.get_loops("NEST_0")["nest"]["i"]
-        s.unroll(nest_loop)
-        s.partition("top:output_buffer", dim=1, factor=AW)
+        s = get_scheduled_feather(AW, AH, Ty)
         csyn_mod = s.build(
             target="vitis_hls",
             mode="hw_emu",

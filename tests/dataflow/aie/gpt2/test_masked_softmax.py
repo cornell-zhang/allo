@@ -11,8 +11,12 @@ import numpy as np
 from allo.memory import Layout
 from allo.backend.aie.external_kernel import ExternalModule
 
-KERNEL_LIB_PATH = "../../../../allo/library/aie/"
-
+KERNEL_LIB_PATH = os.path.join(
+    os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "../../../../allo/library/aie")
+    ),
+    "",
+)
 Ly = Layout("S1S0")
 Ly_1 = Layout("S1")
 

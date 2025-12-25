@@ -1,6 +1,8 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import tempfile
+
 import numpy as np
 import allo
 from allo.ir.types import uint64, uint256, int32, float32, int512, bool
@@ -44,15 +46,16 @@ def test_grid_for_gemm():
         np_A = np.random.randint(0, 10, size=(32, 32)).astype(np.int32)
         np_B = np.random.randint(0, 10, size=(32, 32)).astype(np.int32)
         np_C = np.matmul(np_A, np_B)
-        hls_mod = s.build(
-            target="vitis_hls",
-            mode="sw_emu",
-            project=f"test_grid_for_gemm.prj",
-        )
-        sw_out = np.zeros((32, 32), dtype=np.int32)
-        hls_mod(np_A, np_B, sw_out)
-        np.testing.assert_allclose(sw_out, np_C, atol=1e-3)
-        print("Passed HLS test!")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            hls_mod = s.build(
+                target="vitis_hls",
+                mode="sw_emu",
+                project=tmpdir,
+            )
+            sw_out = np.zeros((32, 32), dtype=np.int32)
+            hls_mod(np_A, np_B, sw_out)
+            np.testing.assert_allclose(sw_out, np_C, atol=1e-3)
+            print("Passed HLS test!")
 
 
 def test_vitis_gemm_template_int32():
@@ -65,16 +68,15 @@ def test_vitis_gemm_template_int32():
 
     s = allo.customize(gemm, instantiate=[int32, 32, 32, 32])
     if hls.is_available("vitis_hls"):
-        mod = s.build(
-            target="vitis_hls", mode="sw_emu", project=f"gemm_vitis_{int32}.prj"
-        )
-        np_A = np.random.randint(0, 10, size=(32, 32)).astype(np.int32)
-        np_B = np.random.randint(0, 10, size=(32, 32)).astype(np.int32)
-        np_C = np.matmul(np_A, np_B)
-        np_C_allo = np.zeros((32, 32), dtype=np.int32)
-        mod(np_A, np_B, np_C_allo)
-        np.testing.assert_allclose(np_C, np_C_allo, rtol=1e-4)
-        print("Passed!")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mod = s.build(target="vitis_hls", mode="sw_emu", project=tmpdir)
+            np_A = np.random.randint(0, 10, size=(32, 32)).astype(np.int32)
+            np_B = np.random.randint(0, 10, size=(32, 32)).astype(np.int32)
+            np_C = np.matmul(np_A, np_B)
+            np_C_allo = np.zeros((32, 32), dtype=np.int32)
+            mod(np_A, np_B, np_C_allo)
+            np.testing.assert_allclose(np_C, np_C_allo, rtol=1e-4)
+            print("Passed!")
 
 
 def test_vitis_gemm_template_float32():
@@ -87,16 +89,15 @@ def test_vitis_gemm_template_float32():
 
     s = allo.customize(gemm, instantiate=[float32, 64, 64, 64])
     if hls.is_available("vitis_hls"):
-        mod = s.build(
-            target="vitis_hls", mode="sw_emu", project=f"gemm_vitis_{float32}.prj"
-        )
-        np_A = np.random.random(size=(64, 64)).astype(np.float32)
-        np_B = np.random.random(size=(64, 64)).astype(np.float32)
-        np_C = np.matmul(np_A, np_B)
-        np_C_allo = np.zeros((64, 64), dtype=np.float32)
-        mod(np_A, np_B, np_C_allo)
-        np.testing.assert_allclose(np_C, np_C_allo, rtol=1e-4)
-        print("Passed!")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mod = s.build(target="vitis_hls", mode="sw_emu", project=tmpdir)
+            np_A = np.random.random(size=(64, 64)).astype(np.float32)
+            np_B = np.random.random(size=(64, 64)).astype(np.float32)
+            np_C = np.matmul(np_A, np_B)
+            np_C_allo = np.zeros((64, 64), dtype=np.float32)
+            mod(np_A, np_B, np_C_allo)
+            np.testing.assert_allclose(np_C, np_C_allo, rtol=1e-4)
+            print("Passed!")
 
 
 def test_vitis_io_stream():
@@ -112,12 +113,13 @@ def test_vitis_io_stream():
     s = allo.customize(top)
     s.dataflow("top")
     if hls.is_available("vitis_hls"):
-        hls_mod = s.build(target="vitis_hls", mode="sw_emu", project="test_io.prj")
-        print(s.module)
-        np_A = np.random.randint(0, 10, size=(32, 32)).astype(np.int32)
-        np_B = np.zeros((32, 32), dtype=np.int32)
-        hls_mod(np_A, np_B)
-        print("Passed!")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            hls_mod = s.build(target="vitis_hls", mode="sw_emu", project=tmpdir)
+            print(s.module)
+            np_A = np.random.randint(0, 10, size=(32, 32)).astype(np.int32)
+            np_B = np.zeros((32, 32), dtype=np.int32)
+            hls_mod(np_A, np_B)
+            print("Passed!")
 
 
 def test_scalar():
@@ -129,12 +131,13 @@ def test_scalar():
     mod = s.build()
     assert mod(1) == 2
     print("Passed CPU simulation!")
-    mod = s.build(target="vitis_hls", mode="sw_emu", project="test_scalar_sw_emu.prj")
-    if hls.is_available("vitis_hls"):
-        ret = np.zeros((1,), dtype=np.int32)
-        mod(1, ret)
-        assert ret == 2
-        print("Passed!")
+    with tempfile.TemporaryDirectory() as tmpdir:
+        mod = s.build(target="vitis_hls", mode="sw_emu", project=tmpdir)
+        if hls.is_available("vitis_hls"):
+            ret = np.zeros((1,), dtype=np.int32)
+            mod(1, ret)
+            assert ret == 2
+            print("Passed!")
 
 
 def test_pointer_generation():
@@ -144,24 +147,24 @@ def test_pointer_generation():
             C[0] = C[0] + 1
 
     s = allo.customize(top)
-    mod = s.build(target="vitis_hls", mode="sw_emu", project="test_pointer_sw_emu.prj")
-    assert "bool v" in mod.hls_code and ",," not in mod.hls_code
+    with tempfile.TemporaryDirectory() as tmpdir:
+        mod = s.build(target="vitis_hls", mode="sw_emu", project=tmpdir)
+        assert "bool v" in mod.hls_code and ",," not in mod.hls_code
+        if hls.is_available("vitis_hls"):
+            inst = np.array([1], dtype=np.bool_)
+            C = np.array([1, 2, 3], dtype=np.int32)
+            mod(inst, C)
+            np.testing.assert_allclose(C, [2, 2, 3], rtol=1e-5)
+            print("Passed!")
+
     if hls.is_available("vitis_hls"):
-
-        inst = np.array([1], dtype=np.bool_)
-        C = np.array([1, 2, 3], dtype=np.int32)
-        mod(inst, C)
-        np.testing.assert_allclose(C, [2, 2, 3], rtol=1e-5)
-        print("Passed!")
-
-        mod = s.build(
-            target="vitis_hls", mode="sw_emu", project="test_pointer_sw_emu_f.prj"
-        )
-        inst = np.array([0], dtype=np.bool_)
-        C = np.array([1, 2, 3], dtype=np.int32)
-        mod(inst, C)
-        np.testing.assert_allclose(C, [1, 2, 3], rtol=1e-5)
-        print("Passed!")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mod = s.build(target="vitis_hls", mode="sw_emu", project=tmpdir)
+            inst = np.array([0], dtype=np.bool_)
+            C = np.array([1, 2, 3], dtype=np.int32)
+            mod(inst, C)
+            np.testing.assert_allclose(C, [1, 2, 3], rtol=1e-5)
+            print("Passed!")
 
 
 def test_bool_array():
@@ -172,13 +175,14 @@ def test_bool_array():
                 C[i] = C[i] + 1
 
     s = allo.customize(top)
-    mod = s.build(target="vitis_hls", mode="sw_emu", project="test_bool_array.prj")
-    if hls.is_available("vitis_hls"):
-        inst = np.array([1, 0, 1], dtype=np.bool_)
-        C = np.array([1, 2, 3], dtype=np.int32)
-        mod(inst, C)
-        np.testing.assert_allclose(C, [2, 2, 4], rtol=1e-5)
-        print("Passed!")
+    with tempfile.TemporaryDirectory() as tmpdir:
+        mod = s.build(target="vitis_hls", mode="sw_emu", project=tmpdir)
+        if hls.is_available("vitis_hls"):
+            inst = np.array([1, 0, 1], dtype=np.bool_)
+            C = np.array([1, 2, 3], dtype=np.int32)
+            mod(inst, C)
+            np.testing.assert_allclose(C, [2, 2, 4], rtol=1e-5)
+            print("Passed!")
 
 
 # ##############################################################
@@ -227,17 +231,18 @@ def test_vadd():
 
     if hls.is_available("vitis_hls"):
         print("Starting Test...")
-        mod = s.build(
-            target="vitis_hls",
-            mode="sw_emu",
-            project=f"vec_adv_sw_emu.prj",
-            wrap_io=False,
-        )
-        mod(packed_A, packed_B, packed_C)
-        unpacked_C = packed_C.view(np.uint32)
-        np.testing.assert_allclose(A + B, unpacked_C, rtol=1e-5, atol=1e-5)
-        print(unpacked_C)
-        print("Passed Test!")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mod = s.build(
+                target="vitis_hls",
+                mode="sw_emu",
+                project=tmpdir,
+                wrap_io=False,
+            )
+            mod(packed_A, packed_B, packed_C)
+            unpacked_C = packed_C.view(np.uint32)
+            np.testing.assert_allclose(A + B, unpacked_C, rtol=1e-5, atol=1e-5)
+            print(unpacked_C)
+            print("Passed Test!")
 
 
 def test_packed_add():
@@ -265,14 +270,105 @@ def test_packed_add():
     packed_B = np.ascontiguousarray(B).view(np_512)
     s = allo.customize(packed_add)
     if hls.is_available("vitis_hls"):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mod = s.build(target="vitis_hls", mode="sw_emu", project=tmpdir)
+            mod(packed_A, packed_B)
+            unpacked_B = packed_B.view(np.int32)
+            np.testing.assert_allclose(A + 1, unpacked_B, rtol=1e-5, atol=1e-5)
+            print(unpacked_B)
+            print("Passed Test!")
+
+
+def test_hbm_mapping_config():
+    """Test that HBM mapping generates the correct configuration file."""
+    import os
+
+    def gemm(A: int32[32, 32], B: int32[32, 32]) -> int32[32, 32]:
+        C: int32[32, 32] = 0
+        for i, j, k in allo.grid(32, 32, 32, name="C"):
+            C[i, j] += A[i, k] * B[k, j]
+        return C
+
+    s = allo.customize(gemm)
+
+    # Test with HBM mapping configuration
+    # Use actual argument names from the function definition
+    # Return values are named "output_0", "output_1", etc.
+    hbm_mapping = {
+        "A": 0,  # HBM channel 0 (using int)
+        "B": "HBM[1]",  # HBM channel 1 (using string)
+        "output_0": "DDR[0]",  # Return value -> DDR bank 0
+    }
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Build with HBM mapping
         mod = s.build(
-            target="vitis_hls", mode="sw_emu", project="test_packed_int512.prj"
+            target="vitis_hls",
+            mode="csyn",  # Just use csyn to generate files without running HLS
+            project=tmpdir,
+            configs={"hbm_mapping": hbm_mapping},
         )
-        mod(packed_A, packed_B)
-        unpacked_B = packed_B.view(np.int32)
-        np.testing.assert_allclose(A + 1, unpacked_B, rtol=1e-5, atol=1e-5)
-        print(unpacked_B)
-        print("Passed Test!")
+
+        # Check that the configuration file was created
+        cfg_file = os.path.join(tmpdir, "gemm.cfg")
+        assert os.path.exists(
+            cfg_file
+        ), f"Configuration file {cfg_file} was not created"
+
+        # Read and verify the configuration file content
+        with open(cfg_file, "r") as f:
+            cfg_content = f.read()
+
+        print("Generated config file content:")
+        print(cfg_content)
+
+        # Verify the content - user names should be mapped to HLS argument names
+        # The generated HLS code uses names like v15, v16, v17
+        assert "[connectivity]" in cfg_content
+        assert ":HBM[0]" in cfg_content  # Check memory spec is present
+        assert ":HBM[1]" in cfg_content
+        assert ":DDR[0]" in cfg_content
+        # Verify HLS argument names are used (vXX format) with kernel instance suffix
+        assert (
+            "sp=gemm_1.v" in cfg_content
+        ), "Config should use kernel instance name with HLS argument names"
+
+        # Check that VPP_LDFLAGS in makefile includes the config file
+        makefile_us = os.path.join(tmpdir, "makefile_us_alveo.mk")
+        if os.path.exists(makefile_us):
+            with open(makefile_us, "r") as f:
+                makefile_content = f.read()
+            assert (
+                "--config gemm.cfg" in makefile_content
+            ), "Makefile should reference the config file"
+
+    print("HBM mapping test passed!")
+
+
+def test_hbm_mapping_function():
+    """Test the generate_hbm_config function directly."""
+    from allo.backend.vitis import generate_hbm_config
+
+    # Test with mixed input types
+    hbm_mapping = {
+        "inp_addr_0": 0,
+        "inp_addr_1": "HBM[0]",
+        "wk_addr_0": 1,
+        "wv_addr_0": "DDR[0]",
+    }
+
+    cfg_content = generate_hbm_config("my_kernel", hbm_mapping)
+    print("Generated config content:")
+    print(cfg_content)
+
+    # Verify content
+    assert "[connectivity]" in cfg_content
+    assert "sp=my_kernel_1.inp_addr_0:HBM[0]" in cfg_content
+    assert "sp=my_kernel_1.inp_addr_1:HBM[0]" in cfg_content
+    assert "sp=my_kernel_1.wk_addr_0:HBM[1]" in cfg_content
+    assert "sp=my_kernel_1.wv_addr_0:DDR[0]" in cfg_content
+
+    print("generate_hbm_config test passed!")
 
 
 if __name__ == "__main__":
@@ -286,3 +382,7 @@ if __name__ == "__main__":
 
     test_vadd()
     test_packed_add()
+
+    # Test HBM mapping
+    test_hbm_mapping_function()
+    test_hbm_mapping_config()

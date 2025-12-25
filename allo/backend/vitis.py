@@ -418,3 +418,112 @@ def read_tensor_from_file(dtype, shape, file_path):
         dtype = "f32"
     arr = np.fromfile(file_path, sep="\n", dtype=np_supported_types[dtype])
     return arr.reshape(shape)
+
+
+def extract_hls_arg_names(hls_code, top_func_name):
+    """
+    Extract argument names from the HLS function signature.
+
+    Parameters:
+    -----------
+    hls_code : str
+        The generated HLS code
+    top_func_name : str
+        The top-level function name
+
+    Returns:
+    --------
+    list[str]
+        List of argument names in order
+    """
+    func_decl = False
+    args = []
+    for line in hls_code.split("\n"):
+        if line.startswith(f"void {top_func_name}"):
+            func_decl = True
+        elif func_decl and line.startswith(") {"):
+            break
+        elif func_decl:
+            # Parse argument line like "  int32_t *v15,"
+            line = line.strip()
+            if line:
+                # Remove trailing comma
+                if line.endswith(","):
+                    line = line[:-1]
+                # Extract variable name (last word, possibly with *)
+                parts = line.split()
+                if parts:
+                    var_name = parts[-1].lstrip("*")
+                    args.append(var_name)
+    return args
+
+
+def generate_hbm_config(top_func_name, hbm_mapping, arg_name_mapping=None):
+    """
+    Generate HLS configuration file content for HBM/DDR memory mapping.
+
+    Parameters:
+    -----------
+    top_func_name : str
+        The top-level function name (kernel name)
+    hbm_mapping : dict
+        A dictionary mapping function argument names to memory specifications.
+        Keys should match the argument names in the function definition.
+        Values can be:
+        - An integer: interpreted as HBM channel number (e.g., 0 -> "HBM[0]")
+        - A string: full memory specification (e.g., "HBM[0]", "DDR[1]")
+    arg_name_mapping : dict, optional
+        A mapping from user argument names to HLS argument names.
+        If provided, user argument names in hbm_mapping will be translated
+        to HLS argument names.
+
+    Returns:
+    --------
+    str
+        The configuration file content
+
+    Example:
+    --------
+    >>> # For a function: def gemm(A: int32[M, K], B: int32[K, N]) -> int32[M, N]
+    >>> hbm_mapping = {
+    ...     "A": 0,              # HBM channel 0
+    ...     "B": "HBM[1]",       # HBM channel 1 (explicit)
+    ...     "output_0": "DDR[0]", # Return value -> DDR bank 0
+    ... }
+    >>> # Note: Return values should be named "output_0", "output_1", etc.
+    >>> cfg_content = generate_hbm_config("gemm", hbm_mapping)
+    """
+    cfg_lines = ["[connectivity]", ""]
+
+    # Vitis creates kernel instances with a postfix (e.g., gemm_1 for the first instance)
+    # The sp tag must reference the kernel instance, not just the kernel name.
+    # Note: This assumes a single kernel instance (compute unit). For multiple instances,
+    # the numbering is _1, _2, _3, etc. Currently, we only support single instance configurations.
+    kernel_instance = f"{top_func_name}_1"
+
+    for user_arg_name, mem_spec in hbm_mapping.items():
+        # Handle different input formats for memory spec
+        if isinstance(mem_spec, int):
+            # Just channel number, default to HBM
+            mem_str = f"HBM[{mem_spec}]"
+        elif isinstance(mem_spec, str):
+            # Full specification like "HBM[0]" or "DDR[1]"
+            mem_str = mem_spec
+        else:
+            raise ValueError(
+                f"Invalid memory specification for '{user_arg_name}': {mem_spec}. "
+                "Expected int (HBM channel) or str (e.g., 'HBM[0]', 'DDR[1]')"
+            )
+
+        # Map user argument name to HLS argument name if mapping is provided
+        if arg_name_mapping is not None and user_arg_name in arg_name_mapping:
+            hls_arg_name = arg_name_mapping[user_arg_name]
+        else:
+            # Use the user-provided name directly
+            hls_arg_name = user_arg_name
+
+        # Generate the sp line: sp=<kernel_instance>.<arg>:<memory>
+        cfg_lines.append(f"sp={kernel_instance}.{hls_arg_name}:{mem_str}")
+
+    cfg_lines.append("")  # Add trailing newline
+    return "\n".join(cfg_lines)

@@ -510,11 +510,18 @@ def create_utils(target, data):
     return
 
 
-def generate_makefile(desc_file, path, platform="vitis_hls"):
+def generate_makefile(desc_file, path, platform="vitis_hls", hbm_mapping=None):
     global data, init_cur_dir, cur_dir
     desc = open(desc_file, "r")
     data = json.load(desc)
     desc.close()
+
+    # Store hbm_mapping in data and re-write the description file
+    # so sub-generators can access it
+    if hbm_mapping is not None:
+        data["hbm_mapping"] = hbm_mapping
+        with open(desc_file, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=4)
 
     file_name = "LICENSE"  # file to be searched
     cur_dir = os.getcwd()  # Dir from where search starts can be replaced with any path

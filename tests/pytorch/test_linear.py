@@ -1,7 +1,8 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-import os
+import tempfile
+
 import pytest
 import allo
 from allo.library.systolic import systolic
@@ -68,20 +69,20 @@ def test_int8_linear():
     print("Passed PyTorch test!")
 
     s_linear.compose(systolic, instantiate=[int8, int8, int8, L, D, 4 * D, 2, 2])
-    hls_mod = s_linear.build(
-        target="vitis_hls",
-        mode="csim",
-        project=f"test_linear.prj",
-    )
-    csim_out = np.zeros((L, 4 * D), dtype=np.int8)
-    if not hls.is_available("vitis_hls"):
-        print("Vitis HLS not found, skipping...")
-        return
-    hls_mod(np_x, np_w, csim_out)
-    np.testing.assert_allclose(csim_out, allo_out, atol=1e-3)
-    print("Passed HLS csim test!")
+    with tempfile.TemporaryDirectory() as tmpdir:
+        hls_mod = s_linear.build(
+            target="vitis_hls",
+            mode="csim",
+            project=tmpdir,
+        )
+        csim_out = np.zeros((L, 4 * D), dtype=np.int8)
+        if not hls.is_available("vitis_hls"):
+            print("Vitis HLS not found, skipping...")
+            return
+        hls_mod(np_x, np_w, csim_out)
+        np.testing.assert_allclose(csim_out, allo_out, atol=1e-3)
+        print("Passed HLS csim test!")
 
 
 if __name__ == "__main__":
-    # pytest.main([__file__])
-    test_int8_linear()
+    pytest.main([__file__])

@@ -1,6 +1,8 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import tempfile
+
 import allo
 from allo.ir.types import float32, Stream
 import allo.dataflow as df
@@ -42,15 +44,16 @@ def test_producer_consumer():
     print("Dataflow Simulator Passed!")
 
     if hls.is_available("vitis_hls"):
-        mod = df.build(
-            top,
-            target="vitis_hls",
-            mode="csim",
-            project="producer_consumer.prj",
-        )
-        mod(A, B)
-        np.testing.assert_allclose(A + 1, B)
-        print("Passed!")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mod = df.build(
+                top,
+                target="vitis_hls",
+                mode="csim",
+                project=tmpdir,
+            )
+            mod(A, B)
+            np.testing.assert_allclose(A + 1, B)
+            print("Passed!")
 
 
 if __name__ == "__main__":

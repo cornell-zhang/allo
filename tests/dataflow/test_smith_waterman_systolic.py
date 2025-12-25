@@ -1,6 +1,8 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import tempfile
+
 import allo
 from allo.ir.types import int8, int32, Stream
 import allo.dataflow as df
@@ -98,10 +100,11 @@ def test_systolic():
     np.testing.assert_equal(S[1:, 1:], S_1[1:, 1:])
     print("Dataflow Simulator Passed!")
 
-    mod = df.build(top, target="vitis_hls", mode="hw", project="smith_waterman.prj")
-    if hls.is_available("vitis_hls"):
-        S = np.zeros((P0 - 1, P1 - 1), dtype=np.int32)
-        mod(A, B, S)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        mod = df.build(top, target="vitis_hls", mode="hw", project=tmpdir)
+        if hls.is_available("vitis_hls"):
+            S = np.zeros((P0 - 1, P1 - 1), dtype=np.int32)
+            mod(A, B, S)
 
 
 if __name__ == "__main__":

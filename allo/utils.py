@@ -15,7 +15,6 @@ from ._mlir.ir import (
     F32Type,
     F64Type,
     BF16Type,
-    OpResultList,
 )
 from ._mlir.exceptions import DTypeWarning
 from ._mlir.runtime import to_numpy
@@ -421,9 +420,15 @@ def handle_overflow(np_array, bitwidth, dtype):
         # Round to nearest integer towards zero
         np_dtype = np.int64 if dtype.startswith("fixed") else np.uint64
         np_array = np.fix(np_array).astype(np_dtype)
+
     sb = 1 << bitwidth
     sb_limit = 1 << (bitwidth - 1)
-    np_array = np_array % sb
+    if bitwidth < 64:
+        # since numpy array only supports up to 64-bit integers
+        # we only need to do modulo operation if bitwidth is less than 64
+        # for larger bitwidth, it's handled already with np.fix(np_array).astype(np_dtype)
+        # this is to avoid the numpy OverflowError: Python int too large to convert to C long
+        np_array = np_array % sb
 
     if dtype.startswith("fixed") or dtype.startswith("i"):
 
@@ -503,10 +508,3 @@ def parse_kernel_name(name: str):
     prefix = match.group(1).rstrip("_")
     ids = tuple(int(n) for n in match.group(2).split("_") if n != "")
     return prefix, ids
-
-
-def get_mlir_op_result(op):
-    if isinstance(op.result, OpResultList):
-        assert len(op.result) == 1
-        return op.result[0]
-    return op.result

@@ -242,10 +242,12 @@ def build_dataflow_simulator(module: Module, top_func_name: str):
                         memref=tail_ptr, indices=[], ip=replace_ip
                     )
                     tail_inc_op = arith_d.AddIOp(
-                        lhs=tail_val_op, rhs=const_one, ip=replace_ip
+                        lhs=tail_val_op.result, rhs=const_one.result, ip=replace_ip
                     )
                     tail_next_op = arith_d.RemUIOp(
-                        lhs=tail_inc_op, rhs=const_fifo_depth, ip=replace_ip
+                        lhs=tail_inc_op.result,
+                        rhs=const_fifo_depth.result,
+                        ip=replace_ip,
                     )
                 else:
                     assert isinstance(stream_access_op, allo_d.StreamGetOp)
@@ -253,10 +255,12 @@ def build_dataflow_simulator(module: Module, top_func_name: str):
                         memref=head_ptr, indices=[], ip=replace_ip
                     )
                     head_inc_op = arith_d.AddIOp(
-                        lhs=head_val_op, rhs=const_one, ip=replace_ip
+                        lhs=head_val_op.result, rhs=const_one.result, ip=replace_ip
                     )
                     head_next_op = arith_d.RemUIOp(
-                        lhs=head_inc_op, rhs=const_fifo_depth, ip=replace_ip
+                        lhs=head_inc_op.result,
+                        rhs=const_fifo_depth.result,
+                        ip=replace_ip,
                     )
                 spin_while_op = scf_d.WhileOp(results_=[], inits=[], ip=replace_ip)
                 assert isinstance(spin_while_op.before, Region)

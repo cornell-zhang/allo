@@ -18,7 +18,7 @@
 #include "allo/Support/Liveness.h"
 #include "allo/Transforms/Passes.h"
 #include "mlir-c/Bindings/Python/Interop.h"
-#include "mlir/Bindings/Python/PybindAdaptors.h"
+#include "mlir/Bindings/Python/NanobindAdaptors.h"
 #include "mlir/CAPI/IR.h"
 #include "mlir/Dialect/Affine/Analysis/LoopAnalysis.h"
 #include "mlir/Dialect/Affine/Passes.h"
@@ -32,8 +32,8 @@
 #include "llvm-c/ErrorHandling.h"
 #include "llvm/Support/Signals.h"
 
-namespace py = pybind11;
-using namespace mlir::python::adaptors;
+namespace nb = nanobind;
+using namespace mlir::python::nanobind_adaptors;
 
 using namespace mlir;
 using namespace mlir::python;
@@ -43,32 +43,58 @@ using namespace allo;
 // Customized Python classes
 //===----------------------------------------------------------------------===//
 
-// PybindUtils.h
+// NanobindUtils.h
 class PyFileAccumulator {
 public:
-  PyFileAccumulator(const pybind11::object &fileObject, bool binary)
-      : pyWriteFunction(fileObject.attr("write")), binary(binary) {}
+  PyFileAccumulator(const nanobind::object &fileOrStringObject, bool binary)
+      : binary(binary) {
+    std::string filePath;
+    if (nanobind::try_cast<std::string>(fileOrStringObject, filePath)) {
+      std::error_code ec;
+      writeTarget.emplace<llvm::raw_fd_ostream>(filePath, ec);
+      if (ec) {
+        throw nanobind::value_error(
+            (std::string("Unable to open file for writing: ") + ec.message())
+                .c_str());
+      }
+    } else {
+      writeTarget.emplace<nanobind::object>(fileOrStringObject.attr("write"));
+    }
+  }
+
+  MlirStringCallback getCallback() {
+    return writeTarget.index() == 0 ? getPyWriteCallback()
+                                    : getOstreamCallback();
+  }
 
   void *getUserData() { return this; }
 
-  MlirStringCallback getCallback() {
+private:
+  MlirStringCallback getPyWriteCallback() {
     return [](MlirStringRef part, void *userData) {
-      pybind11::gil_scoped_acquire acquire;
+      nanobind::gil_scoped_acquire acquire;
       PyFileAccumulator *accum = static_cast<PyFileAccumulator *>(userData);
       if (accum->binary) {
         // Note: Still has to copy and not avoidable with this API.
-        pybind11::bytes pyBytes(part.data, part.length);
-        accum->pyWriteFunction(pyBytes);
+        nanobind::bytes pyBytes(part.data, part.length);
+        std::get<nanobind::object>(accum->writeTarget)(pyBytes);
       } else {
-        pybind11::str pyStr(part.data,
+        nanobind::str pyStr(part.data,
                             part.length); // Decodes as UTF-8 by default.
-        accum->pyWriteFunction(pyStr);
+        std::get<nanobind::object>(accum->writeTarget)(pyStr);
       }
     };
   }
 
-private:
-  pybind11::object pyWriteFunction;
+  MlirStringCallback getOstreamCallback() {
+    return [](MlirStringRef part, void *userData) {
+      PyFileAccumulator *accum = static_cast<PyFileAccumulator *>(userData);
+      std::get<llvm::raw_fd_ostream>(accum->writeTarget)
+          .write(part.data, part.length);
+    };
+  }
+
+  std::variant<nanobind::object, llvm::raw_fd_ostream> writeTarget;
   bool binary;
 };
 
@@ -77,7 +103,7 @@ private:
 //===----------------------------------------------------------------------===//
 
 static bool loopTransformation(MlirModule &mlir_mod) {
-  py::gil_scoped_release();
+  nb::gil_scoped_release release;
   auto mod = unwrap(mlir_mod);
   return applyLoopTransformation(mod);
 }
@@ -86,23 +112,24 @@ static bool loopTransformation(MlirModule &mlir_mod) {
 // Emission APIs
 //===----------------------------------------------------------------------===//
 
-static bool emitVivadoHls(MlirModule &mod, py::object fileObject) {
+static bool emitVivadoHls(MlirModule &mod, nb::object fileObject,
+                          bool flatten = false) {
   PyFileAccumulator accum(fileObject, false);
-  py::gil_scoped_release();
-  return mlirLogicalResultIsSuccess(
-      mlirEmitVivadoHls(mod, accum.getCallback(), accum.getUserData()));
+  nb::gil_scoped_release release;
+  return mlirLogicalResultIsSuccess(mlirEmitVivadoHls(
+      mod, accum.getCallback(), accum.getUserData(), flatten));
 }
 
-static bool emitIntelHls(MlirModule &mod, py::object fileObject) {
+static bool emitIntelHls(MlirModule &mod, nb::object fileObject) {
   PyFileAccumulator accum(fileObject, false);
-  py::gil_scoped_release();
+  nb::gil_scoped_release release;
   return mlirLogicalResultIsSuccess(
       mlirEmitIntelHls(mod, accum.getCallback(), accum.getUserData()));
 }
 
-static bool emitTapaHls(MlirModule &mod, py::object fileObject) {
+static bool emitTapaHls(MlirModule &mod, nb::object fileObject) {
   PyFileAccumulator accum(fileObject, false);
-  py::gil_scoped_release();
+  nb::gil_scoped_release release;
   return mlirLogicalResultIsSuccess(
       mlirEmitTapaHls(mod, accum.getCallback(), accum.getUserData()));
 }
@@ -218,7 +245,7 @@ static MlirOperation getNextUseInFunction(MlirValue value, MlirOperation curUse,
 // Allo Python module definition
 //===----------------------------------------------------------------------===//
 
-PYBIND11_MODULE(_allo, m) {
+NB_MODULE(_allo, m) {
   m.doc() = "Allo Python Native Extension";
   llvm::sys::PrintStackTraceOnErrorSignal(/*argv=*/"");
   LLVMEnablePrettyStackTrace();
@@ -238,7 +265,7 @@ PYBIND11_MODULE(_allo, m) {
         mlirDialectHandleRegisterDialect(allo, context);
         mlirDialectHandleLoadDialect(allo, context);
       },
-      py::arg("context") = py::none());
+      nb::arg("context") = nb::none());
 
   // Apply transform to a design.
   allo_m.def("apply_transform", [](MlirModule &mlir_mod) {
@@ -255,7 +282,7 @@ PYBIND11_MODULE(_allo, m) {
     for (auto op : llvm::make_early_inc_range(
              module.getBody()->getOps<transform::TransformOpInterface>())) {
       if (failed(state.applyTransform(op).checkAndReport()))
-        throw py::value_error("failed to apply the transform");
+        throw nb::value_error("failed to apply the transform");
       op.erase();
     }
 
@@ -276,7 +303,7 @@ PYBIND11_MODULE(_allo, m) {
       patternList.add(std::move(pdlPattern));
       if (failed(applyPatternsAndFoldGreedily(module.getBodyRegion(),
                                               std::move(patternList))))
-        throw py::value_error("failed to apply the PDL pattern");
+        throw nb::value_error("failed to apply the PDL pattern");
     }
     */
 
@@ -286,7 +313,7 @@ PYBIND11_MODULE(_allo, m) {
         mlir::affine::createSimplifyAffineStructuresPass());
     pm.addPass(createCanonicalizerPass());
     if (failed(pm.run(module)))
-      throw py::value_error("failed to apply the post-transform optimization");
+      throw nb::value_error("failed to apply the post-transform optimization");
   });
 
   // Declare customized types and attributes
@@ -297,7 +324,8 @@ PYBIND11_MODULE(_allo, m) {
   allo_m.def("loop_transformation", &loopTransformation);
 
   // Codegen APIs.
-  allo_m.def("emit_vhls", &emitVivadoHls);
+  allo_m.def("emit_vhls", &emitVivadoHls, nb::arg("module"),
+             nb::arg("file_object"), nb::arg("flatten") = false);
   allo_m.def("emit_ihls", &emitIntelHls);
   allo_m.def("emit_thls", &emitTapaHls);
   allo_m.def("emit_xhls", &emitXlsHls,

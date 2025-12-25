@@ -56,6 +56,7 @@ class ASTContext:
         unroll=True,
         meta_fors_to_unroll=None,
         enable_tensor=False,
+        typing_rule_set="default",
         verbose=False,
     ):
         self.ip_stack = []
@@ -88,6 +89,7 @@ class ASTContext:
         # whether the instances are unrolled at ir build time
         self.unroll = unroll
         self.enable_tensor = enable_tensor
+        self.typing_rule_set = typing_rule_set
         self.verbose = verbose
         # libraries for external IPs
         self.ext_libs = []
@@ -128,6 +130,7 @@ class ASTContext:
             self.func_tag2instance,
             unroll=self.unroll,
             enable_tensor=self.enable_tensor,
+            typing_rule_set=self.typing_rule_set,
             verbose=self.verbose,
         )
         ctx.func_id = self.func_id

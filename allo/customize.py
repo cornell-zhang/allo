@@ -1,6 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=no-name-in-module
+# pylint: disable=no-name-in-module, too-many-nested-blocks
 
 import re
 import inspect
@@ -86,8 +86,6 @@ def wrapped_apply(fn):
         with sch.module.context, Location.unknown():
             res = fn(*args, **kwargs)
         _mlir_lower_pipeline(sch.module)
-        # Remove previous Python-C++ references
-        sch.module.context._clear_live_operations()
         # Update top function in the current context
         for op in sch.module.body.operations:
             if isinstance(op, func_d.FuncOp) and op.name.value == sch.top_func_name:
@@ -270,393 +268,405 @@ class Schedule:
         return LoopWrapper(f"{func.name.value}:{band_name}", None)
 
     @wrapped_apply
-    # pylint: disable=too-many-branches
     def partition(self, target, partition_type=Partition.Complete, dim=0, factor=0):
         """
-        Partitions a given array, for example if the array is `B`, this would be `<schedule>.B`.
-        There are three types, `Partition.Complete`, `Partition.Block`, and `Partition.cyclic`.
-        block: The original array is split into `factor` equally sized blocks of consecutive elements of the original array
-        cyclic:The original array is split into `factor` equally sized blocks interleaving the elements of the original array.
-        complete: The original array is split into its individual elements. This corresponds to resolving a memory into registers.
+        Partitions a given array and propagates to all callers and callees.
 
         Parameters
         ----------
         target: allo.ir.utils.MockBuffer | str
             The array to partition.
-
         partition_type: allo.customize.Partition
-            The type of partition.
-
+            Complete, Block, or Cyclic partition type.
         factor: int
             The number of arrays created by a block or cyclic partition.
-
         dim: int
-            The dimension of `target` to partition. If `dim=0`, all dimensions are partitioned.
+            The dimension to partition. If dim=0, all dimensions are partitioned.
         """
-        # TODO: test whether the partition has conflicts for different functions
-        if partition_type > 2:
+        # Validate inputs
+        if partition_type not in (
+            Partition.Complete,
+            Partition.Block,
+            Partition.Cyclic,
+        ):
             raise AlloValueError("Invalid partition type")
         if dim < 0:
             raise AlloValueError("Invalid dimension")
         if factor < 0:
             raise AlloValueError("Invalid factor")
-        match partition_type:
-            case Partition.Complete:
-                partition_type = 0
-            case Partition.Block:
-                partition_type = 1
-            case Partition.Cyclic:
-                partition_type = 2
-            case _:
-                raise AlloValueError("Not supported partition type")
+
+        # Convert partition type to integer
+        partition_type_int = {
+            Partition.Complete: 0,
+            Partition.Block: 1,
+            Partition.Cyclic: 2,
+        }[partition_type]
+
+        # Normalize target to MockBuffer
         if isinstance(target, str):
-            target = MockBuffer(target.split(":")[0], target.split(":")[1])
-        # test whether partitioning the same array
-        for parray, items in self.partitioned_arrays.items():
-            for item in items:
-                if (
-                    parray.split(":")[0] == target.func
-                    and parray.split(":")[1] == target.name
-                ):
-                    if item[0] == Partition.Complete and item[1] == 0:
-                        # this array has been completely partitioned along all the axes
-                        return
-                    raise AlloValueError(
-                        f"Cannot partition the same array twice: {parray}, {item} vs ({partition_type}, {dim}, {factor})"
-                    )
-        # actual partition
+            func_name, buf_name = target.split(":")
+            target = MockBuffer(func_name, buf_name)
+
+        # Check for duplicate partitioning
+        target_key = f"{target.func}:{target.name}"
+        if target_key in self.partitioned_arrays:
+            for item in self.partitioned_arrays[target_key]:
+                if item[0] == Partition.Complete and item[1] == 0:
+                    return  # Already completely partitioned
+                raise AlloValueError(
+                    f"Cannot partition the same array twice: {target_key}"
+                )
+
+        # Collect all buffers that need partitioning via propagation
+        buffers_to_partition = self._collect_partition_targets(target)
+
+        # Apply partitioning to all collected buffers
         i32 = IntegerType.get_signless(32)
         ui32 = IntegerType.get_unsigned(32)
-        # find all the tensors that need to be partitioned
-        visited_target_names = []
-        visited_func_calls = []
 
-        # pylint: disable=too-many-branches
-        def recursive_partition(inner_target):
-            name = f"{inner_target.func}:{inner_target.name}"
-            if name in visited_target_names:
-                return
-            visited_target_names.append(name)
-            _, _, mlir_target = find_buffer(self.module, inner_target, self.func_args)
-            # equivalent users
-            arg_names = [
-                dtensor.name if hasattr(dtensor, "name") else dtensor
-                for dtensor in self.func_args[inner_target.func]
-            ]
-            if inner_target.name in arg_names:
-                # is a function argument
-                idx = arg_names.index(inner_target.name)
-                name = f"{inner_target.func}:{idx}"
-            for buf_name in self.get_equivalent_variables(name):
-                path, buf_name = buf_name.split(":")
-                if buf_name.isdigit():
-                    # function argument
-                    if hasattr(self.func_args[path][int(buf_name)], "name"):
-                        buf_name = self.func_args[path][int(buf_name)].name
-                    else:
-                        buf_name = self.func_args[path][int(buf_name)]
-                recursive_partition(MockBuffer(path, buf_name))
-            # calling the same function
-            if isinstance(mlir_target, func_d.CallOp):
-                visited_func_calls.append(mlir_target)
-                for func in self.module.body.operations:
-                    if isinstance(func, func_d.FuncOp):
-                        for call_op in func.entry_block.operations:
-                            if (
-                                isinstance(call_op, func_d.CallOp)
-                                and mlir_target.attributes["callee"]
-                                == call_op.attributes["callee"]
-                                and call_op not in visited_func_calls
-                            ):
-                                visited_func_calls.append(call_op)
-                                buffer = MockBuffer(
-                                    func.attributes["sym_name"].value,
-                                    call_op.attributes["name"].value,
-                                )
-                                recursive_partition(buffer)
+        for buf in buffers_to_partition:
+            buf_key = f"{buf.func}:{buf.name}"
+            func, _, mlir_target = find_buffer(self.module, buf, self.func_args)
 
-            # Handle data flow: if we partitioned a value, find where it's used as an argument
-            # and ensure the receiving function parameters are also partitioned
-            # pylint: disable=too-many-nested-blocks
-            if hasattr(mlir_target, "result") and mlir_target.result is not None:
-                # Find all uses of this partitioned value
-                for use in mlir_target.result.uses:
-                    user_op = use.owner
-                    if isinstance(user_op, func_d.CallOp):
-                        # This partitioned value is passed as an argument to another function
-                        callee_name = FlatSymbolRefAttr(
-                            user_op.attributes["callee"]
-                        ).value
-                        callee_func = self._find_function(callee_name, error=False)
-                        if callee_func is not None:
-                            # Find which parameter index this operand corresponds to
-                            for i, operand in enumerate(user_op.operands):
-                                if operand == mlir_target.result:
-                                    # The partitioned value is passed as the i-th argument
-                                    # We need to partition the i-th parameter of the callee function
-                                    if i < len(self.func_args.get(callee_name, [])):
-                                        if hasattr(
-                                            self.func_args[callee_name][i], "name"
-                                        ):
-                                            param_name = self.func_args[callee_name][
-                                                i
-                                            ].name
-                                        else:
-                                            param_name = self.func_args[callee_name][i]
-                                        param_buffer = MockBuffer(
-                                            callee_name, param_name
-                                        )
-                                        recursive_partition(param_buffer)
-                                    break
+            # Record partition info
+            if buf_key not in self.partitioned_arrays:
+                self.partitioned_arrays[buf_key] = []
+            self.partitioned_arrays[buf_key].append((partition_type_int, dim, factor))
 
-            # Also handle the case where this is a function parameter that gets used
-            # Find the function that contains this parameter
-            # pylint: disable=too-many-nested-blocks
-            if isinstance(mlir_target, BlockArgument):
-                # This is a function parameter
-                parent_func = mlir_target.owner.parent_op
-                if isinstance(parent_func, func_d.FuncOp):
-                    # Find all uses of this parameter within the function
-                    for use in mlir_target.uses:
-                        user_op = use.owner
-                        if isinstance(user_op, func_d.CallOp):
-                            # This parameter is passed to another function call
-                            callee_name = FlatSymbolRefAttr(
-                                user_op.attributes["callee"]
-                            ).value
-                            callee_func = self._find_function(callee_name, error=False)
-                            if callee_func is not None:
-                                # Find which parameter index this operand corresponds to
-                                for i, operand in enumerate(user_op.operands):
-                                    if operand == mlir_target:
-                                        # The partitioned parameter is passed as the i-th argument
-                                        # We need to partition the i-th parameter of the callee function
-                                        if i < len(self.func_args.get(callee_name, [])):
-                                            if hasattr(
-                                                self.func_args[callee_name][i], "name"
-                                            ):
-                                                param_name = self.func_args[
-                                                    callee_name
-                                                ][i].name
-                                            else:
-                                                param_name = self.func_args[
-                                                    callee_name
-                                                ][i]
-                                            param_buffer = MockBuffer(
-                                                callee_name, param_name
-                                            )
-                                            recursive_partition(param_buffer)
-                                        break
-
-        recursive_partition(target)
-        for inner_target in visited_target_names:
-            func, _, mlir_target = find_buffer(
-                self.module,
-                MockBuffer(inner_target.split(":")[0], inner_target.split(":")[1]),
-                self.func_args,
-            )
-            if inner_target not in self.partitioned_arrays:
-                self.partitioned_arrays[inner_target] = [(partition_type, dim, factor)]
-            else:
-                self.partitioned_arrays[inner_target].append(
-                    (partition_type, dim, factor)
-                )
+            # Create partition operation
             allo_d.PartitionOp(
                 mlir_target.result,
-                partition_kind=IntegerAttr.get(i32, partition_type),
+                partition_kind=IntegerAttr.get(i32, partition_type_int),
                 dim=IntegerAttr.get(ui32, dim),
                 factor=IntegerAttr.get(ui32, factor),
                 ip=InsertionPoint.at_block_terminator(func.entry_block),
             )
 
-            # If the target is a function call, we need to update the function's return type
-            # and recursively partition the buffer that the function actually returns
+            # Update types for function calls
             if isinstance(mlir_target, func_d.CallOp):
-                # Find the function being called
-                callee_name = FlatSymbolRefAttr(mlir_target.attributes["callee"]).value
-                callee_func = self._find_function(callee_name)
+                self._update_call_types(mlir_target, partition_type_int, dim, factor)
 
-                # Find the return operation in the callee function
-                return_op = None
+            # If this buffer is returned by a function, update the function's return type
+            # and all call sites to that function
+            self._propagate_return_type_to_callers(
+                func, mlir_target, partition_type_int, dim, factor
+            )
+
+        # Update global memory references
+        self._update_global_types(buffers_to_partition, partition_type_int, dim, factor)
+
+    def _propagate_return_type_to_callers(
+        self, func, mlir_target, partition_type, dim, factor
+    ):
+        """If a partitioned buffer is returned, update function signature and all call sites."""
+        if not isinstance(func, func_d.FuncOp):
+            return
+
+        # Check if this buffer is returned by the function
+        for op in func.entry_block.operations:
+            if isinstance(op, func_d.ReturnOp) and op.operands:
+                returned_value = op.operands[0]
+
+                # Check if the partitioned buffer is what's being returned
+                if (
+                    hasattr(mlir_target, "result")
+                    and returned_value == mlir_target.result
+                ):
+
+                    # Compute new return type with partition layout
+                    shape = mlir_target.result.type.shape
+                    layout_attr = self._compute_partition_layout(
+                        shape, partition_type, dim, factor
+                    )
+
+                    old_type = func.type.results[0]
+                    new_return_type = MemRefType.get(
+                        old_type.shape,
+                        old_type.element_type,
+                        layout_attr,
+                        old_type.memory_space,
+                    )
+
+                    # Update function signature
+                    new_func_type = FunctionType.get(
+                        list(func.type.inputs), [new_return_type]
+                    )
+                    func.attributes["function_type"] = TypeAttr.get(new_func_type)
+
+                    # Update ALL call sites to this function
+                    func_name = func.attributes["sym_name"].value
+                    self._update_all_call_sites(func_name, new_return_type)
+
+                break
+
+    def _collect_partition_targets(self, target):
+        """Collect all buffers that need partitioning by traversing call graph."""
+        visited = set()
+        to_partition = []
+        worklist = [target]
+
+        while worklist:
+            buf = worklist.pop()
+            buf_key = f"{buf.func}:{buf.name}"
+
+            if buf_key in visited:
+                continue
+            visited.add(buf_key)
+            to_partition.append(buf)
+
+            _, _, mlir_target = find_buffer(self.module, buf, self.func_args)
+
+            # Add equivalent variables (aliases)
+            for equiv in self._get_equivalent_buffers(buf):
+                if f"{equiv.func}:{equiv.name}" not in visited:
+                    worklist.append(equiv)
+
+            # Propagate through function calls (callees)
+            worklist.extend(self._get_callee_buffers(mlir_target))
+
+            # Propagate to callers
+            worklist.extend(self._get_caller_buffers(mlir_target))
+
+        return to_partition
+
+    def _get_equivalent_buffers(self, buf):
+        """Get all buffers that are aliases of the given buffer."""
+        result = []
+        arg_names = [
+            dtensor.name if hasattr(dtensor, "name") else dtensor
+            for dtensor in self.func_args.get(buf.func, [])
+        ]
+
+        # Convert to argument index if it's a function argument
+        if buf.name in arg_names:
+            idx = arg_names.index(buf.name)
+            lookup_key = f"{buf.func}:{idx}"
+        else:
+            lookup_key = f"{buf.func}:{buf.name}"
+
+        for equiv_key in self.get_equivalent_variables(lookup_key):
+            path, name = equiv_key.split(":")
+            if name.isdigit():
+                # Convert argument index back to name
+                arg = self.func_args[path][int(name)]
+                name = arg.name if hasattr(arg, "name") else arg
+            result.append(MockBuffer(path, name))
+
+        return result
+
+    def _get_callee_buffers(self, mlir_target):
+        """Get buffers in called functions that correspond to this buffer."""
+        result = []
+
+        # If this is a call result, partition the returned buffer in callee
+        if isinstance(mlir_target, func_d.CallOp):
+            callee_name = FlatSymbolRefAttr(mlir_target.attributes["callee"]).value
+            callee_func = self._find_function(callee_name, error=False)
+
+            if callee_func:
+                # Find the returned buffer
                 for op in callee_func.entry_block.operations:
-                    if isinstance(op, func_d.ReturnOp):
-                        return_op = op
+                    if isinstance(op, func_d.ReturnOp) and op.operands:
+                        returned = op.operands[0]
+                        if hasattr(returned, "owner") and returned.owner:
+                            owner = returned.owner
+                            op_name = getattr(
+                                owner,
+                                "name",
+                                getattr(getattr(owner, "operation", None), "name", ""),
+                            )
+                            if op_name == "memref.alloc" and "name" in owner.attributes:
+                                buf_name = StringAttr(owner.attributes["name"]).value
+                                result.append(MockBuffer(callee_name, buf_name))
                         break
 
-                if return_op is not None and len(return_op.operands) > 0:
-                    # Find what buffer is being returned
-                    returned_value = return_op.operands[0]
+        # If value is passed to a call, partition corresponding parameter
+        if hasattr(mlir_target, "result") and mlir_target.result:
+            for use in mlir_target.result.uses:
+                if isinstance(use.owner, func_d.CallOp):
+                    call_op = use.owner
+                    callee_name = FlatSymbolRefAttr(call_op.attributes["callee"]).value
 
-                    # Find the buffer operation (alloc, etc.) that produces this value
-                    if (
-                        hasattr(returned_value, "owner")
-                        and returned_value.owner is not None
-                    ):
-                        returned_buffer_op = returned_value.owner
-
-                        # If it's an alloc operation with a name, recursively partition it
-                        op_name = (
-                            returned_buffer_op.operation.name
-                            if hasattr(returned_buffer_op, "operation")
-                            else returned_buffer_op.name
-                        )
-                        if (
-                            op_name == "memref.alloc"
-                            and "name" in returned_buffer_op.attributes
-                        ):
-                            buffer_name = StringAttr(
-                                returned_buffer_op.attributes["name"]
-                            ).value
-                            # Recursively partition the buffer inside the function
-                            recursive_partition(MockBuffer(callee_name, buffer_name))
-
-                # Find all uses of this function call's result and recursively partition downstream calls
-                downstream_uses = []
-                for use in mlir_target.result.uses:
-                    user_op = use.owner
-                    # If the result is used as input to another function call, partition that call too
-                    if (
-                        isinstance(user_op, func_d.CallOp)
-                        and "name" in user_op.attributes
-                    ):
-                        # Store downstream calls for later processing
-                        downstream_uses.append(user_op)
-
-                # Calculate the new return type with partition layout
-                shape = mlir_target.result.type.shape
-                partition_idx = []
-                address_idx = []
-                for i, _ in enumerate(shape):
-                    if dim == 0 or (dim > 0 and i == dim - 1):
-                        if partition_type == Partition.Cyclic:
-                            partition_idx.append(AffineDimExpr.get(i) % factor)
-                            address_idx.append(
-                                AffineExpr.get_floor_div(AffineDimExpr.get(i), factor)
-                            )
-                        elif partition_type == Partition.Block:
-                            # block factor N means partition into N blocks
-                            # each block has shape[dim] / factor elements
-                            block_factor = (shape[i] + factor - 1) // factor
-                            partition_idx.append(
-                                AffineExpr.get_floor_div(
-                                    AffineDimExpr.get(i), block_factor
-                                )
-                            )
-                            address_idx.append(AffineDimExpr.get(i) % block_factor)
-                        else:  # Partition.Complete
-                            partition_idx.append(AffineDimExpr.get(i))
-                            address_idx.append(AffineExpr.get_constant(0))
-                    else:
-                        partition_idx.append(AffineExpr.get_constant(0))
-                        address_idx.append(AffineDimExpr.get(i))
-
-                affine_map = AffineMap.get(
-                    dim_count=len(shape),
-                    symbol_count=0,
-                    exprs=partition_idx + address_idx,
-                )
-                affine_attr = AffineMapAttr.get(affine_map)
-
-                # Create new return type with partition layout
-                old_return_type = callee_func.type.results[0]
-                new_return_type = MemRefType.get(
-                    old_return_type.shape,
-                    old_return_type.element_type,
-                    affine_attr,
-                    old_return_type.memory_space,
-                )
-
-                # Check if any input operands are partitioned and update input types accordingly
-                new_input_types = list(callee_func.type.inputs)
-                for i, operand in enumerate(mlir_target.operands):
-                    if (
-                        hasattr(operand.type, "layout")
-                        and operand.type.layout != callee_func.type.inputs[i].layout
-                    ):
-                        # Input operand has partitioned layout, update the function parameter type
-                        new_input_types[i] = operand.type
-                        # Also update the function argument type
-                        callee_func.arguments[i].set_type(operand.type)
-
-                # Update function type
-                new_func_type = FunctionType.get(new_input_types, [new_return_type])
-                callee_func.attributes["function_type"] = TypeAttr.get(new_func_type)
-
-                # Update downstream function parameter types
-                for user_op in downstream_uses:
-                    downstream_callee_name = FlatSymbolRefAttr(
-                        user_op.attributes["callee"]
-                    ).value
-                    downstream_callee_func = self._find_function(downstream_callee_name)
-
-                    # Find which parameter index this operand corresponds to
-                    for i, operand in enumerate(user_op.operands):
+                    for i, operand in enumerate(call_op.operands):
                         if operand == mlir_target.result:
-                            # Update the parameter type to match the new partitioned type
-                            downstream_callee_func.arguments[i].set_type(
-                                new_return_type
-                            )
-
-                            # Update function signature
-                            new_downstream_input_types = list(
-                                downstream_callee_func.type.inputs
-                            )
-                            new_downstream_input_types[i] = new_return_type
-
-                            new_downstream_func_type = FunctionType.get(
-                                new_downstream_input_types,
-                                downstream_callee_func.type.results,
-                            )
-                            downstream_callee_func.attributes["function_type"] = (
-                                TypeAttr.get(new_downstream_func_type)
-                            )
+                            param = self._get_param_buffer(callee_name, i)
+                            if param:
+                                result.append(param)
                             break
 
-        # Calculate layout map
-        # first N: partition index
-        # last N : physical index
-        shape = mlir_target.result.type.shape
+        # Handle BlockArgument (function parameter) passed to calls
+        if isinstance(mlir_target, BlockArgument):
+            for use in mlir_target.uses:
+                if isinstance(use.owner, func_d.CallOp):
+                    call_op = use.owner
+                    callee_name = FlatSymbolRefAttr(call_op.attributes["callee"]).value
+
+                    for i, operand in enumerate(call_op.operands):
+                        if operand == mlir_target:
+                            param = self._get_param_buffer(callee_name, i)
+                            if param:
+                                result.append(param)
+                            break
+
+        return result
+
+    def _get_caller_buffers(self, mlir_target):
+        """Get buffers in calling functions that correspond to this buffer."""
+        result = []
+
+        # Find calls to the same function and propagate
+        if isinstance(mlir_target, func_d.CallOp):
+            callee_attr = mlir_target.attributes["callee"]
+            for func in self.module.body.operations:
+                if isinstance(func, func_d.FuncOp):
+                    for op in func.entry_block.operations:
+                        if (
+                            isinstance(op, func_d.CallOp)
+                            and op.attributes["callee"] == callee_attr
+                            and op != mlir_target
+                            and "name" in op.attributes
+                        ):
+                            func_name = func.attributes["sym_name"].value
+                            call_name = op.attributes["name"].value
+                            result.append(MockBuffer(func_name, call_name))
+
+        return result
+
+    def _get_param_buffer(self, func_name, param_idx):
+        """Get MockBuffer for a function parameter by index."""
+        args = self.func_args.get(func_name, [])
+        if param_idx < len(args):
+            arg = args[param_idx]
+            name = arg.name if hasattr(arg, "name") else arg
+            return MockBuffer(func_name, name)
+        return None
+
+    def _compute_partition_layout(self, shape, partition_type, dim, factor):
+        """Compute the affine map for partitioned memory layout."""
         partition_idx = []
         address_idx = []
-        for i, _ in enumerate(shape):
-            if dim == 0 or (dim > 0 and i == dim - 1):
+
+        for i, size in enumerate(shape):
+            applies_to_dim = (dim == 0) or (i == dim - 1)
+
+            if applies_to_dim:
                 if partition_type == Partition.Cyclic:
                     partition_idx.append(AffineDimExpr.get(i) % factor)
                     address_idx.append(
                         AffineExpr.get_floor_div(AffineDimExpr.get(i), factor)
                     )
                 elif partition_type == Partition.Block:
-                    # block factor N means partition into N blocks
-                    # each block has shape[dim] / factor elements
-                    block_factor = (shape[i] + factor - 1) // factor
+                    block_size = (size + factor - 1) // factor
                     partition_idx.append(
-                        AffineExpr.get_floor_div(AffineDimExpr.get(i), block_factor)
+                        AffineExpr.get_floor_div(AffineDimExpr.get(i), block_size)
                     )
-                    address_idx.append(AffineDimExpr.get(i) % block_factor)
-                else:  # Partition.Complete
+                    address_idx.append(AffineDimExpr.get(i) % block_size)
+                else:  # Complete
                     partition_idx.append(AffineDimExpr.get(i))
                     address_idx.append(AffineExpr.get_constant(0))
             else:
                 partition_idx.append(AffineExpr.get_constant(0))
                 address_idx.append(AffineDimExpr.get(i))
+
         affine_map = AffineMap.get(
             dim_count=len(shape), symbol_count=0, exprs=partition_idx + address_idx
         )
-        affine_attr = AffineMapAttr.get(affine_map)
-        only_target_names = [item.split(":")[-1] for item in visited_target_names]
-        for op in self.module.body.operations:
-            if (
-                isinstance(op, memref_d.GlobalOp)
-                and op.attributes["sym_name"].value in only_target_names
-            ):
-                op.attributes["type"] = TypeAttr.get(
-                    MemRefType.get(
-                        op.attributes["type"].value.shape,
-                        op.attributes["type"].value.element_type,
-                        affine_attr,
-                        op.attributes["type"].value.memory_space,
-                    )
+        return AffineMapAttr.get(affine_map)
+
+    def _update_call_types(self, call_op, partition_type, dim, factor):
+        """Update function signature types after partitioning a call result."""
+        callee_name = FlatSymbolRefAttr(call_op.attributes["callee"]).value
+        callee_func = self._find_function(callee_name, error=False)
+        if not callee_func:
+            return
+
+        shape = call_op.result.type.shape
+        layout_attr = self._compute_partition_layout(shape, partition_type, dim, factor)
+
+        # Create new return type with partition layout
+        old_type = callee_func.type.results[0]
+        new_return_type = MemRefType.get(
+            old_type.shape, old_type.element_type, layout_attr, old_type.memory_space
+        )
+
+        # Update input types if operands are partitioned
+        new_input_types = list(callee_func.type.inputs)
+        for i, operand in enumerate(call_op.operands):
+            if hasattr(operand.type, "layout"):
+                if operand.type.layout != callee_func.type.inputs[i].layout:
+                    new_input_types[i] = operand.type
+                    callee_func.arguments[i].set_type(operand.type)
+
+        # Update function type
+        new_func_type = FunctionType.get(new_input_types, [new_return_type])
+        callee_func.attributes["function_type"] = TypeAttr.get(new_func_type)
+
+        # CRITICAL: Update ALL call sites to this function with the new return type
+        self._update_all_call_sites(callee_name, new_return_type)
+
+        # Update downstream function parameters that use this result
+        for use in call_op.result.uses:
+            if isinstance(use.owner, func_d.CallOp):
+                self._update_downstream_param_type(
+                    use.owner, call_op.result, new_return_type
                 )
+
+    def _update_all_call_sites(self, callee_name, new_return_type):
+        """Update all call sites to a function when its signature changes."""
+        for func in self.module.body.operations:
+            if not isinstance(func, func_d.FuncOp):
+                continue
+            for op in func.entry_block.operations:
+                if isinstance(op, func_d.CallOp):
+                    call_callee = FlatSymbolRefAttr(op.attributes["callee"]).value
+                    if call_callee == callee_name:
+                        # Update the call operation's result type
+                        op.result.set_type(new_return_type)
+
+                        # If this call's result is used by another function,
+                        # we need to update that function's parameter types too
+                        for use in op.result.uses:
+                            user_op = use.owner
+                            if isinstance(user_op, func_d.CallOp):
+                                self._update_downstream_param_type(
+                                    user_op, op.result, new_return_type
+                                )
+
+    def _update_downstream_param_type(self, call_op, partitioned_value, new_type):
+        """Update parameter type in downstream function call."""
+        callee_name = FlatSymbolRefAttr(call_op.attributes["callee"]).value
+        callee_func = self._find_function(callee_name, error=False)
+        if not callee_func:
+            return
+
+        for i, operand in enumerate(call_op.operands):
+            if operand == partitioned_value:
+                callee_func.arguments[i].set_type(new_type)
+
+                new_inputs = list(callee_func.type.inputs)
+                new_inputs[i] = new_type
+                new_func_type = FunctionType.get(new_inputs, callee_func.type.results)
+                callee_func.attributes["function_type"] = TypeAttr.get(new_func_type)
+                break
+
+    def _update_global_types(self, buffers, partition_type, dim, factor):
+        """Update global memory reference types."""
+        buffer_names = {buf.name for buf in buffers}
+
+        for op in self.module.body.operations:
+            if isinstance(op, memref_d.GlobalOp):
+                if op.attributes["sym_name"].value in buffer_names:
+                    old_type = op.attributes["type"].value
+                    layout_attr = self._compute_partition_layout(
+                        old_type.shape, partition_type, dim, factor
+                    )
+                    new_type = MemRefType.get(
+                        old_type.shape,
+                        old_type.element_type,
+                        layout_attr,
+                        old_type.memory_space,
+                    )
+                    op.attributes["type"] = TypeAttr.get(new_type)
 
     # @wrapped_apply
     def buffer_at_regular(self, target, axis):
@@ -701,8 +711,6 @@ class Schedule:
         with self.module.context, Location.unknown():
             self.buffer_at_regular(target, axis)
         _mlir_lower_pipeline(self.module)
-        # Remove previous Python-C++ references
-        self.module.context._clear_live_operations()
         # Update top function in the current context
         for op in self.module.body.operations:
             if isinstance(op, func_d.FuncOp) and op.name.value == self.top_func_name:
@@ -962,7 +970,7 @@ class Schedule:
         new_reuse_buffers = [
             buf for buf in new_reuse_buffers if buf not in prev_reuse_buffers
         ]
-        if len(new_reuse_buffers) - len(prev_reuse_buffers) != 1:
+        if len(new_reuse_buffers) != 1:
             raise RuntimeError("Reuse buffer not found")
         return MockBuffer(
             self.top_func_name,
@@ -1208,7 +1216,15 @@ class Schedule:
                 return ele
         return []
 
-    def build(self, target=None, mode=None, project=None, configs=None, wrap_io=True, use_memory=False):
+    def build(
+        self,
+        target=None,
+        mode=None,
+        project=None,
+        configs=None,
+        wrap_io=True,
+        use_memory=False
+    ):
         if target is None or target == "llvm":
             target = "llvm"
             return LLVMModule(
@@ -1228,7 +1244,7 @@ class Schedule:
                 project=project,
                 use_memory=use_memory,
             )
-        if target in {"vhls", "vivado_hls", "vitis_hls", "tapa", "ihls"}:
+        if target in {"vhls", "vivado_hls", "vitis_hls", "pynq", "tapa", "ihls"}:
             match target:
                 case "vitis_hls":
                     platform = "vitis_hls"
@@ -1236,6 +1252,8 @@ class Schedule:
                     platform = "tapa"
                 case "ihls":
                     platform = "intel_hls"
+                case "pynq":
+                    platform = "pynq"
                 case _:
                     platform = "vivado_hls"
             return HLSModule(
@@ -1260,8 +1278,17 @@ def customize(
     global_vars: dict = None,
     instantiate: list = None,
     context: Context = None,
+    typing_rule_set: str = "default",
     unroll: bool = True,
 ) -> Schedule:
+    """
+    Args:
+        - typing_rule_set (str): Identifier of the typing rule set used during IR building.
+            This controls implicit type casting behavior.
+            Currently supported values include `"default"`, which is primarily intended for HLS backends, and
+            `"cpp-style"`, which follows C++-like typing rules and is used for the AIE backend.
+            Defaults to `"default"`.
+    """
     # Get Python AST
     if isinstance(fn, str):
         src, starting_line_no = fn, 1
@@ -1284,6 +1311,7 @@ def customize(
         inst=instantiate,
         unroll=unroll,
         enable_tensor=enable_tensor,
+        typing_rule_set=typing_rule_set,
         verbose=verbose,
     )
     tree = TypeInferer()(ctx_type_inf, tree)

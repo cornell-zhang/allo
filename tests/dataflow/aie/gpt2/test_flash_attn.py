@@ -159,7 +159,6 @@ def test_flash_attention(
             with allo.meta_for(SEQ_LEN // kv_chunk_size) as i:
                 attn_weight: Ty[q_chunk_size, kv_chunk_size]
                 scale_exp: Ty[kv_chunk_size]
-                # FIXME: / sqrt(HEAD_DIM) somewhere (maybe the best choice is to do that in QK external kernel)
                 online_softmax(
                     score_pipe[po, i].get(),
                     max_logit,
@@ -188,6 +187,7 @@ def test_flash_attention(
             scale_attn_output(attn_output, exp_sum_pipe[po].get(), O)
 
     mapping_primitives_ = []
+    sub_graphs = []
     for idx in range(iteration):
         if SEQ_LEN // kv_chunk_size > 1:
             nodes = [
@@ -205,20 +205,33 @@ def test_flash_attention(
                     ],
                 )
             )
+            sub_graphs.append(
+                (
+                    f"send_q_{idx}_0-cal_attn_score_{idx}_0x{SEQ_LEN // kv_chunk_size}",
+                    f"cal_softmax_{idx}_0",
+                    f"attn_{idx}_0x{SEQ_LEN // kv_chunk_size}",
+                    f"acc_{idx}_0",
+                )
+            )
         else:
             mapping_primitives_.append(
                 ("chain", [f"send_q_{idx}_0", f"cal_attn_score_{idx}_0"])
             )
+            sub_graphs.append((f"send_q_{idx}_0-cal_attn_score_{idx}_0",))
+    col_num = 4
+    if iteration > col_num:
+        for idx in range(col_num):
+            nodes = [sub_graphs[idx + i * col_num] for i in range(iteration // col_num)]
+            mapping_primitives_.append(("bundle", nodes))
 
     mod = df.build(
         top,
         project=f"fa_{SEQ_LEN}.prj",
         target="aie",
         mapping_primitives=mapping_primitives_,
-        profile=False,
+        profile=True,
         warmup=20,
         num_iters=100,
-        # device_type="npu1_2col",
     )
     Q = np.random.randn(Q_tile_size, HEAD_DIM)
     K = np.random.randn(SEQ_LEN, HEAD_DIM)
@@ -246,12 +259,14 @@ if __name__ == "__main__":
     dir_path = os.path.dirname(os.path.abspath(__file__))
     os.environ["ALLO_EXTERNAL_KERNEL_DIR"] = f"{dir_path}/../../../../allo/library/aie/"
     os.environ["ENABLE_AGGRESSIVE_PORT_UTILIZATION_PATCH"] = "1"
+    os.environ["COALESCE_MORE"] = "1"
     os.environ["FORCE_UNROLL_INDEX"] = "0"
 
-    seq_len_list = [64, 128]
+    seq_len_list = [64, 128, 256, 512, 1024, 2048]
     for seq_len in seq_len_list:
         test_flash_attention(seq_len, 64, seq_len, q_chunk_size=32, kv_chunk_size=32)
 
     del os.environ["ALLO_EXTERNAL_KERNEL_DIR"]
     del os.environ["ENABLE_AGGRESSIVE_PORT_UTILIZATION_PATCH"]
+    del os.environ["COALESCE_MORE"]
     del os.environ["FORCE_UNROLL_INDEX"]

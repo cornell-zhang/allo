@@ -58,6 +58,19 @@ def _test_tp_v1():
     np.testing.assert_allclose(Z, X @ W1 @ W2, atol=1e-5)
     print("PASSED!")
 
+    mod = df.build(
+        top,
+        target="aie",
+        mapping_primitives=[
+            ("chain", ["gemm1_1", "acc_0"]),
+            ("chain", ["gemm1_0", "gemm1_1-acc_0"]),
+        ],
+    )
+    Z = np.zeros((M, L)).astype(np.int32)
+    mod(X, W1, W2, Z)
+    np.testing.assert_allclose(Z, X @ W1 @ W2, atol=1e-5)
+    print("PASSED!")
+
 
 def _test_tp_v2():
     Ty = int32
@@ -95,8 +108,7 @@ def _test_tp_v2():
         top,
         target="aie",
         mapping_primitives=[
-            ("chain", ["gemm1_1", "acc_0"]),
-            ("chain", ["gemm1_0", "gemm1_1-acc_0"]),
+            ("bundle", [("gemm0_0", "gemm1_0"), ("gemm0_1", "gemm1_1")]),
         ],
     )
     Z = np.zeros((M, L)).astype(np.int32)
@@ -116,5 +128,5 @@ if __name__ == "__main__":
     """
     os.environ["FORCE_UNROLL_INDEX"] = "1"
     _test_tp_v1()
-    _test_tp_v2()
     del os.environ["FORCE_UNROLL_INDEX"]
+    _test_tp_v2()

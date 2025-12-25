@@ -73,7 +73,7 @@ Below are the exact commands to set up the environment:
    ```
 
 6. Clone the allo repository and install.
-   - You may want to set up environment variables to use a custom CMake and LLVM build. For example, `export PATH=/opt/cmake-3.31.5-linux-x86_64/bin:/opt/llvm-project-19.x/build/bin:$PATH` and `export LLVM_BUILD_DIR=/opt/llvm-project-19.x/build`.
+   - You may want to set up environment variables to use a custom CMake and LLVM build. For example, `export PATH=/opt/cmake-3.31.5-linux-x86_64/bin:/opt/llvm-project/build/bin:$PATH` and `export LLVM_BUILD_DIR=/opt/llvm-project/build`.
    ```bash
    git clone https://github.com/cornell-zhang/allo.git
    cd allo
@@ -394,6 +394,12 @@ If you want to use [Allo’s customized `mm.cc`](../../library/aie/mm.cc) or oth
 ```
 ALLO_EXTERNAL_KERNEL_DIR=/path/to/allo/root/allo/library/aie
 ```
+
+#### `COALESCE_MORE`
+
+This variable controls the DMA scheduling behavior. If you want the compiler to generate fewer `dma_memcpy_nd` operations in `aiex.runtime_sequence` (e.g., to reduce buffer descriptor usage), set `COALESCE_MORE=1`.
+
+Note that avoiding using single `dma_memcpy_nd` operation for multiple transfer epochs (the default behavior) usually leads to better performance due to some optimizations we have for overlapping communication and computation.
 
 ### New Feature
 #### Profiling

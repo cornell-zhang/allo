@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import os
-import pytest
+import tempfile
+
 from allo.ir.types import float32, Stream
 from allo.ir.utils import MockBuffer
 import allo.dataflow as df
@@ -128,17 +129,17 @@ def test_mlp():
 
     if hls.is_available("vitis_hls"):
         allo_final_Y = np.zeros((BS, NUM_CLASSES), dtype=np.float32)
-        mod = s.build(target="vitis_hls", mode="csim", project="top.prj")
-        mod(X, allo_final_Y)
-        np.testing.assert_allclose(Y, allo_final_Y, rtol=1e-5)
-        print("PASSED CSIM!")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mod = s.build(target="vitis_hls", mode="csim", project=tmpdir)
+            mod(X, allo_final_Y)
+            np.testing.assert_allclose(Y, allo_final_Y, rtol=1e-5)
+            print("PASSED CSIM!")
         # hls
-        mod = s.build(
-            target="vitis_hls", mode="hw", project="df-mlp3-relu-unroll-new.prj"
-        )
-        mod(X, allo_final_Y)
-        np.testing.assert_allclose(Y, allo_final_Y, rtol=1e-5)
-        print("PASSED HW!")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mod = s.build(target="vitis_hls", mode="hw", project=tmpdir)
+            mod(X, allo_final_Y)
+            np.testing.assert_allclose(Y, allo_final_Y, rtol=1e-5)
+            print("PASSED HW!")
 
 
 if __name__ == "__main__":
