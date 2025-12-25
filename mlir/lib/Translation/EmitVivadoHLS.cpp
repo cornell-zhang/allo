@@ -301,34 +301,34 @@ static SmallString<16> getTypeName(Value val) {
 // ModuleEmitter Class Declaration
 //===----------------------------------------------------------------------===//
 
-namespace {
+namespace vhls {
 class ModuleEmitter : public AlloEmitterBase {
 public:
   using operand_range = Operation::operand_range;
   explicit ModuleEmitter(AlloEmitterState &state) : AlloEmitterBase(state) {}
 
   /// SCF statement emitters.
-  void emitScfFor(scf::ForOp op);
+  virtual void emitScfFor(scf::ForOp op);
   void emitScfIf(scf::IfOp op);
   void emitScfWhile(scf::WhileOp op);
   void emitScfCondition(scf::ConditionOp op);
   void emitScfYield(scf::YieldOp op);
 
   /// Affine statement emitters.
-  void emitAffineFor(AffineForOp op);
+  virtual void emitAffineFor(AffineForOp op);
   void emitAffineIf(AffineIfOp op);
   void emitAffineParallel(AffineParallelOp op);
   void emitAffineApply(AffineApplyOp op);
   template <typename OpType>
   void emitAffineMaxMin(OpType op, const char *syntax);
-  void emitAffineLoad(AffineLoadOp op);
-  void emitAffineStore(AffineStoreOp op);
+  virtual void emitAffineLoad(AffineLoadOp op);
+  virtual void emitAffineStore(AffineStoreOp op);
   void emitAffineYield(AffineYieldOp op);
 
   /// Memref-related statement emitters.
   template <typename OpType> void emitAlloc(OpType op);
-  void emitLoad(memref::LoadOp op);
-  void emitStore(memref::StoreOp op);
+  virtual void emitLoad(memref::LoadOp op);
+  virtual void emitStore(memref::StoreOp op);
   void emitGetGlobal(memref::GetGlobalOp op);
   void emitGetGlobalFixed(allo::GetGlobalFixedOp op);
   void emitGlobal(memref::GlobalOp op);
@@ -361,31 +361,33 @@ public:
   void emitBitcast(arith::BitcastOp op);
 
   /// Stream operation emitters.
-  void emitStreamConstruct(allo::StreamConstructOp op);
+  virtual void emitStreamConstruct(allo::StreamConstructOp op);
   void emitStreamGet(allo::StreamGetOp op);
   void emitStreamPut(allo::StreamPutOp op);
 
   /// Top-level MLIR module emitter.
-  void emitModule(ModuleOp module);
+  virtual void emitModule(ModuleOp module);
 
-private:
+protected:
   /// C++ component emitters.
   void emitValue(Value val, unsigned rank = 0, bool isPtr = false,
                  std::string name = "");
-  void emitArrayDecl(Value array, bool isFunc = false, std::string name = "");
+  virtual void emitArrayDecl(Value array, bool isFunc = false,
+                             std::string name = "");
   unsigned emitNestedLoopHead(Value val);
   void emitNestedLoopTail(unsigned rank);
   void emitInfoAndNewLine(Operation *op);
 
   /// MLIR component and HLS C++ pragma emitters.
   void emitBlock(Block &block);
-  void emitLoopDirectives(Operation *op);
-  void emitArrayDirectives(Value memref);
-  void emitFunctionDirectives(func::FuncOp func, ArrayRef<Value> portList);
-  void emitFunction(func::FuncOp func);
+  virtual void emitLoopDirectives(Operation *op);
+  virtual void emitArrayDirectives(Value memref);
+  virtual void emitFunctionDirectives(func::FuncOp func,
+                                      ArrayRef<Value> portList);
+  virtual void emitFunction(func::FuncOp func);
   void emitHostFunction(func::FuncOp func);
 };
-} // namespace
+} // namespace vhls
 
 //===----------------------------------------------------------------------===//
 // AffineEmitter Class
@@ -478,7 +480,7 @@ private:
 namespace {
 class StmtVisitor : public HLSCppVisitorBase<StmtVisitor, bool> {
 public:
-  StmtVisitor(ModuleEmitter &emitter) : emitter(emitter) {}
+  StmtVisitor(allo::vhls::ModuleEmitter &emitter) : emitter(emitter) {}
 
   using HLSCppVisitorBase::visitOp;
   /// SCF statements.
@@ -541,14 +543,14 @@ public:
   bool visitOp(memref::RankOp op) { return emitter.emitRank(op), true; }
 
 private:
-  ModuleEmitter &emitter;
+  allo::vhls::ModuleEmitter &emitter;
 };
 } // namespace
 
 namespace {
 class ExprVisitor : public HLSCppVisitorBase<ExprVisitor, bool> {
 public:
-  ExprVisitor(ModuleEmitter &emitter) : emitter(emitter) {}
+  ExprVisitor(allo::vhls::ModuleEmitter &emitter) : emitter(emitter) {}
 
   using HLSCppVisitorBase::visitOp;
   /// Float binary expressions.
@@ -721,7 +723,7 @@ public:
   bool visitOp(allo::StreamPutOp op) { return emitter.emitStreamPut(op), true; }
 
 private:
-  ModuleEmitter &emitter;
+  allo::vhls::ModuleEmitter &emitter;
 };
 } // namespace
 
@@ -803,7 +805,7 @@ bool ExprVisitor::visitOp(allo::CmpFixedOp op) {
 //===----------------------------------------------------------------------===//
 
 /// SCF statement emitters.
-void ModuleEmitter::emitScfFor(scf::ForOp op) {
+void allo::vhls::ModuleEmitter::emitScfFor(scf::ForOp op) {
   indent();
   os << "for (";
   auto iterVar = op.getInductionVar();
@@ -837,7 +839,7 @@ void ModuleEmitter::emitScfFor(scf::ForOp op) {
   os << "}\n";
 }
 
-void ModuleEmitter::emitScfIf(scf::IfOp op) {
+void allo::vhls::ModuleEmitter::emitScfIf(scf::IfOp op) {
   // Declare all values returned by scf::YieldOp. They will be further handled
   // by the scf::YieldOp emitter.
   for (auto result : op.getResults()) {
@@ -872,6 +874,10 @@ void ModuleEmitter::emitScfIf(scf::IfOp op) {
   indent();
   os << "}\n";
 }
+
+namespace mlir {
+namespace allo {
+namespace vhls {
 
 void ModuleEmitter::emitScfWhile(scf::WhileOp op) {
   // Declare all loop-carried values (results of while loop)
@@ -995,8 +1001,12 @@ void ModuleEmitter::emitScfYield(scf::YieldOp op) {
   }
 }
 
+} // namespace vhls
+} // namespace allo
+} // namespace mlir
+
 /// Affine statement emitters.
-void ModuleEmitter::emitAffineFor(AffineForOp op) {
+void allo::vhls::ModuleEmitter::emitAffineFor(AffineForOp op) {
   indent();
   auto iterVar = op.getInductionVar();
   std::string loop_name = "";
@@ -1077,7 +1087,7 @@ void ModuleEmitter::emitAffineFor(AffineForOp op) {
   os << "}\n";
 }
 
-void ModuleEmitter::emitAffineIf(AffineIfOp op) {
+void allo::vhls::ModuleEmitter::emitAffineIf(AffineIfOp op) {
   // Declare all values returned by AffineYieldOp. They will be further
   // handled by the AffineYieldOp emitter.
   for (auto result : op.getResults()) {
@@ -1128,7 +1138,7 @@ void ModuleEmitter::emitAffineIf(AffineIfOp op) {
   os << "}\n";
 }
 
-void ModuleEmitter::emitAffineParallel(AffineParallelOp op) {
+void allo::vhls::ModuleEmitter::emitAffineParallel(AffineParallelOp op) {
   // Declare all values returned by AffineParallelOp. They will be further
   // handled by the AffineYieldOp emitter.
   for (auto result : op.getResults()) {
@@ -1184,7 +1194,7 @@ void ModuleEmitter::emitAffineParallel(AffineParallelOp op) {
   }
 }
 
-void ModuleEmitter::emitAffineApply(AffineApplyOp op) {
+void allo::vhls::ModuleEmitter::emitAffineApply(AffineApplyOp op) {
   indent();
   emitValue(op.getResult());
   os << " = ";
@@ -1196,7 +1206,8 @@ void ModuleEmitter::emitAffineApply(AffineApplyOp op) {
 }
 
 template <typename OpType>
-void ModuleEmitter::emitAffineMaxMin(OpType op, const char *syntax) {
+void allo::vhls::ModuleEmitter::emitAffineMaxMin(OpType op,
+                                                 const char *syntax) {
   indent();
   emitValue(op.getResult());
   os << " = ";
@@ -1215,7 +1226,7 @@ void ModuleEmitter::emitAffineMaxMin(OpType op, const char *syntax) {
   emitInfoAndNewLine(op);
 }
 
-void ModuleEmitter::emitAffineLoad(AffineLoadOp op) {
+void allo::vhls::ModuleEmitter::emitAffineLoad(AffineLoadOp op) {
   indent();
   std::string load_from_name = "";
   if (op->hasAttr("from")) {
@@ -1275,7 +1286,7 @@ void ModuleEmitter::emitAffineLoad(AffineLoadOp op) {
   emitInfoAndNewLine(op);
 }
 
-void ModuleEmitter::emitAffineStore(AffineStoreOp op) {
+void allo::vhls::ModuleEmitter::emitAffineStore(AffineStoreOp op) {
   indent();
   std::string store_to_name = "";
   if (op->hasAttr("to")) {
@@ -1339,7 +1350,7 @@ void ModuleEmitter::emitAffineStore(AffineStoreOp op) {
 // in the generated C++. However, values which will be returned by affine
 // yield operation should not be declared again. How to "bind" the pair of
 // values inside/outside of AffineIf region needs to be considered.
-void ModuleEmitter::emitAffineYield(AffineYieldOp op) {
+void allo::vhls::ModuleEmitter::emitAffineYield(AffineYieldOp op) {
   if (op.getNumOperands() == 0)
     return;
 
@@ -1452,7 +1463,8 @@ void ModuleEmitter::emitAffineYield(AffineYieldOp op) {
 }
 
 /// Memref-related statement emitters.
-template <typename OpType> void ModuleEmitter::emitAlloc(OpType op) {
+template <typename OpType>
+void allo::vhls::ModuleEmitter::emitAlloc(OpType op) {
   // A declared result indicates that the memref is output of the function, and
   // has been declared in the function signature.
   if (isDeclared(op.getResult()))
@@ -1477,7 +1489,7 @@ template <typename OpType> void ModuleEmitter::emitAlloc(OpType op) {
   emitArrayDirectives(result);
 }
 
-void ModuleEmitter::emitLoad(memref::LoadOp op) {
+void allo::vhls::ModuleEmitter::emitLoad(memref::LoadOp op) {
   indent();
   Value result = op.getResult();
   fixUnsignedType(result, op->hasAttr("unsigned"));
@@ -1529,7 +1541,7 @@ void ModuleEmitter::emitLoad(memref::LoadOp op) {
   emitInfoAndNewLine(op);
 }
 
-void ModuleEmitter::emitStore(memref::StoreOp op) {
+void allo::vhls::ModuleEmitter::emitStore(memref::StoreOp op) {
   indent();
   auto memref = op.getMemRef();
   emitValue(memref);
@@ -1581,7 +1593,7 @@ void ModuleEmitter::emitStore(memref::StoreOp op) {
   emitInfoAndNewLine(op);
 }
 
-void ModuleEmitter::emitGetGlobal(memref::GetGlobalOp op) {
+void allo::vhls::ModuleEmitter::emitGetGlobal(memref::GetGlobalOp op) {
   indent();
   os << "// placeholder for const ";
   Value result = op.getResult();
@@ -1590,7 +1602,7 @@ void ModuleEmitter::emitGetGlobal(memref::GetGlobalOp op) {
   emitInfoAndNewLine(op);
 }
 
-void ModuleEmitter::emitGetGlobalFixed(allo::GetGlobalFixedOp op) {
+void allo::vhls::ModuleEmitter::emitGetGlobalFixed(allo::GetGlobalFixedOp op) {
   indent();
   os << "// const ";
   Value result = op.getResult();
@@ -1600,7 +1612,7 @@ void ModuleEmitter::emitGetGlobalFixed(allo::GetGlobalFixedOp op) {
   emitInfoAndNewLine(op);
 }
 
-void ModuleEmitter::emitGlobal(memref::GlobalOp op) {
+void allo::vhls::ModuleEmitter::emitGlobal(memref::GlobalOp op) {
   auto init_val = op.getInitialValue();
   if (!init_val.has_value())
     return;
@@ -1666,7 +1678,7 @@ void ModuleEmitter::emitGlobal(memref::GlobalOp op) {
   }
 }
 
-void ModuleEmitter::emitSubView(memref::SubViewOp op) {
+void allo::vhls::ModuleEmitter::emitSubView(memref::SubViewOp op) {
   indent();
   emitArrayDecl(op.getResult(), true);
   os << " = ";
@@ -1680,7 +1692,7 @@ void ModuleEmitter::emitSubView(memref::SubViewOp op) {
   emitInfoAndNewLine(op);
 }
 
-void ModuleEmitter::emitTensorExtract(tensor::ExtractOp op) {
+void allo::vhls::ModuleEmitter::emitTensorExtract(tensor::ExtractOp op) {
   indent();
   emitValue(op.getResult());
   os << " = ";
@@ -1694,7 +1706,7 @@ void ModuleEmitter::emitTensorExtract(tensor::ExtractOp op) {
   emitInfoAndNewLine(op);
 }
 
-void ModuleEmitter::emitTensorInsert(tensor::InsertOp op) {
+void allo::vhls::ModuleEmitter::emitTensorInsert(tensor::InsertOp op) {
   indent();
   emitValue(op.getDest());
   for (auto index : op.getIndices()) {
@@ -1708,7 +1720,7 @@ void ModuleEmitter::emitTensorInsert(tensor::InsertOp op) {
   emitInfoAndNewLine(op);
 }
 
-void ModuleEmitter::emitDim(memref::DimOp op) {
+void allo::vhls::ModuleEmitter::emitDim(memref::DimOp op) {
   if (auto constOp =
           dyn_cast<arith::ConstantOp>(op.getOperand(1).getDefiningOp())) {
     auto constVal = llvm::dyn_cast<IntegerAttr>(constOp.getValue()).getInt();
@@ -1729,7 +1741,7 @@ void ModuleEmitter::emitDim(memref::DimOp op) {
     emitError(op, "index is not a constant.");
 }
 
-void ModuleEmitter::emitRank(memref::RankOp op) {
+void allo::vhls::ModuleEmitter::emitRank(memref::RankOp op) {
   auto type = llvm::dyn_cast<ShapedType>(op.getOperand().getType());
   if (type.hasRank()) {
     indent();
@@ -1742,7 +1754,7 @@ void ModuleEmitter::emitRank(memref::RankOp op) {
 }
 
 /// Standard expression emitters.
-void ModuleEmitter::emitBinary(Operation *op, const char *syntax) {
+void allo::vhls::ModuleEmitter::emitBinary(Operation *op, const char *syntax) {
   auto rank = emitNestedLoopHead(op->getResult(0));
   indent();
   Value result = op->getResult(0);
@@ -1757,7 +1769,7 @@ void ModuleEmitter::emitBinary(Operation *op, const char *syntax) {
   emitNestedLoopTail(rank);
 }
 
-void ModuleEmitter::emitUnary(Operation *op, const char *syntax) {
+void allo::vhls::ModuleEmitter::emitUnary(Operation *op, const char *syntax) {
   auto rank = emitNestedLoopHead(op->getResult(0));
   indent();
   Value result = op->getResult(0);
@@ -1770,7 +1782,7 @@ void ModuleEmitter::emitUnary(Operation *op, const char *syntax) {
   emitNestedLoopTail(rank);
 }
 
-void ModuleEmitter::emitPower(Operation *op) {
+void allo::vhls::ModuleEmitter::emitPower(Operation *op) {
   auto rank = emitNestedLoopHead(op->getResult(0));
   indent();
   emitValue(op->getResult(0), rank);
@@ -1784,7 +1796,7 @@ void ModuleEmitter::emitPower(Operation *op) {
 }
 
 /// Special operation emitters.
-void ModuleEmitter::emitMaxMin(Operation *op, const char *syntax) {
+void allo::vhls::ModuleEmitter::emitMaxMin(Operation *op, const char *syntax) {
   auto rank = emitNestedLoopHead(op->getResult(0));
   indent();
   Value result = op->getResult(0);
@@ -1799,7 +1811,7 @@ void ModuleEmitter::emitMaxMin(Operation *op, const char *syntax) {
   emitNestedLoopTail(rank);
 }
 
-void ModuleEmitter::emitStreamConstruct(StreamConstructOp op) {
+void allo::vhls::ModuleEmitter::emitStreamConstruct(StreamConstructOp op) {
   Value result = op.getResult();
   fixUnsignedType(result, op->hasAttr("unsigned"));
 
@@ -1861,7 +1873,7 @@ void ModuleEmitter::emitStreamConstruct(StreamConstructOp op) {
   emitInfoAndNewLine(op);
 }
 
-void ModuleEmitter::emitStreamGet(StreamGetOp op) {
+void allo::vhls::ModuleEmitter::emitStreamGet(StreamGetOp op) {
   Value result = op.getResult();
   fixUnsignedType(result, op->hasAttr("unsigned"));
   auto stream = op->getOperand(0);
@@ -1979,7 +1991,7 @@ void ModuleEmitter::emitStreamGet(StreamGetOp op) {
   emitInfoAndNewLine(op);
 }
 
-void ModuleEmitter::emitStreamPut(StreamPutOp op) {
+void allo::vhls::ModuleEmitter::emitStreamPut(StreamPutOp op) {
   auto stream = op->getOperand(0);
   auto value = op->getOperand(1);
 
@@ -2085,7 +2097,7 @@ void ModuleEmitter::emitStreamPut(StreamPutOp op) {
   emitInfoAndNewLine(op);
 }
 
-void ModuleEmitter::emitGetBit(allo::GetIntBitOp op) {
+void allo::vhls::ModuleEmitter::emitGetBit(allo::GetIntBitOp op) {
   indent();
   Value result = op.getResult();
   fixUnsignedType(result, op->hasAttr("unsigned"));
@@ -2109,7 +2121,7 @@ void ModuleEmitter::emitGetBit(allo::GetIntBitOp op) {
   emitInfoAndNewLine(op);
 }
 
-void ModuleEmitter::emitSetBit(allo::SetIntBitOp op) {
+void allo::vhls::ModuleEmitter::emitSetBit(allo::SetIntBitOp op) {
   indent();
   emitValue(op.getResult());
   os << ";\n";
@@ -2137,7 +2149,7 @@ void ModuleEmitter::emitSetBit(allo::SetIntBitOp op) {
   emitInfoAndNewLine(op);
 }
 
-void ModuleEmitter::emitGetSlice(allo::GetIntSliceOp op) {
+void allo::vhls::ModuleEmitter::emitGetSlice(allo::GetIntSliceOp op) {
   indent();
   Value result = op.getResult();
   emitValue(result);
@@ -2163,7 +2175,7 @@ void ModuleEmitter::emitGetSlice(allo::GetIntSliceOp op) {
   emitInfoAndNewLine(op);
 }
 
-void ModuleEmitter::emitSetSlice(allo::SetIntSliceOp op) {
+void allo::vhls::ModuleEmitter::emitSetSlice(allo::SetIntSliceOp op) {
   indent();
   // T v;
   // v(a, b) = x;
@@ -2196,7 +2208,7 @@ void ModuleEmitter::emitSetSlice(allo::SetIntSliceOp op) {
   emitInfoAndNewLine(op);
 }
 
-void ModuleEmitter::emitBitReverse(allo::BitReverseOp op) {
+void allo::vhls::ModuleEmitter::emitBitReverse(allo::BitReverseOp op) {
   indent();
   Value result = op.getResult();
   fixUnsignedType(result, op->hasAttr("unsigned"));
@@ -2207,7 +2219,7 @@ void ModuleEmitter::emitBitReverse(allo::BitReverseOp op) {
   emitInfoAndNewLine(op);
 }
 
-void ModuleEmitter::emitReshape(memref::ReshapeOp op) {
+void allo::vhls::ModuleEmitter::emitReshape(memref::ReshapeOp op) {
   auto array = op->getResult(0);
   assert(!isDeclared(array) && "has been declared before.");
 
@@ -2231,7 +2243,7 @@ void ModuleEmitter::emitReshape(memref::ReshapeOp op) {
   emitInfoAndNewLine(op);
 }
 
-void ModuleEmitter::emitSelect(arith::SelectOp op) {
+void allo::vhls::ModuleEmitter::emitSelect(arith::SelectOp op) {
   unsigned rank = emitNestedLoopHead(op.getResult());
   unsigned conditionRank = rank;
   if (!llvm::isa<ShapedType>(op.getCondition().getType()))
@@ -2258,7 +2270,7 @@ void ModuleEmitter::emitSelect(arith::SelectOp op) {
   emitNestedLoopTail(rank);
 }
 
-void ModuleEmitter::emitConstant(arith::ConstantOp op) {
+void allo::vhls::ModuleEmitter::emitConstant(arith::ConstantOp op) {
   // This indicates the constant type is scalar (float, integer, or bool).
   if (isDeclared(op.getResult()))
     return;
@@ -2310,7 +2322,7 @@ void ModuleEmitter::emitConstant(arith::ConstantOp op) {
     emitError(op, "has unsupported constant type.");
 }
 
-void ModuleEmitter::emitBitcast(arith::BitcastOp op) {
+void allo::vhls::ModuleEmitter::emitBitcast(arith::BitcastOp op) {
   indent();
   Value result = op.getResult();
   fixUnsignedType(result, op->hasAttr("unsigned"));
@@ -2339,7 +2351,8 @@ void ModuleEmitter::emitBitcast(arith::BitcastOp op) {
   emitInfoAndNewLine(op);
 }
 
-template <typename CastOpType> void ModuleEmitter::emitCast(CastOpType op) {
+template <typename CastOpType>
+void allo::vhls::ModuleEmitter::emitCast(CastOpType op) {
   indent();
   Value result = op.getResult();
   fixUnsignedType(result, op->hasAttr("unsigned"));
@@ -2350,7 +2363,7 @@ template <typename CastOpType> void ModuleEmitter::emitCast(CastOpType op) {
   emitInfoAndNewLine(op);
 }
 
-void ModuleEmitter::emitGeneralCast(UnrealizedConversionCastOp op) {
+void allo::vhls::ModuleEmitter::emitGeneralCast(UnrealizedConversionCastOp op) {
   indent();
   emitValue(op.getResult(0));
   os << " = ";
@@ -2359,7 +2372,7 @@ void ModuleEmitter::emitGeneralCast(UnrealizedConversionCastOp op) {
   emitInfoAndNewLine(op);
 }
 
-void ModuleEmitter::emitCall(func::CallOp op) {
+void allo::vhls::ModuleEmitter::emitCall(func::CallOp op) {
   // Handle returned value by the callee.
   // For HLS C++, any function with return values needs those values
   // declared as variables and passed as pointer arguments.
@@ -2404,8 +2417,8 @@ void ModuleEmitter::emitCall(func::CallOp op) {
 }
 
 /// C++ component emitters.
-void ModuleEmitter::emitValue(Value val, unsigned rank, bool isPtr,
-                              std::string name) {
+void allo::vhls::ModuleEmitter::emitValue(Value val, unsigned rank, bool isPtr,
+                                          std::string name) {
   assert(!(rank && isPtr) && "should be either an array or a pointer.");
 
   // Value has been declared before or is a constant number.
@@ -2428,7 +2441,8 @@ void ModuleEmitter::emitValue(Value val, unsigned rank, bool isPtr,
   }
 }
 
-void ModuleEmitter::emitArrayDecl(Value array, bool isFunc, std::string name) {
+void allo::vhls::ModuleEmitter::emitArrayDecl(Value array, bool isFunc,
+                                              std::string name) {
   assert(!isDeclared(array) && "has been declared before.");
 
   auto arrayType = llvm::dyn_cast<ShapedType>(array.getType());
@@ -2481,7 +2495,7 @@ void ModuleEmitter::emitArrayDecl(Value array, bool isFunc, std::string name) {
     emitValue(array, /*rank=*/0, /*isPtr=*/true, name);
 }
 
-unsigned ModuleEmitter::emitNestedLoopHead(Value val) {
+unsigned allo::vhls::ModuleEmitter::emitNestedLoopHead(Value val) {
   unsigned rank = 0;
 
   if (auto type = llvm::dyn_cast<ShapedType>(val.getType())) {
@@ -2513,7 +2527,7 @@ unsigned ModuleEmitter::emitNestedLoopHead(Value val) {
   return rank;
 }
 
-void ModuleEmitter::emitNestedLoopTail(unsigned rank) {
+void allo::vhls::ModuleEmitter::emitNestedLoopTail(unsigned rank) {
   for (unsigned i = 0; i < rank; ++i) {
     reduceIndent();
 
@@ -2522,7 +2536,7 @@ void ModuleEmitter::emitNestedLoopTail(unsigned rank) {
   }
 }
 
-void ModuleEmitter::emitInfoAndNewLine(Operation *op) {
+void allo::vhls::ModuleEmitter::emitInfoAndNewLine(Operation *op) {
   os << "\t//";
   // Print line number.
   if (auto loc = llvm::dyn_cast<FileLineColLoc>(op->getLoc()))
@@ -2541,7 +2555,7 @@ void ModuleEmitter::emitInfoAndNewLine(Operation *op) {
 }
 
 /// MLIR component and HLS C++ pragma emitters.
-void ModuleEmitter::emitBlock(Block &block) {
+void allo::vhls::ModuleEmitter::emitBlock(Block &block) {
   for (auto &op : block) {
     if (ExprVisitor(*this).dispatchVisitor(&op))
       continue;
@@ -2553,7 +2567,7 @@ void ModuleEmitter::emitBlock(Block &block) {
   }
 }
 
-void ModuleEmitter::emitLoopDirectives(Operation *op) {
+void allo::vhls::ModuleEmitter::emitLoopDirectives(Operation *op) {
   if (auto ii = getLoopDirective(op, "pipeline_ii")) {
     reduceIndent();
     indent();
@@ -2585,7 +2599,7 @@ void ModuleEmitter::emitLoopDirectives(Operation *op) {
   }
 }
 
-void ModuleEmitter::emitArrayDirectives(Value memref) {
+void allo::vhls::ModuleEmitter::emitArrayDirectives(Value memref) {
   bool emitPragmaFlag = false;
   auto type = llvm::dyn_cast<MemRefType>(memref.getType());
 
@@ -2753,8 +2767,8 @@ void ModuleEmitter::emitArrayDirectives(Value memref) {
     os << "\n";
 }
 
-void ModuleEmitter::emitFunctionDirectives(func::FuncOp func,
-                                           ArrayRef<Value> portList) {
+void allo::vhls::ModuleEmitter::emitFunctionDirectives(
+    func::FuncOp func, ArrayRef<Value> portList) {
   // auto funcDirect = getFuncDirective(func);
   // if (!funcDirect)
   //   return;
@@ -2831,7 +2845,7 @@ void ModuleEmitter::emitFunctionDirectives(func::FuncOp func,
   // }
 }
 
-void ModuleEmitter::emitFunction(func::FuncOp func) {
+void allo::vhls::ModuleEmitter::emitFunction(func::FuncOp func) {
   if (func->hasAttr("bit"))
     BIT_FLAG = true;
 
@@ -2974,7 +2988,7 @@ void ModuleEmitter::emitFunction(func::FuncOp func) {
   os << "\n";
 }
 
-void ModuleEmitter::emitHostFunction(func::FuncOp func) {
+void allo::vhls::ModuleEmitter::emitHostFunction(func::FuncOp func) {
   if (func.getBlocks().size() != 1)
     emitError(func, "has zero or more than one basic blocks.");
 
@@ -2995,7 +3009,7 @@ void ModuleEmitter::emitHostFunction(func::FuncOp func) {
 }
 
 /// Top-level MLIR module emitter.
-void ModuleEmitter::emitModule(ModuleOp module) {
+void allo::vhls::ModuleEmitter::emitModule(ModuleOp module) {
   std::string device_header = R"XXX(
 //===------------------------------------------------------------*- C++ -*-===//
 //
@@ -3072,7 +3086,7 @@ LogicalResult allo::emitVivadoHLSWithFlag(ModuleOp module,
                                           bool linearize_pointers) {
   AlloEmitterState state(os);
   state.linearize_pointers = linearize_pointers;
-  ModuleEmitter(state).emitModule(module);
+  vhls::ModuleEmitter(state).emitModule(module);
   return failure(state.encounteredError);
 }
 
