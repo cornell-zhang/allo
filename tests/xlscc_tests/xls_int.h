@@ -1,3 +1,8 @@
+/*
+ * Copyright Allo authors. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 // Mock XLS integer types for testing
 // This provides a simplified XlsInt/ac_int that works with g++
 

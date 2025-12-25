@@ -372,7 +372,8 @@ protected:
   /// C++ component emitters.
   void emitValue(Value val, unsigned rank = 0, bool isPtr = false,
                  std::string name = "");
-  virtual void emitArrayDecl(Value array, bool isFunc = false, std::string name = "");
+  virtual void emitArrayDecl(Value array, bool isFunc = false,
+                             std::string name = "");
   unsigned emitNestedLoopHead(Value val);
   void emitNestedLoopTail(unsigned rank);
   void emitInfoAndNewLine(Operation *op);
@@ -381,7 +382,8 @@ protected:
   void emitBlock(Block &block);
   virtual void emitLoopDirectives(Operation *op);
   virtual void emitArrayDirectives(Value memref);
-  virtual void emitFunctionDirectives(func::FuncOp func, ArrayRef<Value> portList);
+  virtual void emitFunctionDirectives(func::FuncOp func,
+                                      ArrayRef<Value> portList);
   virtual void emitFunction(func::FuncOp func);
   void emitHostFunction(func::FuncOp func);
 };
@@ -1204,7 +1206,8 @@ void allo::vhls::ModuleEmitter::emitAffineApply(AffineApplyOp op) {
 }
 
 template <typename OpType>
-void allo::vhls::ModuleEmitter::emitAffineMaxMin(OpType op, const char *syntax) {
+void allo::vhls::ModuleEmitter::emitAffineMaxMin(OpType op,
+                                                 const char *syntax) {
   indent();
   emitValue(op.getResult());
   os << " = ";
@@ -1460,7 +1463,8 @@ void allo::vhls::ModuleEmitter::emitAffineYield(AffineYieldOp op) {
 }
 
 /// Memref-related statement emitters.
-template <typename OpType> void allo::vhls::ModuleEmitter::emitAlloc(OpType op) {
+template <typename OpType>
+void allo::vhls::ModuleEmitter::emitAlloc(OpType op) {
   // A declared result indicates that the memref is output of the function, and
   // has been declared in the function signature.
   if (isDeclared(op.getResult()))
@@ -2347,7 +2351,8 @@ void allo::vhls::ModuleEmitter::emitBitcast(arith::BitcastOp op) {
   emitInfoAndNewLine(op);
 }
 
-template <typename CastOpType> void allo::vhls::ModuleEmitter::emitCast(CastOpType op) {
+template <typename CastOpType>
+void allo::vhls::ModuleEmitter::emitCast(CastOpType op) {
   indent();
   Value result = op.getResult();
   fixUnsignedType(result, op->hasAttr("unsigned"));
@@ -2413,7 +2418,7 @@ void allo::vhls::ModuleEmitter::emitCall(func::CallOp op) {
 
 /// C++ component emitters.
 void allo::vhls::ModuleEmitter::emitValue(Value val, unsigned rank, bool isPtr,
-                              std::string name) {
+                                          std::string name) {
   assert(!(rank && isPtr) && "should be either an array or a pointer.");
 
   // Value has been declared before or is a constant number.
@@ -2436,7 +2441,8 @@ void allo::vhls::ModuleEmitter::emitValue(Value val, unsigned rank, bool isPtr,
   }
 }
 
-void allo::vhls::ModuleEmitter::emitArrayDecl(Value array, bool isFunc, std::string name) {
+void allo::vhls::ModuleEmitter::emitArrayDecl(Value array, bool isFunc,
+                                              std::string name) {
   assert(!isDeclared(array) && "has been declared before.");
 
   auto arrayType = llvm::dyn_cast<ShapedType>(array.getType());
@@ -2761,8 +2767,8 @@ void allo::vhls::ModuleEmitter::emitArrayDirectives(Value memref) {
     os << "\n";
 }
 
-void allo::vhls::ModuleEmitter::emitFunctionDirectives(func::FuncOp func,
-                                           ArrayRef<Value> portList) {
+void allo::vhls::ModuleEmitter::emitFunctionDirectives(
+    func::FuncOp func, ArrayRef<Value> portList) {
   // auto funcDirect = getFuncDirective(func);
   // if (!funcDirect)
   //   return;

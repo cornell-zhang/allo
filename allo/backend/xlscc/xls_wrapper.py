@@ -1,3 +1,8 @@
+# Copyright Allo authors. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+# pylint: disable=redefined-builtin
+
+
 import re
 from typing import List, Tuple
 from dataclasses import dataclass
