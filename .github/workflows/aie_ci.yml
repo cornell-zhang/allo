@@ -1,19 +1,15 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-name: "Allo Test"
+name: "Allo AIE Test"
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
+  schedule:
+    - cron: '0 8 * * 0' # Sunday 08:00 UTC 
 
 jobs:
   aie_test:
     # This job runs on Linux
-    runs-on: [self-hosted, aie, xdna2]
+    runs-on: [zhang-ryzen2]
     container:
       image: shihanfang/allo-ci:test
       options: "--device /dev/accel/accel0:/dev/accel/accel0 --ulimit memlock=-1"
@@ -25,7 +21,7 @@ jobs:
         git config --global --add safe.directory "$GITHUB_WORKSPACE"
     - uses: actions/checkout@v4
       with:
-        ref: ${{ github.ref }}
+        ref: main 
         fetch-depth: 0
     - name: Build Allo
       shell: bash
