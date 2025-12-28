@@ -5,6 +5,7 @@
 import re
 import ctypes
 import numpy as np
+import numpy.typing as npt
 import ml_dtypes
 from ._mlir.ir import (
     MemRefType,
@@ -508,3 +509,70 @@ def parse_kernel_name(name: str):
     prefix = match.group(1).rstrip("_")
     ids = tuple(int(n) for n in match.group(2).split("_") if n != "")
     return prefix, ids
+
+def allo_to_numpy_dtype(allo_type: AlloType) -> npt.DTypeLike:
+    """
+    Convert AlloType to corresponding numpy dtype.
+
+    Parameters
+    ----------
+    allo_type : AlloType
+        The Allo type to convert
+
+    Returns
+    -------
+    numpy dtype
+        Corresponding numpy data type
+    """
+
+    if isinstance(allo_type, Int):
+        if allo_type.bits <= 8:
+            return np.int8
+        if allo_type.bits <= 16:
+            return np.int16
+        if allo_type.bits <= 32:
+                          return np.int32
+                      if allo_type.bits <= 64:
+                          return np.int64
+                      # For arbitrary precision, use int64 as fallback
+                      return np.int64
+
+                  if isinstance(allo_type, UInt):
+                      if allo_type.bits <= 8:
+                          return np.uint8
+                      if allo_type.bits <= 16:
+                          return np.uint16
+                      if allo_type.bits <= 32:
+                          return np.uint32
+                      if allo_type.bits <= 64:
+                          return np.uint64
+                      return np.uint64
+
+                  if isinstance(allo_type, Float):
+                      if allo_type.bits == 16:
+                          return np.float16
+                      if allo_type.bits == 32:
+                          return np.float32
+                      if allo_type.bits == 64:
+                          return np.float64
+                      return np.float32
+
+                  if isinstance(allo_type, Index):
+                      return np.int32
+
+                  if isinstance(allo_type, (Fixed, UFixed)):
+                      # Fixed point: use integer type of same bitwidth
+                      if allo_type.bits <= 8:
+                          return np.int8 if isinstance(allo_type, Fixed) else np.uint8
+                      if allo_type.bits <= 16:
+                          return (
+                              np.int16 if isinstance(allo_type, Fixed) else np.uint16
+                          )
+                      if allo_type.bits <= 32:
+                          return (
+                              np.int32 if isinstance(allo_type, Fixed) else np.uint32
+                          )
+                      return np.int64 if isinstance(allo_type, Fixed) else np.uint64
+
+                  # Safe default
+                  return np.float32
