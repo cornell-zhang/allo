@@ -279,7 +279,7 @@ should not be equivalent to **s1**.
     Differences between generated programs:
     --- Program A (Schedule A)
     +++ Program B (Schedule B)
-    @@ -13,26 +13,24 @@
+    @@ -14,26 +14,24 @@
      #include <math.h>
 
      #include <stdint.h>
@@ -376,7 +376,7 @@ functional correctness of your algorithms.
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 3.056 seconds)
+   **Total running time of the script:** (0 minutes 1.659 seconds)
 
 
 .. _sphx_glr_download_gallery_dive_05_verifier.py:
