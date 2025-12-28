@@ -25,6 +25,7 @@ from .ir.types import (
     Int,
     UInt,
     Index,
+    Float,
     Fixed,
     UFixed,
     bfloat16,
