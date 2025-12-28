@@ -511,6 +511,7 @@ def parse_kernel_name(name: str):
     ids = tuple(int(n) for n in match.group(2).split("_") if n != "")
     return prefix, ids
 
+
 def allo_to_numpy_dtype(allo_type: AlloType) -> npt.DTypeLike:
     """
     Convert AlloType to corresponding numpy dtype.
@@ -518,7 +519,7 @@ def allo_to_numpy_dtype(allo_type: AlloType) -> npt.DTypeLike:
     Parameters
     ----------
     allo_type : AlloType
-        The Allo type to convert
+        The Allo type to convert to
 
     Returns
     -------
@@ -566,13 +567,9 @@ def allo_to_numpy_dtype(allo_type: AlloType) -> npt.DTypeLike:
         if allo_type.bits <= 8:
             return np.int8 if isinstance(allo_type, Fixed) else np.uint8
         if allo_type.bits <= 16:
-            return (
-                np.int16 if isinstance(allo_type, Fixed) else np.uint16
-            )
+            return np.int16 if isinstance(allo_type, Fixed) else np.uint16
         if allo_type.bits <= 32:
-            return (
-                np.int32 if isinstance(allo_type, Fixed) else np.uint32
-            )
+            return np.int32 if isinstance(allo_type, Fixed) else np.uint32
         return np.int64 if isinstance(allo_type, Fixed) else np.uint64
 
     # Safe default
