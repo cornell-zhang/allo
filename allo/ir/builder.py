@@ -38,6 +38,7 @@ from .._mlir.ir import (
     Attribute,
     OpResultList,
     StridedLayoutAttr,
+    UnitAttr,
 )
 from .._mlir.dialects import (
     allo as allo_d,
@@ -1879,7 +1880,7 @@ class ASTTransformer(ASTBuilder):
                 value_attr = DenseElementsAttr.get(np_values, type=dtype.build())
 
                 # Declare global at module level
-                memref_d.GlobalOp(
+                global_op = memref_d.GlobalOp(
                     sym_name=StringAttr.get(global_name),
                     type_=TypeAttr.get(memref_type),
                     sym_visibility=StringAttr.get("private"),
@@ -1888,6 +1889,7 @@ class ASTTransformer(ASTBuilder):
                     alignment=None,
                     ip=InsertionPoint(ctx.top_func),
                 )
+                global_op.attributes["static"] = UnitAttr.get()
 
                 # Track in custom_globals
                 if not hasattr(ctx, "custom_globals"):

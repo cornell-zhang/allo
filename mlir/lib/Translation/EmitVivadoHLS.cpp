@@ -1532,12 +1532,13 @@ void allo::hls::VhlsModuleEmitter::emitGlobal(memref::GlobalOp op) {
     indent();
     auto arrayType = llvm::dyn_cast<ShapedType>(op.getType());
     auto type = arrayType.getElementType();
-    // Check for hls.static attribute or stateful variable naming pattern
-    bool isStatic = op->hasAttr("hls.static");
+    // Check for static attribute or stateful variable naming pattern
+    bool isStatic = op->hasAttr("static");
     if (!isStatic) {
-      // Check if symbol name contains "_stateful_" pattern (stateful variables)
+      // Check if symbol name contains "__stateful_" pattern (stateful
+      // variables)
       std::string symName = op.getSymName().str();
-      if (symName.find("_stateful_") != std::string::npos) {
+      if (symName.find("__stateful_") != std::string::npos) {
         isStatic = true;
       }
     }
@@ -2705,8 +2706,16 @@ void allo::hls::VhlsModuleEmitter::emitFunction(func::FuncOp func) {
         getGlobalOp->getParentOfType<ModuleOp>().lookupSymbol<memref::GlobalOp>(
             getGlobalOp.getName());
     if (globalOp) {
-      std::string symName = globalOp.getSymName().str();
-      if (symName.find("_stateful_") != std::string::npos) {
+      bool isStatic = globalOp->hasAttr("static");
+      if (!isStatic) {
+        // Check if symbol name contains "__stateful_" pattern (stateful
+        // variables)
+        std::string symName = globalOp.getSymName().str();
+        if (symName.find("__stateful_") != std::string::npos) {
+          isStatic = true;
+        }
+      }
+      if (isStatic) {
         // Check if we've already added this global
         bool found = false;
         for (auto &g : statefulGlobals) {
@@ -3001,8 +3010,16 @@ using namespace std;
     llvm::SmallSet<StringRef, 4> statefulGlobalNames;
     for (auto &op : *module.getBody()) {
       if (auto cst = dyn_cast<memref::GlobalOp>(op)) {
-        std::string symName = cst.getSymName().str();
-        if (symName.find("_stateful_") != std::string::npos) {
+        bool isStatic = cst->hasAttr("static");
+        if (!isStatic) {
+          // Check if symbol name contains "__stateful_" pattern (stateful
+          // variables)
+          std::string symName = cst.getSymName().str();
+          if (symName.find("__stateful_") != std::string::npos) {
+            isStatic = true;
+          }
+        }
+        if (isStatic) {
           statefulGlobalNames.insert(cst.getSymName());
         }
       }
