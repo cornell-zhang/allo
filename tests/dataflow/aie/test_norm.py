@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import os
+import pytest
 import torch
 import torch.nn as nn
 from allo.ir.types import float32
@@ -9,6 +10,7 @@ import allo.dataflow as df
 import numpy as np
 from allo.memory import Layout
 from allo.backend.aie.external_kernel import ExternalModule
+from allo.backend.aie import is_available
 
 Ly = Layout("R")
 LyA = Layout("S0R")
@@ -29,11 +31,13 @@ def layernorm(x: torch.Tensor, weight: torch.Tensor, eps: float = 1e-6) -> torch
     return normalized * weight
 
 
-def _test_layer_norm(enable_trace: bool = False):
+@pytest.mark.parametrize("enable_trace", [False, True])
+def test_layer_norm(enable_trace: bool):
+    dir_path = os.path.dirname(os.path.abspath(__file__))
 
     norm = ExternalModule(
         top="layer_norm",
-        impl_path="norm.cc",
+        impl_path=f"{dir_path}/norm.cc",
         input_idx=[0, 1],
         output_idx=[2],
     )
@@ -51,7 +55,7 @@ def _test_layer_norm(enable_trace: bool = False):
     weight = torch.randn(hidden_size, dtype=torch.float32)
     output = layernorm(input_tensor, weight)
 
-    if "MLIR_AIE_INSTALL_DIR" in os.environ:
+    if is_available():
         if enable_trace:
             mod = df.build(
                 top,
@@ -80,11 +84,12 @@ class RMSNorm(nn.Module):
         return x / (rms + self.eps) * weight
 
 
-def _test_rms_norm():
+def test_rms_norm():
+    dir_path = os.path.dirname(os.path.abspath(__file__))
 
     norm = ExternalModule(
         top="rms_norm",
-        impl_path="norm.cc",
+        impl_path=f"{dir_path}/norm.cc",
         input_idx=[0, 1],
         output_idx=[2],
     )
@@ -103,7 +108,7 @@ def _test_rms_norm():
     rms_norm = RMSNorm()
     output = rms_norm(input_tensor, weight)
 
-    if "MLIR_AIE_INSTALL_DIR" in os.environ:
+    if is_available():
         mod = df.build(top, target="aie")
         output_allo = np.zeros((seq_len, hidden_size)).astype(np.float32)
         mod(input_tensor.cpu().numpy(), weight.cpu().numpy(), output_allo)
@@ -113,11 +118,12 @@ def _test_rms_norm():
         print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 
 
-def _test_single_row_layer_norm():
+def test_single_row_layer_norm():
+    dir_path = os.path.dirname(os.path.abspath(__file__))
 
     norm = ExternalModule(
         top="single_row_layer_norm",
-        impl_path="norm.cc",
+        impl_path=f"{dir_path}/norm.cc",
         input_idx=[0, 1],
         output_idx=[2],
     )
@@ -137,7 +143,7 @@ def _test_single_row_layer_norm():
     weight = torch.randn(N, dtype=torch.float32)
     output = layernorm(input_tensor, weight)
 
-    if "MLIR_AIE_INSTALL_DIR" in os.environ:
+    if is_available():
         mod = df.build(top, target="aie")
         output_allo = np.zeros((M, N)).astype(np.float32)
         mod(input_tensor.cpu().numpy(), weight.cpu().numpy(), output_allo)
@@ -148,7 +154,7 @@ def _test_single_row_layer_norm():
 
 
 if __name__ == "__main__":
-    _test_layer_norm()
-    _test_rms_norm()
-    _test_single_row_layer_norm()
-    _test_layer_norm(enable_trace=True)
+    test_layer_norm(enable_trace=False)
+    test_rms_norm()
+    test_single_row_layer_norm()
+    test_layer_norm(enable_trace=True)

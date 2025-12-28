@@ -7,9 +7,10 @@ from allo.ir.types import int16, int32, Stream
 import allo.dataflow as df
 import numpy as np
 from allo.memory import Layout
+from allo.backend.aie import is_available
 
 
-def _test_gather():
+def test_gather():
 
     Ty = int16
     N = 32
@@ -32,25 +33,28 @@ def _test_gather():
     A = np.random.randint(0, 64, (N)).astype(np.int16)
     B = np.zeros((Pk, N)).astype(np.int16)
 
-    mod_v1 = df.build(top_v1, target="aie")
-    mod_v1(A, B)
-    np.testing.assert_allclose(A, B[0, :], atol=1e-5)
-    np.testing.assert_allclose(A, B[1, :], atol=1e-5)
-    np.testing.assert_allclose(A, B[2, :], atol=1e-5)
-    np.testing.assert_allclose(A, B[3, :], atol=1e-5)
-    print("PASSED!")
+    if is_available():
+        mod_v1 = df.build(top_v1, target="aie")
+        mod_v1(A, B)
+        np.testing.assert_allclose(A, B[0, :], atol=1e-5)
+        np.testing.assert_allclose(A, B[1, :], atol=1e-5)
+        np.testing.assert_allclose(A, B[2, :], atol=1e-5)
+        np.testing.assert_allclose(A, B[3, :], atol=1e-5)
+        print("V1 PASSED!")
 
-    mod_v2 = df.build(
-        top_v1,
-        target="aie",
-        mapping_primitives=[("bundle", ["src_0", "src_1", "src_2", "src_3"])],
-    )
-    mod_v2(A, B)
-    np.testing.assert_allclose(A, B[0, :], atol=1e-5)
-    np.testing.assert_allclose(A, B[1, :], atol=1e-5)
-    np.testing.assert_allclose(A, B[2, :], atol=1e-5)
-    np.testing.assert_allclose(A, B[3, :], atol=1e-5)
-    print("PASSED!")
+        mod_v2 = df.build(
+            top_v1,
+            target="aie",
+            mapping_primitives=[("bundle", ["src_0", "src_1", "src_2", "src_3"])],
+        )
+        mod_v2(A, B)
+        np.testing.assert_allclose(A, B[0, :], atol=1e-5)
+        np.testing.assert_allclose(A, B[1, :], atol=1e-5)
+        np.testing.assert_allclose(A, B[2, :], atol=1e-5)
+        np.testing.assert_allclose(A, B[3, :], atol=1e-5)
+        print("V2 PASSED!")
+    else:
+        print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 
     @df.region()
     def top_v2():
@@ -68,29 +72,31 @@ def _test_gather():
 
     A = np.random.randint(0, 64, (N)).astype(np.int16)
     B = np.zeros((Pk, N)).astype(np.int16)
+    if is_available():
+        mod_v1 = df.build(top_v2, target="aie")
+        mod_v1(A, B)
+        np.testing.assert_allclose(A, B[0, :], atol=1e-5)
+        np.testing.assert_allclose(A, B[1, :], atol=1e-5)
+        np.testing.assert_allclose(A, B[2, :], atol=1e-5)
+        np.testing.assert_allclose(A, B[3, :], atol=1e-5)
+        print("V1 PASSED!")
 
-    mod_v1 = df.build(top_v2, target="aie")
-    mod_v1(A, B)
-    np.testing.assert_allclose(A, B[0, :], atol=1e-5)
-    np.testing.assert_allclose(A, B[1, :], atol=1e-5)
-    np.testing.assert_allclose(A, B[2, :], atol=1e-5)
-    np.testing.assert_allclose(A, B[3, :], atol=1e-5)
-    print("PASSED!")
-
-    mod_v2 = df.build(
-        top_v2,
-        target="aie",
-        mapping_primitives=[("bundle", ["src_0", "src_1", "src_2", "src_3"])],
-    )
-    mod_v2(A, B)
-    np.testing.assert_allclose(A, B[0, :], atol=1e-5)
-    np.testing.assert_allclose(A, B[1, :], atol=1e-5)
-    np.testing.assert_allclose(A, B[2, :], atol=1e-5)
-    np.testing.assert_allclose(A, B[3, :], atol=1e-5)
-    print("PASSED!")
+        mod_v2 = df.build(
+            top_v2,
+            target="aie",
+            mapping_primitives=[("bundle", ["src_0", "src_1", "src_2", "src_3"])],
+        )
+        mod_v2(A, B)
+        np.testing.assert_allclose(A, B[0, :], atol=1e-5)
+        np.testing.assert_allclose(A, B[1, :], atol=1e-5)
+        np.testing.assert_allclose(A, B[2, :], atol=1e-5)
+        np.testing.assert_allclose(A, B[3, :], atol=1e-5)
+        print("V2 PASSED!")
+    else:
+        print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 
 
-def _test_gather_matmul():
+def test_gather_matmul():
 
     TyI, TyO = int16, int32
     M, N, K = 32, 32, 16
@@ -116,12 +122,16 @@ def _test_gather_matmul():
     B = np.random.randint(0, 64, (K, N)).astype(np.int16)
     C = np.zeros((M, N)).astype(np.int32)
 
-    mod = df.build(top, target="aie")
-    mod(A, B, C)
-    np.testing.assert_allclose(C, A @ B, atol=1e-5)
+    if is_available():
+        mod = df.build(top, target="aie")
+        mod(A, B, C)
+        np.testing.assert_allclose(C, A @ B, atol=1e-5)
+        print("PASSED!")
+    else:
+        print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 
 
-def _test_split_k_explicit_gather_gemm_1x1x4():
+def test_split_k_explicit_gather_gemm_1x1x4():
 
     Ty = int16
     M, N, K = 16, 16, 64
@@ -149,27 +159,30 @@ def _test_split_k_explicit_gather_gemm_1x1x4():
                 C_[:, :] += buffer[i]
             C[:, :] = C_
 
-    mod = df.build(
-        top_v1,
-        target="aie",
-        mapping_primitives=[
-            (
-                "bundle",
-                [
-                    "partial_gemm_0",
-                    "partial_gemm_1",
-                    "partial_gemm_2",
-                    "partial_gemm_3",
-                ],
-            ),
-        ],
-    )
-    A = np.random.randint(0, 64, (M, K)).astype(np.int16)
-    B = np.random.randint(0, 64, (K, N)).astype(np.int16)
-    C = np.zeros((M, N)).astype(np.int16)
-    mod(A, B, C)
-    np.testing.assert_allclose(C, A @ B, atol=1e-5)
-    print("PASSED!")
+    if is_available():
+        mod = df.build(
+            top_v1,
+            target="aie",
+            mapping_primitives=[
+                (
+                    "bundle",
+                    [
+                        "partial_gemm_0",
+                        "partial_gemm_1",
+                        "partial_gemm_2",
+                        "partial_gemm_3",
+                    ],
+                ),
+            ],
+        )
+        A = np.random.randint(0, 64, (M, K)).astype(np.int16)
+        B = np.random.randint(0, 64, (K, N)).astype(np.int16)
+        C = np.zeros((M, N)).astype(np.int16)
+        mod(A, B, C)
+        np.testing.assert_allclose(C, A @ B, atol=1e-5)
+        print("PASSED!")
+    else:
+        print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 
     @df.region()
     def top_v2():
@@ -191,30 +204,33 @@ def _test_split_k_explicit_gather_gemm_1x1x4():
                 C_[:, :] += buffer[i]
             C[:, :] = C_
 
-    mod = df.build(
-        top_v2,
-        target="aie",
-        mapping_primitives=[
-            (
-                "bundle",
-                [
-                    "partial_gemm_0",
-                    "partial_gemm_1",
-                    "partial_gemm_2",
-                    "partial_gemm_3",
-                ],
-            ),
-        ],
-    )
-    A = np.random.randint(0, 64, (M, K)).astype(np.int16)
-    B = np.random.randint(0, 64, (K, N)).astype(np.int16)
-    C = np.zeros((M, N)).astype(np.int16)
-    mod(A, B, C)
-    np.testing.assert_allclose(C, A @ B, atol=1e-5)
-    print("PASSED!")
+    if is_available():
+        mod = df.build(
+            top_v2,
+            target="aie",
+            mapping_primitives=[
+                (
+                    "bundle",
+                    [
+                        "partial_gemm_0",
+                        "partial_gemm_1",
+                        "partial_gemm_2",
+                        "partial_gemm_3",
+                    ],
+                ),
+            ],
+        )
+        A = np.random.randint(0, 64, (M, K)).astype(np.int16)
+        B = np.random.randint(0, 64, (K, N)).astype(np.int16)
+        C = np.zeros((M, N)).astype(np.int16)
+        mod(A, B, C)
+        np.testing.assert_allclose(C, A @ B, atol=1e-5)
+        print("PASSED!")
+    else:
+        print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 
 
-def _test_scatter():
+def test_scatter():
 
     Ty = int16
     N = 32
@@ -241,17 +257,22 @@ def _test_scatter():
     A = np.random.randint(0, 64, (Pk, N)).astype(np.int16)
     B = np.zeros((Pk, N)).astype(np.int16)
 
-    mod_v1 = df.build(top_v1, target="aie")
-    mod_v1(A, B)
-    np.testing.assert_allclose(A + 1, B, atol=1e-5)
-    print("PASSED!")
+    if is_available():
+        mod_v1 = df.build(top_v1, target="aie")
+        mod_v1(A, B)
+        np.testing.assert_allclose(A + 1, B, atol=1e-5)
+        print("V1 PASSED!")
 
-    mod_v2 = df.build(
-        top_v1, target="aie", mapping_primitives=[("bundle", ["inter_0", "inter_1"])]
-    )
-    mod_v2(A, B)
-    np.testing.assert_allclose(A + 1, B, atol=1e-5)
-    print("PASSED!")
+        mod_v2 = df.build(
+            top_v1,
+            target="aie",
+            mapping_primitives=[("bundle", ["inter_0", "inter_1"])],
+        )
+        mod_v2(A, B)
+        np.testing.assert_allclose(A + 1, B, atol=1e-5)
+        print("V2 PASSED!")
+    else:
+        print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 
     @df.region()
     def top_v2():
@@ -273,22 +294,26 @@ def _test_scatter():
 
     A = np.random.randint(0, 64, (Pk, N)).astype(np.int16)
     B = np.zeros((Pk, N)).astype(np.int16)
+    if is_available():
+        mod_v1 = df.build(top_v2, target="aie")
+        mod_v1(A, B)
+        np.testing.assert_allclose(A + 1, B, atol=1e-5)
+        print("V1 PASSED!")
 
-    mod_v1 = df.build(top_v2, target="aie")
-    mod_v1(A, B)
-    np.testing.assert_allclose(A + 1, B, atol=1e-5)
-    print("PASSED!")
-
-    mod_v2 = df.build(
-        top_v2, target="aie", mapping_primitives=[("bundle", ["inter_0", "inter_1"])]
-    )
-    mod_v2(A, B)
-    np.testing.assert_allclose(A + 1, B, atol=1e-5)
-    print("PASSED!")
+        mod_v2 = df.build(
+            top_v2,
+            target="aie",
+            mapping_primitives=[("bundle", ["inter_0", "inter_1"])],
+        )
+        mod_v2(A, B)
+        np.testing.assert_allclose(A + 1, B, atol=1e-5)
+        print("V2 PASSED!")
+    else:
+        print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 
 
 if __name__ == "__main__":
-    _test_gather()
-    _test_gather_matmul()
-    _test_scatter()
-    _test_split_k_explicit_gather_gemm_1x1x4()
+    test_gather()
+    test_gather_matmul()
+    test_scatter()
+    test_split_k_explicit_gather_gemm_1x1x4()

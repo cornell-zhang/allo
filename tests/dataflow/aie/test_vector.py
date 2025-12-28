@@ -12,7 +12,7 @@ from allo.backend.aie import is_available
 Ly = Layout("S0")
 
 
-def _test_vector_scalar_add():
+def test_vector_scalar_add():
     # https://github.com/Xilinx/mlir-aie/tree/main/programming_examples/basic/vector_scalar_add
     Ty = int32
     M = 1024
@@ -39,7 +39,7 @@ def _test_vector_scalar_add():
     print("Dataflow Simulator Passed!")
 
 
-def _test_vector_scalar_conditional_add():
+def test_vector_scalar_conditional_add():
     Ty = int32
     M = 1024
     P = 4
@@ -67,7 +67,7 @@ def _test_vector_scalar_conditional_add():
         print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 
 
-def _test_vector_scalar_mul():
+def test_vector_scalar_mul():
     # https://github.com/Xilinx/mlir-aie/tree/main/programming_examples/basic/vector_scalar_mul
     Ty = float32
     M = 512
@@ -94,7 +94,7 @@ def _test_vector_scalar_mul():
     print("Dataflow Simulator Passed!")
 
 
-def _test_vector_vector_add():
+def test_vector_vector_add():
     # # https://github.com/Xilinx/mlir-aie/tree/main/programming_examples/basic/vector_vector_add
     Ty = int32
     M = 1024
@@ -122,7 +122,7 @@ def _test_vector_vector_add():
     print("Dataflow Simulator Passed!")
 
 
-def _test_vector_vector_bf16_add():
+def test_vector_vector_bf16_add():
     from ml_dtypes import bfloat16 as np_bfloat16
 
     Ty = bfloat16
@@ -155,7 +155,7 @@ def _test_vector_vector_bf16_add():
     print("Dataflow Simulator Passed!")
 
 
-def _test_vector_vector_mul():
+def test_vector_vector_mul():
     # https://github.com/Xilinx/mlir-aie/tree/main/programming_examples/basic/vector_vector_mul
     Ty = float32
     M = 1024
@@ -185,7 +185,7 @@ def _test_vector_vector_mul():
     print("Dataflow Simulator Passed!")
 
 
-def _test_vector_scalar_add_p0():
+def test_vector_scalar_add_p0():
     # https://github.com/Xilinx/mlir-aie/tree/main/programming_guide/section-2/section-2d
     #                |--------------------------------------------|
     #                v   v-------------------------v              v
@@ -211,7 +211,7 @@ def _test_vector_scalar_add_p0():
         print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 
 
-def _test_vector_vector_add_p0():
+def test_vector_vector_add_p0():
     #                  |--------------------------------------------|
     #                  v   v--------------------------v             v
     # shim tile <-> A mem tile 0 <-> comp tile0    comp tile1    comp tile2
@@ -239,11 +239,11 @@ def _test_vector_vector_add_p0():
 
 
 if __name__ == "__main__":
-    _test_vector_scalar_conditional_add()
-    _test_vector_scalar_add()
-    _test_vector_scalar_mul()
-    _test_vector_vector_add()
-    _test_vector_vector_bf16_add()
-    _test_vector_vector_mul()
-    _test_vector_scalar_add_p0()
-    _test_vector_vector_add_p0()
+    test_vector_scalar_conditional_add()
+    test_vector_scalar_add()
+    test_vector_scalar_mul()
+    test_vector_vector_add()
+    test_vector_vector_bf16_add()
+    test_vector_vector_mul()
+    test_vector_scalar_add_p0()
+    test_vector_vector_add_p0()
