@@ -38,7 +38,6 @@ from .._mlir.ir import (
     Attribute,
     OpResultList,
     StridedLayoutAttr,
-    UnitAttr,
 )
 from .._mlir.dialects import (
     allo as allo_d,
