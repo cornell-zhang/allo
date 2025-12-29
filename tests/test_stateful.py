@@ -260,3 +260,70 @@ def test_stateful_reset():
     assert result5 == 7, f"Expected 7, got {result5}"
     
     print("test_stateful_reset passed!")
+
+def test_tpu():
+    """Test stateful TPU-like memory with operations"""
+    MEM_SIZE = 4
+    OP_H2D = 0  # Host to Device
+    OP_D2H = 1  # Device to Host
+    OP_ADD = 2
+    OP_MUL = 3
+
+    def int32_add(op1: int32, op2: int32) -> int32:
+        return op1 + op2
+
+    def int32_mul(op1: int32, op2: int32) -> int32:
+        return op1 * op2
+
+    def test_tpu(op: uint8, inval: int32, addr: uint8) -> int32:
+        mem: stateful(int32[MEM_SIZE]) = 0
+        retval: int32
+        if op == OP_H2D:
+            mem[addr] = inval
+            retval = 99  # random value
+        if op == OP_D2H:
+            retval = mem[addr]
+        if op == OP_ADD:
+            mem[addr] = int32_add(mem[addr], mem[addr + 1])
+            retval = mem[addr]
+        if op == OP_MUL:
+            mem[addr] = int32_mul(mem[addr], mem[addr + 1])
+            retval = mem[addr]
+        return retval
+
+    s = allo.customize(test_tpu)
+    mod = s.build(target="llvm")
+    
+    # Test sequence: Write values, perform operations, read back
+    # Write 10 to address 0
+    result1 = mod(OP_H2D, 10, 0)
+    assert result1 == 99, f"Expected 99 for H2D operation, got {result1}"
+    
+    # Write 20 to address 1
+    result2 = mod(OP_H2D, 20, 1)
+    assert result2 == 99, f"Expected 99 for H2D operation, got {result2}"
+    
+    # Read from address 0 (should be 10)
+    result3 = mod(OP_D2H, 0, 0)
+    assert result3 == 10, f"Expected 10, got {result3}"
+    
+    # Read from address 1 (should be 20)
+    result4 = mod(OP_D2H, 0, 1)
+    assert result4 == 20, f"Expected 20, got {result4}"
+    
+    # Add mem[0] and mem[1], store in mem[0] (10 + 20 = 30)
+    result5 = mod(OP_ADD, 0, 0)
+    assert result5 == 30, f"Expected 30, got {result5}"
+    
+    # Write 5 to address 1
+    result6 = mod(OP_H2D, 5, 1)
+    
+    # Multiply mem[0] and mem[1], store in mem[0] (30 * 5 = 150)
+    result7 = mod(OP_MUL, 0, 0)
+    assert result7 == 150, f"Expected 150, got {result7}"
+    
+    # Read final value from address 0
+    result8 = mod(OP_D2H, 0, 0)
+    assert result8 == 150, f"Expected 150, got {result8}"
+    
+    print("test_tpu passed!")
