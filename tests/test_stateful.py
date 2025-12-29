@@ -5,18 +5,20 @@ import numpy as np
 import allo
 from allo.ir.types import (
     bool,
-    Int, 
-    int8, 
-    int32, 
-    uint8, 
-    uint32, 
-    float32, 
+    Int,
+    int8,
+    int32,
+    uint8,
+    uint32,
+    float32,
     stateful,
 )
 import pytest
 
+
 def test_stateless_scalar():
     """Test stateless scalar accumulator"""
+
     def acc_stateless(x: int32) -> int32:
         acc: int32 = 0
         acc = acc + x
@@ -24,7 +26,7 @@ def test_stateless_scalar():
 
     s = allo.customize(acc_stateless)
     mod = s.build(target="llvm")
-    
+
     # Test: stateless should always return input value (since acc starts at 0)
     result1 = mod(5)
     result2 = mod(10)
@@ -35,6 +37,7 @@ def test_stateless_scalar():
 
 def test_stateful_scalar():
     """Test stateful scalar accumulator"""
+
     def acc_stateful(x: int32) -> int32:
         acc: stateful(int32) = 0
         acc = acc + x
@@ -42,7 +45,7 @@ def test_stateful_scalar():
 
     s = allo.customize(acc_stateful)
     mod = s.build(target="llvm")
-    
+
     # Test: stateful should accumulate across calls
     result1 = mod(5)
     result2 = mod(10)
@@ -55,6 +58,7 @@ def test_stateful_scalar():
 
 def test_stateless_array():
     """Test stateless array buffer"""
+
     def array_stateless(x: float32) -> float32:
         buffer: float32[10] = 0.0
         buffer[0] = x
@@ -63,7 +67,7 @@ def test_stateless_array():
 
     s = allo.customize(array_stateless)
     mod = s.build(target="llvm")
-    
+
     # Test: stateless array reinitializes each call
     result1 = mod(5.0)
     result2 = mod(10.0)
@@ -74,6 +78,7 @@ def test_stateless_array():
 
 def test_stateful_array():
     """Test stateful array buffer"""
+
     def array_stateful(x: float32) -> float32:
         buffer: stateful(float32[10]) = 0.0
         buffer[0] = buffer[0] + x
@@ -81,7 +86,7 @@ def test_stateful_array():
 
     s = allo.customize(array_stateful)
     mod = s.build(target="llvm")
-    
+
     # Test: stateful array persists across calls
     result1 = mod(5.0)
     result2 = mod(10.0)
@@ -94,6 +99,7 @@ def test_stateful_array():
 
 def test_moving_average():
     """Test moving average with stateful circular buffer"""
+
     def moving_average(new_value: float32) -> float32:
         window: stateful(float32[4]) = 0.0
         i: stateful(int32) = 0
@@ -119,14 +125,14 @@ def test_moving_average():
 
     s = allo.customize(moving_average)
     mod = s.build(target="llvm")
-    
+
     # Test moving average calculation
     result1 = mod(10.0)  # avg = 10/1 = 10.0
     result2 = mod(20.0)  # avg = 30/2 = 15.0
     result3 = mod(30.0)  # avg = 60/3 = 20.0
     result4 = mod(40.0)  # avg = 100/4 = 25.0
     result5 = mod(50.0)  # avg = (20+30+40+50)/4 = 35.0
-    
+
     assert np.isclose(result1, 10.0), f"Expected 10.0, got {result1}"
     assert np.isclose(result2, 15.0), f"Expected 15.0, got {result2}"
     assert np.isclose(result3, 20.0), f"Expected 20.0, got {result3}"
@@ -138,7 +144,7 @@ def test_moving_average():
 def test_kernel_rng():
     """Test stateful random number generator"""
     SEED = 12345
-    
+
     def kernel_rng() -> int32:
         seed: stateful(int32) = SEED
         seed = (1103515245 * seed + 12345) & 0x7FFFFFFF
@@ -146,23 +152,26 @@ def test_kernel_rng():
 
     s = allo.customize(kernel_rng)
     mod = s.build(target="llvm")
-    
+
     # Test: RNG should produce different values each call
     results = [mod() for _ in range(5)]
-    
+
     # Check that we got 5 different values
     unique_results = set(results)
-    assert len(unique_results) == 5, f"Expected 5 unique values, got {len(unique_results)}"
-    
+    assert (
+        len(unique_results) == 5
+    ), f"Expected 5 unique values, got {len(unique_results)}"
+
     # Check that all values are within valid range
     for result in results:
         assert 0 <= result <= 0xFFFF, f"Result {result} out of range [0, 0xFFFF]"
-    
+
     print(f"test_kernel_rng passed! Generated values: {results}")
 
 
 def test_update_crc32():
     """Test stateful CRC32 calculation"""
+
     def update_crc32(data: uint8) -> uint32:
         crc: stateful(uint32) = 0xFFFFFFFF
         crc = crc ^ data
@@ -172,23 +181,24 @@ def test_update_crc32():
 
     s = allo.customize(update_crc32)
     mod = s.build(target="llvm")
-    
+
     # Test: CRC should accumulate across calls
     # Process a simple sequence of bytes
-    result1 = mod(ord('A'))
-    result2 = mod(ord('B'))
-    result3 = mod(ord('C'))
-    
+    result1 = mod(ord("A"))
+    result2 = mod(ord("B"))
+    result3 = mod(ord("C"))
+
     # CRC values should be different and non-zero
     assert result1 != 0, f"Expected non-zero CRC, got {result1}"
     assert result2 != result1, f"Expected different CRC values"
     assert result3 != result2, f"Expected different CRC values"
-    
+
     print(f"test_update_crc32 passed! CRC values: {result1}, {result2}, {result3}")
 
 
 def test_update_histogram():
     """Test stateful histogram"""
+
     def update_histogram(number: int8) -> int32[256]:
         histogram: stateful(int32[256]) = 0
         histogram[number] += 1
@@ -196,24 +206,25 @@ def test_update_histogram():
 
     s = allo.customize(update_histogram)
     mod = s.build(target="llvm")
-    
+
     # Test: histogram should accumulate counts
     result1 = mod(5)
     result2 = mod(10)
     result3 = mod(5)
     result4 = mod(5)
     result5 = mod(10)
-    
+
     # Check specific bin counts
     assert result5[5] == 3, f"Expected count of 3 for bin 5, got {result5[5]}"
     assert result5[10] == 2, f"Expected count of 2 for bin 10, got {result5[10]}"
     assert result5[0] == 0, f"Expected count of 0 for bin 0, got {result5[0]}"
-    
+
     print("test_update_histogram passed!")
 
 
 def test_simple_counter():
     """Test simple stateful counter"""
+
     def counter() -> int32:
         count: stateful(int32) = 0
         count = count + 1
@@ -221,17 +232,18 @@ def test_simple_counter():
 
     s = allo.customize(counter)
     mod = s.build(target="llvm")
-    
+
     # Test: counter should increment
     results = [mod() for _ in range(10)]
     expected = list(range(1, 11))
-    
+
     assert results == expected, f"Expected {expected}, got {results}"
     print(f"test_simple_counter passed! Counter values: {results}")
 
 
 def test_stateful_reset():
     """Test stateful accumulator with reset"""
+
     def acc_with_reset(x: int32, rst: bool) -> int32:
         _sum: stateful(int32) = 0
         if rst:
@@ -242,24 +254,25 @@ def test_stateful_reset():
 
     s = allo.customize(acc_with_reset)
     mod = s.build(target="llvm")
-    
+
     # Test accumulation
     result1 = mod(5, False)
     result2 = mod(10, False)
     result3 = mod(3, False)
-    
+
     assert result1 == 5, f"Expected 5, got {result1}"
     assert result2 == 15, f"Expected 15, got {result2}"
     assert result3 == 18, f"Expected 18, got {result3}"
-    
+
     # Test reset
     result4 = mod(100, True)  # Reset
     result5 = mod(7, False)
-    
+
     assert result4 == 0, f"Expected 0 after reset, got {result4}"
     assert result5 == 7, f"Expected 7, got {result5}"
-    
+
     print("test_stateful_reset passed!")
+
 
 def test_tpu():
     """Test stateful TPU-like memory with operations"""
@@ -293,37 +306,37 @@ def test_tpu():
 
     s = allo.customize(test_tpu)
     mod = s.build(target="llvm")
-    
+
     # Test sequence: Write values, perform operations, read back
     # Write 10 to address 0
     result1 = mod(OP_H2D, 10, 0)
     assert result1 == 99, f"Expected 99 for H2D operation, got {result1}"
-    
+
     # Write 20 to address 1
     result2 = mod(OP_H2D, 20, 1)
     assert result2 == 99, f"Expected 99 for H2D operation, got {result2}"
-    
+
     # Read from address 0 (should be 10)
     result3 = mod(OP_D2H, 0, 0)
     assert result3 == 10, f"Expected 10, got {result3}"
-    
+
     # Read from address 1 (should be 20)
     result4 = mod(OP_D2H, 0, 1)
     assert result4 == 20, f"Expected 20, got {result4}"
-    
+
     # Add mem[0] and mem[1], store in mem[0] (10 + 20 = 30)
     result5 = mod(OP_ADD, 0, 0)
     assert result5 == 30, f"Expected 30, got {result5}"
-    
+
     # Write 5 to address 1
     result6 = mod(OP_H2D, 5, 1)
-    
+
     # Multiply mem[0] and mem[1], store in mem[0] (30 * 5 = 150)
     result7 = mod(OP_MUL, 0, 0)
     assert result7 == 150, f"Expected 150, got {result7}"
-    
+
     # Read final value from address 0
     result8 = mod(OP_D2H, 0, 0)
     assert result8 == 150, f"Expected 150, got {result8}"
-    
+
     print("test_tpu passed!")
