@@ -220,4 +220,3 @@ def format_error_summary(
         msg += f"\n\nSee {project}/xls_validation_errors.txt for detailed diagnostics."
     
     return msg
-
