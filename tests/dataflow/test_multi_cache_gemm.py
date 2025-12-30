@@ -25,7 +25,11 @@ P0, P1 = Rt + 2, Ct + 2
 
 
 @df.region()
-def top(A_Packed: UInt(Rt * 8)[M * K // Rt], B_Packed: UInt(Ct * 8)[K * N // Ct], C_Packed: UInt(Rt * 8)[M * N // Rt]):
+def top(
+    A_Packed: UInt(Rt * 8)[M * K // Rt],
+    B_Packed: UInt(Ct * 8)[K * N // Ct],
+    C_Packed: UInt(Rt * 8)[M * N // Rt],
+):
     L3_A: Stream[UInt(Rt * 8), 4]
     L3_B: Stream[UInt(Ct * 8), 4]
     L3_C: Stream[UInt(Rt * 8), 4]

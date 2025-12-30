@@ -48,7 +48,9 @@ def top(A: int8[M], B: int8[N], S: int32[P0 - 1, P1 - 1]):
     fifo_C: Stream[int32, 4][P0, P1]
 
     @df.kernel(mapping=[P0, P1], args=[A, B, S])
-    def Smith_Waterman(local_A: int8[M], local_B: int8[N], local_S: int32[P0 - 1, P1 - 1]):
+    def Smith_Waterman(
+        local_A: int8[M], local_B: int8[N], local_S: int32[P0 - 1, P1 - 1]
+    ):
         i, j = df.get_pid()
         # Does nothing for the two boundary PEs
         with allo.meta_if((i == 0 and j == P1 - 1) or (i == P0 - 1 and j == 0)):

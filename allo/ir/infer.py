@@ -1,6 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=unused-argument, eval-used, redefined-variable-type, cell-var-from-loop
+# pylint: disable=unused-argument, eval-used, redefined-variable-type, cell-var-from-loop, too-many-branches
 
 import ast
 import copy
@@ -811,7 +811,7 @@ class TypeInferer(ASTVisitor):
                     top_level_args[top_arg.arg] = top_arg
 
                 # Process each kernel argument based on the specified args list
-                for i, (kernel_arg_node, func_arg) in enumerate(
+                for _, (kernel_arg_node, func_arg) in enumerate(
                     zip(kernel_arg_list, node.args.args)
                 ):
                     # Get the name of the top-level argument to use
