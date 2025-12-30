@@ -1214,14 +1214,7 @@ class Schedule:
                 return ele
         return []
 
-    def build(
-        self,
-        target=None,
-        mode=None,
-        project=None,
-        configs=None,
-        wrap_io=True,
-    ):
+    def build(self, target=None, mode=None, project=None, configs=None, wrap_io=True):
         if target is None or target == "llvm":
             target = "llvm"
             return LLVMModule(

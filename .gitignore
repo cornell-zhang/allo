@@ -17,6 +17,7 @@ soda_*
 out
 rapidjson
 project_*
+.eggs/*
 
 # Downloaded files
 *.params
@@ -88,3 +89,8 @@ log
 _tmp
 *.txt
 sg_execution_times.rst
+
+# XLS[cc] generated test files
+tests/xlscc_tests/**/test.cpp
+tests/xlscc_tests/**/test_block.cpp
+tests/xlscc_tests/**/test
