@@ -1206,8 +1206,7 @@ void allo::hls::ModuleEmitter::emitAffineApply(AffineApplyOp op) {
 }
 
 template <typename OpType>
-void allo::hls::ModuleEmitter::emitAffineMaxMin(OpType op,
-                                                 const char *syntax) {
+void allo::hls::ModuleEmitter::emitAffineMaxMin(OpType op, const char *syntax) {
   indent();
   emitValue(op.getResult());
   os << " = ";
@@ -1463,8 +1462,7 @@ void allo::hls::ModuleEmitter::emitAffineYield(AffineYieldOp op) {
 }
 
 /// Memref-related statement emitters.
-template <typename OpType>
-void allo::hls::ModuleEmitter::emitAlloc(OpType op) {
+template <typename OpType> void allo::hls::ModuleEmitter::emitAlloc(OpType op) {
   // A declared result indicates that the memref is output of the function, and
   // has been declared in the function signature.
   if (isDeclared(op.getResult()))
@@ -2418,7 +2416,7 @@ void allo::hls::ModuleEmitter::emitCall(func::CallOp op) {
 
 /// C++ component emitters.
 void allo::hls::ModuleEmitter::emitValue(Value val, unsigned rank, bool isPtr,
-                                          std::string name) {
+                                         std::string name) {
   assert(!(rank && isPtr) && "should be either an array or a pointer.");
 
   // Value has been declared before or is a constant number.
@@ -2442,7 +2440,7 @@ void allo::hls::ModuleEmitter::emitValue(Value val, unsigned rank, bool isPtr,
 }
 
 void allo::hls::ModuleEmitter::emitArrayDecl(Value array, bool isFunc,
-                                              std::string name) {
+                                             std::string name) {
   assert(!isDeclared(array) && "has been declared before.");
 
   auto arrayType = llvm::dyn_cast<ShapedType>(array.getType());
