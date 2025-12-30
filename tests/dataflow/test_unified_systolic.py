@@ -11,6 +11,11 @@ import allo.backend.hls as hls
 import numpy as np
 
 
+U = 4  # Require for same size in two dimension if not tiling
+M, N, K = U, 4, U
+P0, P1 = U + 2, U + 2
+
+
 @df.region()
 def unified_gemm_simple(A: int32[M, K], B: int32[K, N], inst: bool, C: int32[M, N]):
     # interconnect
@@ -418,11 +423,6 @@ def schedule_unified_systolic(s):
     s.partition(f"{s.top_func_name}:B", dim=0)
     s.partition(f"{s.top_func_name}:C", dim=0)
     return s
-
-
-U = 4  # Require for same size in two dimension if not tiling
-M, N, K = U, 4, U
-P0, P1 = U + 2, U + 2
 
 
 @pytest.mark.skip(reason="Invalid MLIR generated. Needs fixing.")
