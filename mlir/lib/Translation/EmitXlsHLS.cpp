@@ -193,63 +193,23 @@ private:
   operand_range operands;
 };
 
-// XLS ModuleEmitter that inherits from Vivado ModuleEmitter
-class XLSModuleEmitter : public allo::vhls::ModuleEmitter {
-public:
-  using operand_range = Operation::operand_range;
-  explicit XLSModuleEmitter(AlloEmitterState &state)
-      : allo::vhls::ModuleEmitter(state) {}
+} // anonymous namespace
 
-  // Override methods that need XLS-specific behavior
-  void emitModule(ModuleOp module) override;
-  c void emitFunctionDirectives(func::FuncOp func,
-                                ArrayRef<Value> portList) override;
-  void emitArrayDecl(Value array, bool isFunc = false,
-                     std::string name = "") override;
-  void emitLoopDirectives(Operation *op) override;
-  void emitStreamConstruct(allo::StreamConstructOp op) override;
-  void emitArrayDirectives(Value memref) override;
-  void emitFunction(func::FuncOp func) override;
-  void emitAffineFor(AffineForOp op) override;
-  void emitScfFor(scf::ForOp op) override;
-  void emitLoad(memref::LoadOp op) override;
-  void emitStore(memref::StoreOp op) override;
-  void emitAffineLoad(AffineLoadOp op) override;
-  void emitAffineStore(AffineStoreOp op) override;
-
-protected:
-  // Helper to emit flattened index for multi-dimensional array access
-  void emitFlattenedIndex(MemRefType memrefType,
-                          Operation::operand_range indices);
-  // Helper to emit flattened affine index
-  void emitFlattenedAffineIndex(MemRefType memrefType, AffineMap affineMap,
-                                AffineExprEmitter &affineEmitter);
-  void emitValue(Value val, unsigned rank = 0, bool isPtr = false,
-                 std::string name = "");
-  // Helper method to get XLS-specific type names
-  SmallString<16> getTypeName(Type valType) { return getXLSTypeName(valType); }
-  SmallString<16> getTypeName(Value val) {
-    return getXLSTypeName(val.getType());
-  }
-
-  // Track array arguments that should become local arrays populated from
-  // channels
-  bool inArrayFunction = false;
-  DenseMap<Value, std::string>
-      arrayArgToLocalName; // Maps function arg -> local array name (e.g., "v0")
-  DenseMap<Value, std::string>
-      arrayArgToChannelName; // Maps function arg -> channel name (e.g.,
-                             // "v0_in")
-  Value returnArray = nullptr;
-  std::string outputChannelName = "out";
-};
-} // namespace
+using hls::XlsModuleEmitter;
 
 //===----------------------------------------------------------------------===//
 // XLS-specific implementations
 //===----------------------------------------------------------------------===//
 
-void XLSModuleEmitter::emitValue(Value val, unsigned rank, bool isPtr,
+SmallString<16> XlsModuleEmitter::getTypeName(Type valType) {
+  return getXLSTypeName(valType);
+}
+
+SmallString<16> XlsModuleEmitter::getTypeName(Value val) {
+  return getXLSTypeName(val.getType());
+}
+
+void XlsModuleEmitter::emitValue(Value val, unsigned rank, bool isPtr,
                                  std::string name) {
   (void)rank;
   (void)isPtr;
@@ -269,7 +229,7 @@ void XLSModuleEmitter::emitValue(Value val, unsigned rank, bool isPtr,
   }
 }
 
-void XLSModuleEmitter::emitFunctionDirectives(func::FuncOp func,
+void XlsModuleEmitter::emitFunctionDirectives(func::FuncOp func,
                                               ArrayRef<Value> portList) {
   // Note: #pragma hls_top is emitted at function definition level, not here
   // This function handles array directives for function ports
@@ -278,7 +238,7 @@ void XLSModuleEmitter::emitFunctionDirectives(func::FuncOp func,
       emitArrayDirectives(port);
 }
 
-void XLSModuleEmitter::emitArrayDecl(Value array, bool isFunc,
+void XlsModuleEmitter::emitArrayDecl(Value array, bool isFunc,
                                      std::string name) {
   assert(!isDeclared(array) && "has been declared before.");
 
@@ -435,7 +395,7 @@ static bool containsChannelOperations(Region &region) {
   return hasChannelOps;
 }
 
-void XLSModuleEmitter::emitLoopDirectives(Operation *op) {
+void XlsModuleEmitter::emitLoopDirectives(Operation *op) {
   // Check for pipeline attributes first - if pipeline is present, don't unroll
   // Check for pipeline attributes (could be "allo.pipeline" unit attr or
   // "pipeline_ii" with value)
@@ -484,7 +444,7 @@ void XLSModuleEmitter::emitLoopDirectives(Operation *op) {
   }
 }
 
-void XLSModuleEmitter::emitAffineFor(AffineForOp op) {
+void XlsModuleEmitter::emitAffineFor(AffineForOp op) {
   auto iterVar = op.getInductionVar();
   std::string loop_name = "";
   if (op->hasAttr("loop_name")) {
@@ -562,7 +522,7 @@ void XLSModuleEmitter::emitAffineFor(AffineForOp op) {
   os << "}\n";
 }
 
-void XLSModuleEmitter::emitScfFor(scf::ForOp op) {
+void XlsModuleEmitter::emitScfFor(scf::ForOp op) {
   auto iterVar = op.getInductionVar();
 
   // Memory mode compute state: emit normal for loops with local declarations
@@ -604,7 +564,7 @@ void XLSModuleEmitter::emitScfFor(scf::ForOp op) {
   os << "}\n";
 }
 
-void XLSModuleEmitter::emitStreamConstruct(allo::StreamConstructOp op) {
+void XlsModuleEmitter::emitStreamConstruct(allo::StreamConstructOp op) {
   indent();
   Value result = op.getResult();
 
@@ -641,7 +601,7 @@ void XLSModuleEmitter::emitStreamConstruct(allo::StreamConstructOp op) {
   emitInfoAndNewLine(op);
 }
 
-void XLSModuleEmitter::emitArrayDirectives(Value memref) {
+void XlsModuleEmitter::emitArrayDirectives(Value memref) {
   bool emitPragmaFlag = false;
   auto type = llvm::cast<MemRefType>(memref.getType());
 
@@ -660,7 +620,7 @@ void XLSModuleEmitter::emitArrayDirectives(Value memref) {
   allo::vhls::ModuleEmitter::emitArrayDirectives(memref);
 }
 
-void XLSModuleEmitter::emitFlattenedIndex(MemRefType memrefType,
+void XlsModuleEmitter::emitFlattenedIndex(MemRefType memrefType,
                                           Operation::operand_range indices) {
   // For __xls_memory (flattened), compute linear index: i * d1 * d2 + j * d2 +
   // k
@@ -688,7 +648,7 @@ void XLSModuleEmitter::emitFlattenedIndex(MemRefType memrefType,
   }
 }
 
-void XLSModuleEmitter::emitLoad(memref::LoadOp op) {
+void XlsModuleEmitter::emitLoad(memref::LoadOp op) {
   indent();
   Value result = op.getResult();
   fixUnsignedType(result, op->hasAttr("unsigned"));
@@ -726,7 +686,7 @@ void XLSModuleEmitter::emitLoad(memref::LoadOp op) {
   emitInfoAndNewLine(op);
 }
 
-void XLSModuleEmitter::emitStore(memref::StoreOp op) {
+void XlsModuleEmitter::emitStore(memref::StoreOp op) {
   indent();
 
   auto memref = op.getMemRef();
@@ -763,7 +723,7 @@ void XLSModuleEmitter::emitStore(memref::StoreOp op) {
   emitInfoAndNewLine(op);
 }
 
-void XLSModuleEmitter::emitFlattenedAffineIndex(
+void XlsModuleEmitter::emitFlattenedAffineIndex(
     MemRefType memrefType, AffineMap affineMap,
     AffineExprEmitter &affineEmitter) {
   // For __xls_memory (flattened), compute linear index from affine expressions
@@ -795,7 +755,7 @@ void XLSModuleEmitter::emitFlattenedAffineIndex(
   }
 }
 
-void XLSModuleEmitter::emitAffineLoad(AffineLoadOp op) {
+void XlsModuleEmitter::emitAffineLoad(AffineLoadOp op) {
   indent();
   std::string load_from_name = "";
   if (op->hasAttr("from")) {
@@ -842,7 +802,7 @@ void XLSModuleEmitter::emitAffineLoad(AffineLoadOp op) {
   emitInfoAndNewLine(op);
 }
 
-void XLSModuleEmitter::emitAffineStore(AffineStoreOp op) {
+void XlsModuleEmitter::emitAffineStore(AffineStoreOp op) {
   indent();
   std::string store_to_name = "";
   if (op->hasAttr("to")) {
@@ -888,7 +848,7 @@ void XLSModuleEmitter::emitAffineStore(AffineStoreOp op) {
   emitInfoAndNewLine(op);
 }
 
-void XLSModuleEmitter::emitFunction(func::FuncOp func) {
+void XlsModuleEmitter::emitFunction(func::FuncOp func) {
   if (func->hasAttr("bit"))
     BIT_FLAG = true;
 
@@ -1462,7 +1422,7 @@ void XLSModuleEmitter::emitFunction(func::FuncOp func) {
   os << "\n";
 }
 
-void XLSModuleEmitter::emitModule(ModuleOp module) {
+void XlsModuleEmitter::emitModule(ModuleOp module) {
   std::string header = R"XXX(
 //===------------------------------------------------------------*- C++ -*-===//
 //
@@ -1497,7 +1457,7 @@ LogicalResult allo::emitXlsHLS(ModuleOp module, llvm::raw_ostream &os,
                                bool useMemory) {
   USE_MEMORY_FLAG = useMemory;
   AlloEmitterState state(os);
-  XLSModuleEmitter(state).emitModule(module);
+  XlsModuleEmitter(state).emitModule(module);
   return failure(state.encounteredError);
 }
 
