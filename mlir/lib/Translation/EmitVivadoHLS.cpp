@@ -1114,7 +1114,8 @@ void allo::hls::VhlsModuleEmitter::emitAffineApply(AffineApplyOp op) {
 }
 
 template <typename OpType>
-void allo::hls::VhlsModuleEmitter::emitAffineMaxMin(OpType op, const char *syntax) {
+void allo::hls::VhlsModuleEmitter::emitAffineMaxMin(OpType op,
+                                                    const char *syntax) {
   indent();
   emitValue(op.getResult());
   os << " = ";
@@ -1370,7 +1371,8 @@ void allo::hls::VhlsModuleEmitter::emitAffineYield(AffineYieldOp op) {
 }
 
 /// Memref-related statement emitters.
-template <typename OpType> void allo::hls::VhlsModuleEmitter::emitAlloc(OpType op) {
+template <typename OpType>
+void allo::hls::VhlsModuleEmitter::emitAlloc(OpType op) {
   // A declared result indicates that the memref is output of the function, and
   // has been declared in the function signature.
   if (isDeclared(op.getResult()))
@@ -1508,7 +1510,8 @@ void allo::hls::VhlsModuleEmitter::emitGetGlobal(memref::GetGlobalOp op) {
   emitInfoAndNewLine(op);
 }
 
-void allo::hls::VhlsModuleEmitter::emitGetGlobalFixed(allo::GetGlobalFixedOp op) {
+void allo::hls::VhlsModuleEmitter::emitGetGlobalFixed(
+    allo::GetGlobalFixedOp op) {
   indent();
   os << "// const ";
   Value result = op.getResult();
@@ -2212,7 +2215,8 @@ void allo::hls::VhlsModuleEmitter::emitCast(CastOpType op) {
   emitInfoAndNewLine(op);
 }
 
-void allo::hls::VhlsModuleEmitter::emitGeneralCast(UnrealizedConversionCastOp op) {
+void allo::hls::VhlsModuleEmitter::emitGeneralCast(
+    UnrealizedConversionCastOp op) {
   indent();
   emitValue(op.getResult(0));
   os << " = ";
@@ -2266,8 +2270,8 @@ void allo::hls::VhlsModuleEmitter::emitCall(func::CallOp op) {
 }
 
 /// C++ component emitters.
-void allo::hls::VhlsModuleEmitter::emitValue(Value val, unsigned rank, bool isPtr,
-                                         std::string name) {
+void allo::hls::VhlsModuleEmitter::emitValue(Value val, unsigned rank,
+                                             bool isPtr, std::string name) {
   assert(!(rank && isPtr) && "should be either an array or a pointer.");
 
   // Value has been declared before or is a constant number.
@@ -2291,7 +2295,7 @@ void allo::hls::VhlsModuleEmitter::emitValue(Value val, unsigned rank, bool isPt
 }
 
 void allo::hls::VhlsModuleEmitter::emitArrayDecl(Value array, bool isFunc,
-                                             std::string name) {
+                                                 std::string name) {
   assert(!isDeclared(array) && "has been declared before.");
 
   auto arrayType = llvm::dyn_cast<ShapedType>(array.getType());

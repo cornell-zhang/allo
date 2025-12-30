@@ -1940,8 +1940,8 @@ void TapaModuleEmitter::emitValueImpl(Value val, unsigned rank, bool isPtr,
   }
 }
 
-void TapaModuleEmitter::emitArrayDeclImpl(Value array, bool isFunc, std::string name,
-                                          char type) {
+void TapaModuleEmitter::emitArrayDeclImpl(Value array, bool isFunc,
+                                          std::string name, char type) {
   assert(!isDeclared(array) && "has been declared before.");
 
   auto arrayType = llvm::dyn_cast<ShapedType>(array.getType());
@@ -2250,7 +2250,7 @@ void TapaModuleEmitter::emitArrayDirectives(Value memref) {
 
 // TODO: overload
 void TapaModuleEmitter::emitFunctionDirectives(func::FuncOp func,
-                                           ArrayRef<Value> portList) {
+                                               ArrayRef<Value> portList) {
   // auto funcDirect = getFuncDirective(func);
   // if (!funcDirect)
   //   return;

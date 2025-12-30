@@ -29,12 +29,14 @@ public:
   explicit ModuleEmitterBase(AlloEmitterState &state) : AlloEmitterBase(state) {}
   virtual ~ModuleEmitterBase() = default;
 
+  /// SCF statement emitters.
   virtual void emitScfFor(scf::ForOp op) {}
   virtual void emitScfIf(scf::IfOp op) {}
   virtual void emitScfWhile(scf::WhileOp op) {}
   virtual void emitScfCondition(scf::ConditionOp op) {}
   virtual void emitScfYield(scf::YieldOp op) {}
 
+  /// Affine statement emitters.
   virtual void emitAffineFor(affine::AffineForOp op) {}
   virtual void emitAffineIf(affine::AffineIfOp op) {}
   virtual void emitAffineParallel(affine::AffineParallelOp op) {}
@@ -43,8 +45,7 @@ public:
   virtual void emitAffineStore(affine::AffineStoreOp op) {}
   virtual void emitAffineYield(affine::AffineYieldOp op) {}
 
-  // NOTE: emitAffineMaxMin<OpType> is a template and cannot be virtual.
-
+  /// Memref-related statement emitters.
   virtual void emitLoad(memref::LoadOp op) {}
   virtual void emitStore(memref::StoreOp op) {}
   virtual void emitGetGlobal(memref::GetGlobalOp op) {}
@@ -53,18 +54,19 @@ public:
   virtual void emitSubView(memref::SubViewOp op) {}
   virtual void emitReshape(memref::ReshapeOp op) {}
 
-  // NOTE: emitAlloc<OpType> is a template and cannot be virtual.
-
+  /// Tensor-related statement emitters.
   virtual void emitTensorExtract(tensor::ExtractOp op) {}
   virtual void emitTensorInsert(tensor::InsertOp op) {}
   virtual void emitDim(memref::DimOp op) {}
   virtual void emitRank(memref::RankOp op) {}
 
+  /// Standard operation emitters.
   virtual void emitBinary(Operation *op, const char *syntax);
   virtual void emitUnary(Operation *op, const char *syntax);
   virtual void emitPower(Operation *op);
   virtual void emitMaxMin(Operation *op, const char *syntax);
 
+  /// Special operation emitters.
   virtual void emitCall(func::CallOp op) {}
   virtual void emitSelect(arith::SelectOp op) {}
   virtual void emitConstant(arith::ConstantOp op) {}
@@ -76,15 +78,16 @@ public:
   virtual void emitBitReverse(allo::BitReverseOp op) {}
   virtual void emitBitcast(arith::BitcastOp op) {}
 
-  // NOTE: emitCast<CastOpType> is a template and cannot be virtual.
-
+  /// Stream operation emitters.
   virtual void emitStreamConstruct(allo::StreamConstructOp op) {}
   virtual void emitStreamGet(allo::StreamGetOp op) {}
   virtual void emitStreamPut(allo::StreamPutOp op) {}
 
+  /// Top-level MLIR module emitter.
   virtual void emitModule(ModuleOp module) {}
 
 protected:
+  /// C++ component emitters.
   virtual void emitValue(Value val, unsigned rank = 0, bool isPtr = false,
                          std::string name = "") {}
 
@@ -98,6 +101,7 @@ protected:
   virtual void emitNestedLoopTail(unsigned rank);
   virtual void emitInfoAndNewLine(Operation *op);
 
+  /// MLIR component and HLS C++ pragma emitters.
   virtual void emitBlock(Block &block) {}
   virtual void emitLoopDirectives(Operation *op) {}
   virtual void emitArrayDirectives(Value memref) {}

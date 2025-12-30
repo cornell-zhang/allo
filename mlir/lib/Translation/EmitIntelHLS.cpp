@@ -492,7 +492,8 @@ void IntelModuleEmitter::emitStore(memref::StoreOp op) {
   emitInfoAndNewLine(op);
 }
 
-void IntelModuleEmitter::emitArrayDecl(Value array, bool isFunc, std::string name) {
+void IntelModuleEmitter::emitArrayDecl(Value array, bool isFunc,
+                                       std::string name) {
   assert(!isDeclared(array) && "has been declared before.");
 
   auto arrayType = llvm::dyn_cast<ShapedType>(array.getType());
@@ -535,7 +536,7 @@ void IntelModuleEmitter::emitArrayDecl(Value array, bool isFunc, std::string nam
 }
 
 void IntelModuleEmitter::emitBufferDecl(Value array, bool isAccessor,
-                                   bool isReadOnly, std::string name) {
+                                        bool isReadOnly, std::string name) {
   auto arrayType = llvm::dyn_cast<ShapedType>(array.getType());
   assert(arrayType.hasStaticShape());
   auto memref = llvm::dyn_cast<MemRefType>(array.getType());
@@ -829,7 +830,8 @@ void IntelModuleEmitter::emitConstant(arith::ConstantOp op) {
     emitError(op, "has unsupported constant type.");
 }
 
-template <typename CastOpType> void IntelModuleEmitter::emitCast(CastOpType op) {
+template <typename CastOpType>
+void IntelModuleEmitter::emitCast(CastOpType op) {
   indent();
   emitValue(op.getResult());
   os << " = ";

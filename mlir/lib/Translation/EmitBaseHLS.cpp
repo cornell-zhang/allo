@@ -80,4 +80,3 @@ void ModuleEmitterBase::emitInfoAndNewLine(Operation *op) {
     os << " L" << loc.getLine();
   os << "\n";
 }
-
