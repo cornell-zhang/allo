@@ -689,6 +689,19 @@ class TypeInferer(ASTVisitor):
                                 ctx.global_vars,
                             )
                             old_ctx.mapping = mapping
+                            # Extract args parameter - now mandatory
+                            kernel_args = None
+                            for kw in decorator.keywords:
+                                if kw.arg == "args":
+                                    kernel_args = kw.value
+                                    break
+                            if kernel_args is None:
+                                raise ValueError(
+                                    f"Missing required 'args' parameter in @df.kernel decorator for function '{node.name}'. "
+                                    "Please specify the top-level function arguments to pass to this kernel, "
+                                    "e.g., @df.kernel(mapping=[P0, P1], args=[A, B, C])"
+                                )
+                            old_ctx.kernel_args = kernel_args
                             orig_name = node.name
                             old_ctx.func_predicate_tags[orig_name] = {}
                             if ctx.unroll:
@@ -772,20 +785,93 @@ class TypeInferer(ASTVisitor):
 
         with ctx.block_scope_guard():
             # Input types
-            for arg in node.args.args:
-                arg.dtype, arg.shape, arg.spec = TypeInferer.visit_type_hint(
-                    ctx, arg.annotation
+            # For dataflow kernels, kernel_args is mandatory
+            if hasattr(ctx, "kernel_args") and ctx.kernel_args is not None:
+                # Use kernel_args from decorator to get type info from top-level function
+                assert (
+                    ctx.top_func_tree is not None
+                ), "kernel_args requires top-level function context"
+                kernel_arg_list = (
+                    ctx.kernel_args.elts
+                    if isinstance(ctx.kernel_args, ast.Tuple)
+                    else [ctx.kernel_args]
                 )
-                arg.dtensor = DTensor(
-                    ctx.rank, ctx.mapping, arg.shape, arg.dtype, arg.spec, name=arg.arg
-                )
-                # update shape
-                arg.shape = arg.dtensor.get_local_shape()
-                assert ctx.get_symbol(name=arg.arg, allow_missing=True) is None, (
-                    f"Argument name '{arg.arg}' conflicts with an existing symbol. "
-                    f"Please choose a different name to avoid the conflict."
-                )
-                ctx.put_symbol(name=arg.arg, val=arg)
+                if not isinstance(ctx.kernel_args, ast.List):
+                    kernel_arg_list = (
+                        ctx.kernel_args.elts
+                        if isinstance(ctx.kernel_args, ast.Tuple)
+                        else [ctx.kernel_args]
+                    )
+                else:
+                    kernel_arg_list = ctx.kernel_args.elts
+
+                # Build mapping from top-level arg names to their type info
+                top_level_args = {}
+                for top_arg in ctx.top_func_tree.args.args:
+                    top_level_args[top_arg.arg] = top_arg
+
+                # Process each kernel argument based on the specified args list
+                for i, (kernel_arg_node, func_arg) in enumerate(
+                    zip(kernel_arg_list, node.args.args)
+                ):
+                    # Get the name of the top-level argument to use
+                    if isinstance(kernel_arg_node, ast.Name):
+                        top_arg_name = kernel_arg_node.id
+                    else:
+                        raise ValueError(
+                            f"Kernel args must be simple names, got {ast.unparse(kernel_arg_node)}"
+                        )
+
+                    # Look up the type info from the top-level function
+                    if top_arg_name not in top_level_args:
+                        raise ValueError(
+                            f"Kernel arg '{top_arg_name}' not found in top-level function arguments"
+                        )
+
+                    top_arg = top_level_args[top_arg_name]
+                    # Use the type hint from the top-level argument
+                    func_arg.dtype, func_arg.shape, func_arg.spec = (
+                        TypeInferer.visit_type_hint(ctx, top_arg.annotation)
+                    )
+                    # Use top_arg_name for DTensor so it maps to the top-level function argument
+                    func_arg.dtensor = DTensor(
+                        ctx.rank,
+                        ctx.mapping,
+                        func_arg.shape,
+                        func_arg.dtype,
+                        func_arg.spec,
+                        name=top_arg_name,
+                    )
+                    # update shape
+                    func_arg.shape = func_arg.dtensor.get_local_shape()
+                    assert (
+                        ctx.get_symbol(name=func_arg.arg, allow_missing=True) is None
+                    ), (
+                        f"Argument name '{func_arg.arg}' conflicts with an existing symbol. "
+                        f"Please choose a different name to avoid the conflict."
+                    )
+                    ctx.put_symbol(name=func_arg.arg, val=func_arg)
+            else:
+                # Non-dataflow kernels: use function signature
+                for arg in node.args.args:
+                    arg.dtype, arg.shape, arg.spec = TypeInferer.visit_type_hint(
+                        ctx, arg.annotation
+                    )
+                    arg.dtensor = DTensor(
+                        ctx.rank,
+                        ctx.mapping,
+                        arg.shape,
+                        arg.dtype,
+                        arg.spec,
+                        name=arg.arg,
+                    )
+                    # update shape
+                    arg.shape = arg.dtensor.get_local_shape()
+                    assert ctx.get_symbol(name=arg.arg, allow_missing=True) is None, (
+                        f"Argument name '{arg.arg}' conflicts with an existing symbol. "
+                        f"Please choose a different name to avoid the conflict."
+                    )
+                    ctx.put_symbol(name=arg.arg, val=arg)
 
             func_name = (
                 node.name if ctx.func_id is None else f"{node.name}_{ctx.func_id}"

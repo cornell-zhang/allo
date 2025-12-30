@@ -278,10 +278,12 @@ def remove_unused_func_ops(s, func_names):
 
 def _build_top(s, stream_info, target="vitis_hls", get_parameter_list: bool = False):
     """
+    Build the top-level dataflow function.
+
     s: top-level schedule
     stream_info: {func_name: [(stream_names, direction)]}
     """
-    # remove unused kernel
+    # Remove unused kernel functions
     passes = ["canonicalize"]
     pipeline = f'builtin.module(func.func({",".join(passes)}))'
     try:
@@ -293,27 +295,56 @@ def _build_top(s, stream_info, target="vitis_hls", get_parameter_list: bool = Fa
         raise e
     remove_unused_func_ops(s, stream_info.keys())
 
-    # create argument mapping
+    # Collect unique top-level arguments from all kernels
+    # Thanks to explicit args specification, each kernel's func_args already
+    # contains DTensors with the correct top-level argument names
     funcs = get_all_df_kernels(s)
-    input_types = []
-    input_signed = ""
-    arg_mapping = {}
-    used_args = {}  # {arg_name: arg_idx in top_func}
+    used_args = {}  # {arg_name: (arg_idx, dtensor)}
+    arg_mapping = {}  # {func_name: [arg_indices]}
+
     for func in funcs:
         func_name = func.attributes["sym_name"].value
         arg_mapping[func_name] = []
+
+        # Process non-stream arguments
         for i, arg in enumerate(func.arguments):
             if "!allo.stream" not in str(arg.type):
-                arg_name = s.func_args[func_name][i].name
+                dtensor = s.func_args[func_name][i]
+                arg_name = dtensor.name
+
+                # Add to used_args if this is the first time we see this argument
                 if arg_name not in used_args:
-                    used_args[arg_name] = len(input_types)
-                    dtensor = s.func_args[func_name][i]
-                    input_types.append((dtensor.shape, dtensor.dtype))
-                    if "itypes" in func.attributes:
-                        input_signed += func.attributes["itypes"].value[i]
-                    s.func_args[s.top_func_name].append(s.func_args[func_name][i])
-                arg_mapping[func_name].append(used_args[arg_name])
-    # update top function
+                    arg_idx = len(used_args)
+                    used_args[arg_name] = (arg_idx, dtensor)
+                    s.func_args[s.top_func_name].append(dtensor)
+                else:
+                    arg_idx = used_args[arg_name][0]
+
+                arg_mapping[func_name].append(arg_idx)
+
+    # Build input types and signedness info
+    input_types = []
+    input_signed = ""
+    for arg_name in sorted(used_args.keys(), key=lambda x: used_args[x][0]):
+        _, dtensor = used_args[arg_name]
+        input_types.append((dtensor.shape, dtensor.dtype))
+        # Get signedness from any kernel that uses this argument
+        for func in funcs:
+            func_name = func.attributes["sym_name"].value
+            for i, func_arg in enumerate(s.func_args[func_name]):
+                # Get the argument name (handle both DTensor and string)
+                func_arg_name = func_arg.name if hasattr(func_arg, "name") else func_arg
+                if (
+                    func_arg_name == arg_name
+                    and "itypes" in func.attributes
+                    and i < len(func.attributes["itypes"].value)
+                ):
+                    input_signed += func.attributes["itypes"].value[i]
+                    break
+            if len(input_signed) == len(input_types):
+                break
+
+    # Find and replace the top-level function
     top_func = None
     for func in s.module.body.operations:
         if (
@@ -323,8 +354,9 @@ def _build_top(s, stream_info, target="vitis_hls", get_parameter_list: bool = Fa
             top_func = func
             break
     assert top_func is not None, "Top function not found"
+
     with s.module.context, Location.unknown():
-        # create new func
+        # Create new top function with collected arguments
         func_type = FunctionType.get(
             [MemRefType.get(shape, dtype.build()) for shape, dtype in input_types], []
         )
@@ -334,24 +366,27 @@ def _build_top(s, stream_info, target="vitis_hls", get_parameter_list: bool = Fa
         new_top.attributes["itypes"] = StringAttr.get(input_signed)
         new_top.add_entry_block()
         return_op = func_d.ReturnOp([], ip=InsertionPoint(new_top.entry_block))
+
+        # Move operations from old top function to new one
         for op in top_func.entry_block.operations:
             if isinstance(op, func_d.ReturnOp):
                 break
             op.operation.move_before(return_op)
         top_func.operation.erase()
-        # get all global streams
+
+        # Build stream map for stream arguments
         stream_map = {}
         for op in new_top.entry_block.operations:
             if isinstance(op, allo_d.StreamConstructOp):
                 stream_name = op.attributes["name"].value
                 stream_map[stream_name] = op
-        # add call functions
+
+        # Add kernel call operations
         for i, func in enumerate(funcs):
             func_name = func.attributes["sym_name"].value
             arg_lst = [new_top.arguments[idx] for idx in arg_mapping[func_name]]
-            stream_lst = [
-                stream_map[stream_name] for stream_name, _ in stream_info[func_name]
-            ]
+            stream_lst = [stream_map[name] for name, _ in stream_info[func_name]]
+
             if target != "aie":
                 call_op = func_d.CallOp(
                     [],
@@ -361,10 +396,13 @@ def _build_top(s, stream_info, target="vitis_hls", get_parameter_list: bool = Fa
                 )
                 if i == len(funcs) - 1:
                     call_op.attributes["last"] = UnitAttr.get()
+
         new_top.attributes["dataflow"] = UnitAttr.get()
+
     s.top_func = new_top
     if get_parameter_list:
-        return used_args, s
+        # Return mapping of arg_name -> arg_idx for AIE backend
+        return {name: idx for name, (idx, _) in used_args.items()}, s
     return s
 
 
@@ -372,20 +410,22 @@ def _build_top(s, stream_info, target="vitis_hls", get_parameter_list: bool = Fa
 _current_region_context = None
 
 
-def kernel(mapping=None):
+def kernel(mapping=None, args=None):
 
     def actual_decorator(func):
         @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            # *args and **kwargs are the actual arguments that are passed into the kernel function
+        def wrapper(*args_inner, **kwargs):
+            # *args_inner and **kwargs are the actual arguments that are passed into the kernel function
             func.mapping = mapping
+            func.args = args
             hls_mod = build(funcs=[func])
-            return hls_mod(*args, **kwargs)
+            return hls_mod(*args_inner, **kwargs)
 
         wrapper.mapping = mapping
+        wrapper.args = args
         global _current_region_context
         if _current_region_context is not None:
-            _current_region_context[func.__name__] = mapping
+            _current_region_context[func.__name__] = (mapping, args)
         return wrapper
 
     return actual_decorator
