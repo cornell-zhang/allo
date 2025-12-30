@@ -193,23 +193,58 @@ private:
   operand_range operands;
 };
 
+/// Local helper to emit flattened affine index.
+static void emitFlattenedAffineIndexHelper(
+    raw_ostream &os, MemRefType memrefType, AffineMap affineMap,
+    AffineExprEmitter &affineEmitter) {
+  // For __xls_memory (flattened), compute linear index from affine expressions
+  auto shape = memrefType.getShape();
+  auto results = affineMap.getResults();
+  bool first = true;
+
+  for (unsigned i = 0; i < results.size(); ++i) {
+    // Calculate stride (product of all dimensions after this one)
+    int64_t stride = 1;
+    for (unsigned j = i + 1; j < shape.size(); ++j) {
+      stride *= shape[j];
+    }
+
+    if (!first) {
+      os << " + ";
+    }
+    first = false;
+
+    if (stride == 1) {
+      os << "(";
+      affineEmitter.emitAffineExpr(results[i]);
+      os << ")";
+    } else {
+      os << "(";
+      affineEmitter.emitAffineExpr(results[i]);
+      os << ") * " << stride;
+    }
+  }
+}
+
 } // anonymous namespace
 
-using hls::XlsModuleEmitter;
+namespace mlir {
+namespace allo {
+namespace hls {
 
 //===----------------------------------------------------------------------===//
 // XLS-specific implementations
 //===----------------------------------------------------------------------===//
 
-SmallString<16> XlsModuleEmitter::getTypeName(Type valType) {
+SmallString<16> allo::hls::XlsModuleEmitter::getTypeName(Type valType) {
   return getXLSTypeName(valType);
 }
 
-SmallString<16> XlsModuleEmitter::getTypeName(Value val) {
+SmallString<16> allo::hls::XlsModuleEmitter::getTypeName(Value val) {
   return getXLSTypeName(val.getType());
 }
 
-void XlsModuleEmitter::emitValue(Value val, unsigned rank, bool isPtr,
+void allo::hls::XlsModuleEmitter::emitValue(Value val, unsigned rank, bool isPtr,
                                  std::string name) {
   (void)rank;
   (void)isPtr;
@@ -229,7 +264,7 @@ void XlsModuleEmitter::emitValue(Value val, unsigned rank, bool isPtr,
   }
 }
 
-void XlsModuleEmitter::emitFunctionDirectives(func::FuncOp func,
+void allo::hls::XlsModuleEmitter::emitFunctionDirectives(func::FuncOp func,
                                               ArrayRef<Value> portList) {
   // Note: #pragma hls_top is emitted at function definition level, not here
   // This function handles array directives for function ports
@@ -238,7 +273,7 @@ void XlsModuleEmitter::emitFunctionDirectives(func::FuncOp func,
       emitArrayDirectives(port);
 }
 
-void XlsModuleEmitter::emitArrayDecl(Value array, bool isFunc,
+void allo::hls::XlsModuleEmitter::emitArrayDecl(Value array, bool isFunc,
                                      std::string name) {
   assert(!isDeclared(array) && "has been declared before.");
 
@@ -395,7 +430,7 @@ static bool containsChannelOperations(Region &region) {
   return hasChannelOps;
 }
 
-void XlsModuleEmitter::emitLoopDirectives(Operation *op) {
+void allo::hls::XlsModuleEmitter::emitLoopDirectives(Operation *op) {
   // Check for pipeline attributes first - if pipeline is present, don't unroll
   // Check for pipeline attributes (could be "allo.pipeline" unit attr or
   // "pipeline_ii" with value)
@@ -444,7 +479,7 @@ void XlsModuleEmitter::emitLoopDirectives(Operation *op) {
   }
 }
 
-void XlsModuleEmitter::emitAffineFor(AffineForOp op) {
+void allo::hls::XlsModuleEmitter::emitAffineFor(AffineForOp op) {
   auto iterVar = op.getInductionVar();
   std::string loop_name = "";
   if (op->hasAttr("loop_name")) {
@@ -522,7 +557,7 @@ void XlsModuleEmitter::emitAffineFor(AffineForOp op) {
   os << "}\n";
 }
 
-void XlsModuleEmitter::emitScfFor(scf::ForOp op) {
+void allo::hls::XlsModuleEmitter::emitScfFor(scf::ForOp op) {
   auto iterVar = op.getInductionVar();
 
   // Memory mode compute state: emit normal for loops with local declarations
@@ -564,7 +599,7 @@ void XlsModuleEmitter::emitScfFor(scf::ForOp op) {
   os << "}\n";
 }
 
-void XlsModuleEmitter::emitStreamConstruct(allo::StreamConstructOp op) {
+void allo::hls::XlsModuleEmitter::emitStreamConstruct(allo::StreamConstructOp op) {
   indent();
   Value result = op.getResult();
 
@@ -601,7 +636,7 @@ void XlsModuleEmitter::emitStreamConstruct(allo::StreamConstructOp op) {
   emitInfoAndNewLine(op);
 }
 
-void XlsModuleEmitter::emitArrayDirectives(Value memref) {
+void allo::hls::XlsModuleEmitter::emitArrayDirectives(Value memref) {
   bool emitPragmaFlag = false;
   auto type = llvm::cast<MemRefType>(memref.getType());
 
@@ -617,11 +652,11 @@ void XlsModuleEmitter::emitArrayDirectives(Value memref) {
 
   // For other array directives, delegate to the parent implementation
   // but we need to call the parent method explicitly
-  allo::vhls::ModuleEmitter::emitArrayDirectives(memref);
+  VhlsModuleEmitter::emitArrayDirectives(memref);
 }
 
-void XlsModuleEmitter::emitFlattenedIndex(MemRefType memrefType,
-                                          Operation::operand_range indices) {
+void allo::hls::XlsModuleEmitter::emitFlattenedIndex(MemRefType memrefType,
+                          Operation::operand_range indices) {
   // For __xls_memory (flattened), compute linear index: i * d1 * d2 + j * d2 +
   // k
   auto shape = memrefType.getShape();
@@ -648,7 +683,7 @@ void XlsModuleEmitter::emitFlattenedIndex(MemRefType memrefType,
   }
 }
 
-void XlsModuleEmitter::emitLoad(memref::LoadOp op) {
+void allo::hls::XlsModuleEmitter::emitLoad(memref::LoadOp op) {
   indent();
   Value result = op.getResult();
   fixUnsignedType(result, op->hasAttr("unsigned"));
@@ -664,7 +699,7 @@ void XlsModuleEmitter::emitLoad(memref::LoadOp op) {
   if (attr &&
       llvm::cast<StringAttr>(attr).getValue().str().substr(0, 6) == "stream") {
     // Stream case - use parent's implementation
-    allo::vhls::ModuleEmitter::emitLoad(op);
+    VhlsModuleEmitter::emitLoad(op);
     return;
   }
 
@@ -686,7 +721,7 @@ void XlsModuleEmitter::emitLoad(memref::LoadOp op) {
   emitInfoAndNewLine(op);
 }
 
-void XlsModuleEmitter::emitStore(memref::StoreOp op) {
+void allo::hls::XlsModuleEmitter::emitStore(memref::StoreOp op) {
   indent();
 
   auto memref = op.getMemRef();
@@ -698,7 +733,7 @@ void XlsModuleEmitter::emitStore(memref::StoreOp op) {
   if (attr &&
       llvm::cast<StringAttr>(attr).getValue().str().substr(0, 6) == "stream") {
     // Stream case - use parent's implementation
-    allo::vhls::ModuleEmitter::emitStore(op);
+    VhlsModuleEmitter::emitStore(op);
     return;
   }
 
@@ -723,39 +758,7 @@ void XlsModuleEmitter::emitStore(memref::StoreOp op) {
   emitInfoAndNewLine(op);
 }
 
-void XlsModuleEmitter::emitFlattenedAffineIndex(
-    MemRefType memrefType, AffineMap affineMap,
-    AffineExprEmitter &affineEmitter) {
-  // For __xls_memory (flattened), compute linear index from affine expressions
-  auto shape = memrefType.getShape();
-  auto results = affineMap.getResults();
-  bool first = true;
-
-  for (unsigned i = 0; i < results.size(); ++i) {
-    // Calculate stride (product of all dimensions after this one)
-    int64_t stride = 1;
-    for (unsigned j = i + 1; j < shape.size(); ++j) {
-      stride *= shape[j];
-    }
-
-    if (!first) {
-      os << " + ";
-    }
-    first = false;
-
-    if (stride == 1) {
-      os << "(";
-      affineEmitter.emitAffineExpr(results[i]);
-      os << ")";
-    } else {
-      os << "(";
-      affineEmitter.emitAffineExpr(results[i]);
-      os << ") * " << stride;
-    }
-  }
-}
-
-void XlsModuleEmitter::emitAffineLoad(AffineLoadOp op) {
+void allo::hls::XlsModuleEmitter::emitAffineLoad(AffineLoadOp op) {
   indent();
   std::string load_from_name = "";
   if (op->hasAttr("from")) {
@@ -780,7 +783,7 @@ void XlsModuleEmitter::emitAffineLoad(AffineLoadOp op) {
   if (attr &&
       llvm::cast<StringAttr>(attr).getValue().str().substr(0, 6) == "stream") {
     // Stream case - delegate to parent
-    allo::vhls::ModuleEmitter::emitAffineLoad(op);
+    VhlsModuleEmitter::emitAffineLoad(op);
     return;
   }
 
@@ -788,7 +791,7 @@ void XlsModuleEmitter::emitAffineLoad(AffineLoadOp op) {
   if (USE_MEMORY_FLAG && memrefType.getRank() > 1) {
     // Memory mode with multi-dimensional array: use flattened index
     os << "[";
-    emitFlattenedAffineIndex(memrefType, affineMap, affineEmitter);
+    emitFlattenedAffineIndexHelper(os, memrefType, affineMap, affineEmitter);
     os << "]";
   } else {
     // Register mode or 1D array: use normal indexing
@@ -802,7 +805,7 @@ void XlsModuleEmitter::emitAffineLoad(AffineLoadOp op) {
   emitInfoAndNewLine(op);
 }
 
-void XlsModuleEmitter::emitAffineStore(AffineStoreOp op) {
+void allo::hls::XlsModuleEmitter::emitAffineStore(AffineStoreOp op) {
   indent();
   std::string store_to_name = "";
   if (op->hasAttr("to")) {
@@ -823,7 +826,7 @@ void XlsModuleEmitter::emitAffineStore(AffineStoreOp op) {
   if (attr &&
       llvm::cast<StringAttr>(attr).getValue().str().substr(0, 6) == "stream") {
     // Stream case - delegate to parent
-    allo::vhls::ModuleEmitter::emitAffineStore(op);
+    VhlsModuleEmitter::emitAffineStore(op);
     return;
   }
 
@@ -831,7 +834,7 @@ void XlsModuleEmitter::emitAffineStore(AffineStoreOp op) {
   if (USE_MEMORY_FLAG && memrefType.getRank() > 1) {
     // Memory mode with multi-dimensional array: use flattened index
     os << "[";
-    emitFlattenedAffineIndex(memrefType, affineMap, affineEmitter);
+    emitFlattenedAffineIndexHelper(os, memrefType, affineMap, affineEmitter);
     os << "]";
   } else {
     // Register mode or 1D array: use normal indexing
@@ -848,7 +851,7 @@ void XlsModuleEmitter::emitAffineStore(AffineStoreOp op) {
   emitInfoAndNewLine(op);
 }
 
-void XlsModuleEmitter::emitFunction(func::FuncOp func) {
+void allo::hls::XlsModuleEmitter::emitFunction(func::FuncOp func) {
   if (func->hasAttr("bit"))
     BIT_FLAG = true;
 
@@ -1098,7 +1101,7 @@ void XlsModuleEmitter::emitFunction(func::FuncOp func) {
       // Emit the function body - loops will emit as normal for loops with local
       // declarations
       Block &block = func.front();
-      allo::vhls::ModuleEmitter::emitBlock(block);
+      VhlsModuleEmitter::emitBlock(block);
 
       // After compute completes, transition to output state (or back to 0 if no
       // output)
@@ -1153,7 +1156,7 @@ void XlsModuleEmitter::emitFunction(func::FuncOp func) {
       // Register mode: Use normal function body and loops
       // Emit the function body
       Block &block = func.front();
-      allo::vhls::ModuleEmitter::emitBlock(block);
+      VhlsModuleEmitter::emitBlock(block);
 
       // Handle return value: write array to output channel
       if (returnIsArray && returnValue) {
@@ -1348,7 +1351,7 @@ void XlsModuleEmitter::emitFunction(func::FuncOp func) {
   // Emit the function body using base class
   // ReturnOp visitor in base class just returns true without emitting
   Block &block = func.front();
-  allo::vhls::ModuleEmitter::emitBlock(block);
+  VhlsModuleEmitter::emitBlock(block);
 
   // For XLS HLS, handle return value
   if (returnValue) {
@@ -1422,7 +1425,7 @@ void XlsModuleEmitter::emitFunction(func::FuncOp func) {
   os << "\n";
 }
 
-void XlsModuleEmitter::emitModule(ModuleOp module) {
+void allo::hls::XlsModuleEmitter::emitModule(ModuleOp module) {
   std::string header = R"XXX(
 //===------------------------------------------------------------*- C++ -*-===//
 //
@@ -1449,6 +1452,10 @@ using ac_int = XlsInt<Width, Signed>;
   }
 }
 
+} // namespace hls
+} // namespace allo
+} // namespace mlir
+
 //===----------------------------------------------------------------------===//
 // Entry of allo-translate
 //===----------------------------------------------------------------------===//
@@ -1457,7 +1464,7 @@ LogicalResult allo::emitXlsHLS(ModuleOp module, llvm::raw_ostream &os,
                                bool useMemory) {
   USE_MEMORY_FLAG = useMemory;
   AlloEmitterState state(os);
-  XlsModuleEmitter(state).emitModule(module);
+  hls::XlsModuleEmitter(state).emitModule(module);
   return failure(state.encounteredError);
 }
 

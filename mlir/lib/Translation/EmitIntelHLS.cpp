@@ -298,8 +298,12 @@ private:
 };
 } // namespace
 
+namespace mlir {
+namespace allo {
+namespace hls {
+
 /// C++ component emitters.
-void IntelModuleEmitter::emitValueImpl(Value val, unsigned rank, bool isPtr,
+void allo::hls::IntelModuleEmitter::emitValueImpl(Value val, unsigned rank, bool isPtr,
                                        std::string name, bool noType) {
   assert(!(rank && isPtr) && "should be either an array or a pointer.");
 
@@ -324,7 +328,7 @@ void IntelModuleEmitter::emitValueImpl(Value val, unsigned rank, bool isPtr,
   }
 }
 
-void IntelModuleEmitter::emitLoopDirectives(Operation *op) {
+void allo::hls::IntelModuleEmitter::emitLoopDirectives(Operation *op) {
   if (auto ii = getLoopDirective(op, "pipeline_ii")) {
     indent();
     os << "[[intel::initiation_interval("
@@ -342,7 +346,7 @@ void IntelModuleEmitter::emitLoopDirectives(Operation *op) {
 }
 
 /// Affine statement emitters.
-void IntelModuleEmitter::emitAffineFor(AffineForOp op) {
+void allo::hls::IntelModuleEmitter::emitAffineFor(AffineForOp op) {
   // intel code put directives before the loop
   emitLoopDirectives(op);
 
@@ -409,7 +413,7 @@ void IntelModuleEmitter::emitAffineFor(AffineForOp op) {
   os << "}\n";
 }
 
-void IntelModuleEmitter::emitAffineApply(AffineApplyOp op) {
+void allo::hls::IntelModuleEmitter::emitAffineApply(AffineApplyOp op) {
   indent();
   emitValue(op.getResult());
   os << " = ";
@@ -446,7 +450,7 @@ template <typename OpType> void IntelModuleEmitter::emitAlloc(OpType op) {
   // emitArrayDirectives(result);
 }
 
-void IntelModuleEmitter::emitLoad(memref::LoadOp op) {
+void allo::hls::IntelModuleEmitter::emitLoad(memref::LoadOp op) {
   indent();
   Value result = op.getResult();
   fixUnsignedType(result, op->hasAttr("unsigned"));
@@ -469,7 +473,7 @@ void IntelModuleEmitter::emitLoad(memref::LoadOp op) {
   emitInfoAndNewLine(op);
 }
 
-void IntelModuleEmitter::emitStore(memref::StoreOp op) {
+void allo::hls::IntelModuleEmitter::emitStore(memref::StoreOp op) {
   indent();
   auto memref = op.getMemRef();
   emitValue(memref);
@@ -492,7 +496,7 @@ void IntelModuleEmitter::emitStore(memref::StoreOp op) {
   emitInfoAndNewLine(op);
 }
 
-void IntelModuleEmitter::emitArrayDecl(Value array, bool isFunc,
+void allo::hls::IntelModuleEmitter::emitArrayDecl(Value array, bool isFunc,
                                        std::string name) {
   assert(!isDeclared(array) && "has been declared before.");
 
@@ -535,7 +539,7 @@ void IntelModuleEmitter::emitArrayDecl(Value array, bool isFunc,
     emitValue(array, /*rank=*/0, /*isPtr=*/true, name);
 }
 
-void IntelModuleEmitter::emitBufferDecl(Value array, bool isAccessor,
+void allo::hls::IntelModuleEmitter::emitBufferDecl(Value array, bool isAccessor,
                                         bool isReadOnly, std::string name) {
   auto arrayType = llvm::dyn_cast<ShapedType>(array.getType());
   assert(arrayType.hasStaticShape());
@@ -598,7 +602,7 @@ unsigned IntelModuleEmitter::emitNestedLoopHead(Value val) {
   return rank;
 }
 
-void IntelModuleEmitter::emitAffineLoad(AffineLoadOp op) {
+void allo::hls::IntelModuleEmitter::emitAffineLoad(AffineLoadOp op) {
   indent();
   std::string load_from_name = "";
   if (op->hasAttr("from")) {
@@ -630,7 +634,7 @@ void IntelModuleEmitter::emitAffineLoad(AffineLoadOp op) {
   emitInfoAndNewLine(op);
 }
 
-void IntelModuleEmitter::emitAffineStore(AffineStoreOp op) {
+void allo::hls::IntelModuleEmitter::emitAffineStore(AffineStoreOp op) {
   indent();
   std::string store_to_name = "";
   if (op->hasAttr("to")) {
@@ -666,7 +670,7 @@ void IntelModuleEmitter::emitAffineStore(AffineStoreOp op) {
 // in the generated C++. However, values which will be returned by affine
 // yield operation should not be declared again. How to "bind" the pair of
 // values inside/outside of AffineIf region needs to be considered.
-void IntelModuleEmitter::emitAffineYield(AffineYieldOp op) {
+void allo::hls::IntelModuleEmitter::emitAffineYield(AffineYieldOp op) {
   if (op.getNumOperands() == 0)
     return;
 
@@ -778,7 +782,7 @@ void IntelModuleEmitter::emitAffineYield(AffineYieldOp op) {
   }
 }
 
-void IntelModuleEmitter::emitConstant(arith::ConstantOp op) {
+void allo::hls::IntelModuleEmitter::emitConstant(arith::ConstantOp op) {
   // This indicates the constant type is scalar (float, integer, or bool).
   if (isDeclared(op.getResult()))
     return;
@@ -831,7 +835,7 @@ void IntelModuleEmitter::emitConstant(arith::ConstantOp op) {
 }
 
 template <typename CastOpType>
-void IntelModuleEmitter::emitCast(CastOpType op) {
+void allo::hls::IntelModuleEmitter::emitCast(CastOpType op) {
   indent();
   emitValue(op.getResult());
   os << " = ";
@@ -841,7 +845,7 @@ void IntelModuleEmitter::emitCast(CastOpType op) {
 }
 
 /// MLIR component and HLS C++ pragma emitters.
-void IntelModuleEmitter::emitBlock(Block &block) {
+void allo::hls::IntelModuleEmitter::emitBlock(Block &block) {
   for (auto &op : block) {
     if (ExprVisitor(*this).dispatchVisitor(&op))
       continue;
@@ -854,7 +858,7 @@ void IntelModuleEmitter::emitBlock(Block &block) {
   }
 }
 
-void IntelModuleEmitter::emitFunction(func::FuncOp func, bool isAccessor) {
+void allo::hls::IntelModuleEmitter::emitFunction(func::FuncOp func, bool isAccessor) {
 
   if (func.getBlocks().size() != 1)
     emitError(func, "has zero or more than one basic blocks.");
@@ -950,7 +954,7 @@ void IntelModuleEmitter::emitFunction(func::FuncOp func, bool isAccessor) {
 }
 
 /// Top-level MLIR module emitter.
-void IntelModuleEmitter::emitModule(ModuleOp module) {
+void allo::hls::IntelModuleEmitter::emitModule(ModuleOp module) {
   std::string snippet = R"XXX(
 //===------------------------------------------------------------*- DPC++ -*-===//
 //
@@ -1095,13 +1099,17 @@ int main() {
   os << snippet;
 }
 
+} // namespace hls
+} // namespace allo
+} // namespace mlir
+
 //===----------------------------------------------------------------------===//
 // Entry of allo-translate
 //===----------------------------------------------------------------------===//
 
 LogicalResult allo::emitIntelHLS(ModuleOp module, llvm::raw_ostream &os) {
   AlloEmitterState state(os);
-  IntelModuleEmitter(state).emitModule(module);
+  hls::IntelModuleEmitter(state).emitModule(module);
   return failure(state.encounteredError);
 }
 

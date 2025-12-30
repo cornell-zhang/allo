@@ -510,8 +510,12 @@ bool ExprVisitor::visitOp(allo::CmpFixedOp op) {
 // ModuleEmitter Class Definition
 //===----------------------------------------------------------------------===//
 
+namespace mlir {
+namespace allo {
+namespace hls {
+
 /// SCF statement emitters.
-void TapaModuleEmitter::emitScfFor(scf::ForOp op) {
+void allo::hls::TapaModuleEmitter::emitScfFor(scf::ForOp op) {
   indent();
   os << "for (";
   auto iterVar = op.getInductionVar();
@@ -545,7 +549,7 @@ void TapaModuleEmitter::emitScfFor(scf::ForOp op) {
   os << "}\n";
 }
 
-void TapaModuleEmitter::emitScfIf(scf::IfOp op) {
+void allo::hls::TapaModuleEmitter::emitScfIf(scf::IfOp op) {
   // Declare all values returned by scf::YieldOp. They will be further handled
   // by the scf::YieldOp emitter.
   for (auto result : op.getResults()) {
@@ -581,7 +585,7 @@ void TapaModuleEmitter::emitScfIf(scf::IfOp op) {
   os << "}\n";
 }
 
-void TapaModuleEmitter::emitScfWhile(scf::WhileOp op) {
+void allo::hls::TapaModuleEmitter::emitScfWhile(scf::WhileOp op) {
   // Declare all loop-carried values (results of while loop)
   for (auto result : op.getResults()) {
     if (!isDeclared(result)) {
@@ -639,7 +643,7 @@ void TapaModuleEmitter::emitScfWhile(scf::WhileOp op) {
   }
 }
 
-void TapaModuleEmitter::emitScfCondition(scf::ConditionOp op) {
+void allo::hls::TapaModuleEmitter::emitScfCondition(scf::ConditionOp op) {
   // The scf.condition op passes values to the after region.
   // First, update the after region's arguments with the values from condition
   unsigned operandIdx = 0;
@@ -666,7 +670,7 @@ void TapaModuleEmitter::emitScfCondition(scf::ConditionOp op) {
   os << ")) break;\n";
 }
 
-void TapaModuleEmitter::emitScfYield(scf::YieldOp op) {
+void allo::hls::TapaModuleEmitter::emitScfYield(scf::YieldOp op) {
   if (op.getNumOperands() == 0)
     return;
 
@@ -704,7 +708,7 @@ void TapaModuleEmitter::emitScfYield(scf::YieldOp op) {
 }
 
 /// Affine statement emitters.
-void TapaModuleEmitter::emitAffineFor(AffineForOp op) {
+void allo::hls::TapaModuleEmitter::emitAffineFor(AffineForOp op) {
   indent();
   auto iterVar = op.getInductionVar();
   std::string loop_name = "";
@@ -785,7 +789,7 @@ void TapaModuleEmitter::emitAffineFor(AffineForOp op) {
   os << "}\n";
 }
 
-void TapaModuleEmitter::emitAffineIf(AffineIfOp op) {
+void allo::hls::TapaModuleEmitter::emitAffineIf(AffineIfOp op) {
   // Declare all values returned by AffineYieldOp. They will be further
   // handled by the AffineYieldOp emitter.
   for (auto result : op.getResults()) {
@@ -836,7 +840,7 @@ void TapaModuleEmitter::emitAffineIf(AffineIfOp op) {
   os << "}\n";
 }
 
-void TapaModuleEmitter::emitAffineParallel(AffineParallelOp op) {
+void allo::hls::TapaModuleEmitter::emitAffineParallel(AffineParallelOp op) {
   // Declare all values returned by AffineParallelOp. They will be further
   // handled by the AffineYieldOp emitter.
   for (auto result : op.getResults()) {
@@ -892,7 +896,7 @@ void TapaModuleEmitter::emitAffineParallel(AffineParallelOp op) {
   }
 }
 
-void TapaModuleEmitter::emitAffineApply(AffineApplyOp op) {
+void allo::hls::TapaModuleEmitter::emitAffineApply(AffineApplyOp op) {
   indent();
   emitValue(op.getResult());
   os << " = ";
@@ -904,7 +908,7 @@ void TapaModuleEmitter::emitAffineApply(AffineApplyOp op) {
 }
 
 template <typename OpType>
-void TapaModuleEmitter::emitAffineMaxMin(OpType op, const char *syntax) {
+void allo::hls::TapaModuleEmitter::emitAffineMaxMin(OpType op, const char *syntax) {
   indent();
   emitValue(op.getResult());
   os << " = ";
@@ -924,7 +928,7 @@ void TapaModuleEmitter::emitAffineMaxMin(OpType op, const char *syntax) {
 }
 
 // TODO: overload
-void TapaModuleEmitter::emitAffineLoad(AffineLoadOp op) {
+void allo::hls::TapaModuleEmitter::emitAffineLoad(AffineLoadOp op) {
   indent();
   std::string load_from_name = "";
   if (op->hasAttr("from")) {
@@ -1004,7 +1008,7 @@ void TapaModuleEmitter::emitAffineLoad(AffineLoadOp op) {
 }
 
 // TODO: overload
-void TapaModuleEmitter::emitAffineStore(AffineStoreOp op) {
+void allo::hls::TapaModuleEmitter::emitAffineStore(AffineStoreOp op) {
   indent();
   std::string store_to_name = "";
   if (op->hasAttr("to")) {
@@ -1087,7 +1091,7 @@ void TapaModuleEmitter::emitAffineStore(AffineStoreOp op) {
 // in the generated C++. However, values which will be returned by affine
 // yield operation should not be declared again. How to "bind" the pair of
 // values inside/outside of AffineIf region needs to be considered.
-void TapaModuleEmitter::emitAffineYield(AffineYieldOp op) {
+void allo::hls::TapaModuleEmitter::emitAffineYield(AffineYieldOp op) {
   if (op.getNumOperands() == 0)
     return;
 
@@ -1225,7 +1229,7 @@ template <typename OpType> void TapaModuleEmitter::emitAlloc(OpType op) {
   emitArrayDirectives(result);
 }
 
-void TapaModuleEmitter::emitLoad(memref::LoadOp op) {
+void allo::hls::TapaModuleEmitter::emitLoad(memref::LoadOp op) {
   indent();
   Value result = op.getResult();
   fixUnsignedType(result, op->hasAttr("unsigned"));
@@ -1267,7 +1271,7 @@ void TapaModuleEmitter::emitLoad(memref::LoadOp op) {
   emitInfoAndNewLine(op);
 }
 
-void TapaModuleEmitter::emitStore(memref::StoreOp op) {
+void allo::hls::TapaModuleEmitter::emitStore(memref::StoreOp op) {
   indent();
   auto memref = op.getMemRef();
   emitValue(memref);
@@ -1309,7 +1313,7 @@ void TapaModuleEmitter::emitStore(memref::StoreOp op) {
   emitInfoAndNewLine(op);
 }
 
-void TapaModuleEmitter::emitGetGlobal(memref::GetGlobalOp op) {
+void allo::hls::TapaModuleEmitter::emitGetGlobal(memref::GetGlobalOp op) {
   indent();
   os << "// placeholder for const ";
   Value result = op.getResult();
@@ -1318,7 +1322,7 @@ void TapaModuleEmitter::emitGetGlobal(memref::GetGlobalOp op) {
   emitInfoAndNewLine(op);
 }
 
-void TapaModuleEmitter::emitGetGlobalFixed(allo::GetGlobalFixedOp op) {
+void allo::hls::TapaModuleEmitter::emitGetGlobalFixed(allo::GetGlobalFixedOp op) {
   indent();
   os << "// const ";
   Value result = op.getResult();
@@ -1328,7 +1332,7 @@ void TapaModuleEmitter::emitGetGlobalFixed(allo::GetGlobalFixedOp op) {
   emitInfoAndNewLine(op);
 }
 
-void TapaModuleEmitter::emitGlobal(memref::GlobalOp op) {
+void allo::hls::TapaModuleEmitter::emitGlobal(memref::GlobalOp op) {
   auto init_val = op.getInitialValue();
   if (!init_val.has_value())
     return;
@@ -1394,7 +1398,7 @@ void TapaModuleEmitter::emitGlobal(memref::GlobalOp op) {
   }
 }
 
-void TapaModuleEmitter::emitSubView(memref::SubViewOp op) {
+void allo::hls::TapaModuleEmitter::emitSubView(memref::SubViewOp op) {
   indent();
   emitArrayDecl(op.getResult(), true);
   os << " = ";
@@ -1408,7 +1412,7 @@ void TapaModuleEmitter::emitSubView(memref::SubViewOp op) {
   emitInfoAndNewLine(op);
 }
 
-void TapaModuleEmitter::emitTensorExtract(tensor::ExtractOp op) {
+void allo::hls::TapaModuleEmitter::emitTensorExtract(tensor::ExtractOp op) {
   indent();
   emitValue(op.getResult());
   os << " = ";
@@ -1422,7 +1426,7 @@ void TapaModuleEmitter::emitTensorExtract(tensor::ExtractOp op) {
   emitInfoAndNewLine(op);
 }
 
-void TapaModuleEmitter::emitTensorInsert(tensor::InsertOp op) {
+void allo::hls::TapaModuleEmitter::emitTensorInsert(tensor::InsertOp op) {
   indent();
   emitValue(op.getDest());
   for (auto index : op.getIndices()) {
@@ -1436,7 +1440,7 @@ void TapaModuleEmitter::emitTensorInsert(tensor::InsertOp op) {
   emitInfoAndNewLine(op);
 }
 
-void TapaModuleEmitter::emitDim(memref::DimOp op) {
+void allo::hls::TapaModuleEmitter::emitDim(memref::DimOp op) {
   if (auto constOp =
           dyn_cast<arith::ConstantOp>(op.getOperand(1).getDefiningOp())) {
     auto constVal = llvm::dyn_cast<IntegerAttr>(constOp.getValue()).getInt();
@@ -1457,7 +1461,7 @@ void TapaModuleEmitter::emitDim(memref::DimOp op) {
     emitError(op, "index is not a constant.");
 }
 
-void TapaModuleEmitter::emitRank(memref::RankOp op) {
+void allo::hls::TapaModuleEmitter::emitRank(memref::RankOp op) {
   auto type = llvm::dyn_cast<ShapedType>(op.getOperand().getType());
   if (type.hasRank()) {
     indent();
@@ -1470,7 +1474,7 @@ void TapaModuleEmitter::emitRank(memref::RankOp op) {
 }
 
 /// Special operation emitters.
-void TapaModuleEmitter::emitStreamConstruct(StreamConstructOp op) {
+void allo::hls::TapaModuleEmitter::emitStreamConstruct(StreamConstructOp op) {
   indent();
   Value result = op.getResult();
   fixUnsignedType(result, op->hasAttr("unsigned"));
@@ -1496,7 +1500,7 @@ void TapaModuleEmitter::emitStreamConstruct(StreamConstructOp op) {
   emitInfoAndNewLine(op);
 }
 
-void TapaModuleEmitter::emitStreamGet(StreamGetOp op) {
+void allo::hls::TapaModuleEmitter::emitStreamGet(StreamGetOp op) {
   int rank = 0;
   Value result = op.getResult();
   fixUnsignedType(result, op->hasAttr("unsigned"));
@@ -1542,7 +1546,7 @@ void TapaModuleEmitter::emitStreamGet(StreamGetOp op) {
   emitInfoAndNewLine(op);
 }
 
-void TapaModuleEmitter::emitStreamPut(StreamPutOp op) {
+void allo::hls::TapaModuleEmitter::emitStreamPut(StreamPutOp op) {
   int rank = 0;
   auto stream = op->getOperand(0);
   if (llvm::isa<StreamType>(stream.getType())) {
@@ -1584,7 +1588,7 @@ void TapaModuleEmitter::emitStreamPut(StreamPutOp op) {
   emitInfoAndNewLine(op);
 }
 
-void TapaModuleEmitter::emitGetBit(allo::GetIntBitOp op) {
+void allo::hls::TapaModuleEmitter::emitGetBit(allo::GetIntBitOp op) {
   indent();
   Value result = op.getResult();
   fixUnsignedType(result, op->hasAttr("unsigned"));
@@ -1605,7 +1609,7 @@ void TapaModuleEmitter::emitGetBit(allo::GetIntBitOp op) {
   emitInfoAndNewLine(op);
 }
 
-void TapaModuleEmitter::emitSetBit(allo::SetIntBitOp op) {
+void allo::hls::TapaModuleEmitter::emitSetBit(allo::SetIntBitOp op) {
   indent();
   // generate ap_int types
   os << "ap_int<" << op.getNum().getType().getIntOrFloatBitWidth() << "> ";
@@ -1630,7 +1634,7 @@ void TapaModuleEmitter::emitSetBit(allo::SetIntBitOp op) {
   emitInfoAndNewLine(op);
 }
 
-void TapaModuleEmitter::emitGetSlice(allo::GetIntSliceOp op) {
+void allo::hls::TapaModuleEmitter::emitGetSlice(allo::GetIntSliceOp op) {
   indent();
   Value result = op.getResult();
   fixUnsignedType(result, op->hasAttr("unsigned"));
@@ -1653,7 +1657,7 @@ void TapaModuleEmitter::emitGetSlice(allo::GetIntSliceOp op) {
   emitInfoAndNewLine(op);
 }
 
-void TapaModuleEmitter::emitSetSlice(allo::SetIntSliceOp op) {
+void allo::hls::TapaModuleEmitter::emitSetSlice(allo::SetIntSliceOp op) {
   indent();
   // T v;
   // v(a, b) = x;
@@ -1683,7 +1687,7 @@ void TapaModuleEmitter::emitSetSlice(allo::SetIntSliceOp op) {
   emitInfoAndNewLine(op);
 }
 
-void TapaModuleEmitter::emitBitReverse(allo::BitReverseOp op) {
+void allo::hls::TapaModuleEmitter::emitBitReverse(allo::BitReverseOp op) {
   indent();
   Value result = op.getResult();
   fixUnsignedType(result, op->hasAttr("unsigned"));
@@ -1694,7 +1698,7 @@ void TapaModuleEmitter::emitBitReverse(allo::BitReverseOp op) {
   emitInfoAndNewLine(op);
 }
 
-void TapaModuleEmitter::emitReshape(memref::ReshapeOp op) {
+void allo::hls::TapaModuleEmitter::emitReshape(memref::ReshapeOp op) {
   auto array = op->getResult(0);
   assert(!isDeclared(array) && "has been declared before.");
 
@@ -1718,7 +1722,7 @@ void TapaModuleEmitter::emitReshape(memref::ReshapeOp op) {
   emitInfoAndNewLine(op);
 }
 
-void TapaModuleEmitter::emitSelect(arith::SelectOp op) {
+void allo::hls::TapaModuleEmitter::emitSelect(arith::SelectOp op) {
   unsigned rank = emitNestedLoopHead(op.getResult());
   unsigned conditionRank = rank;
   if (!llvm::isa<ShapedType>(op.getCondition().getType()))
@@ -1745,7 +1749,7 @@ void TapaModuleEmitter::emitSelect(arith::SelectOp op) {
   emitNestedLoopTail(rank);
 }
 
-void TapaModuleEmitter::emitConstant(arith::ConstantOp op) {
+void allo::hls::TapaModuleEmitter::emitConstant(arith::ConstantOp op) {
   // This indicates the constant type is scalar (float, integer, or bool).
   if (isDeclared(op.getResult()))
     return;
@@ -1797,7 +1801,7 @@ void TapaModuleEmitter::emitConstant(arith::ConstantOp op) {
     emitError(op, "has unsupported constant type.");
 }
 
-void TapaModuleEmitter::emitBitcast(arith::BitcastOp op) {
+void allo::hls::TapaModuleEmitter::emitBitcast(arith::BitcastOp op) {
   indent();
   Value result = op.getResult();
   fixUnsignedType(result, op->hasAttr("unsigned"));
@@ -1835,7 +1839,7 @@ template <typename CastOpType> void TapaModuleEmitter::emitCast(CastOpType op) {
   emitInfoAndNewLine(op);
 }
 
-void TapaModuleEmitter::emitGeneralCast(UnrealizedConversionCastOp op) {
+void allo::hls::TapaModuleEmitter::emitGeneralCast(UnrealizedConversionCastOp op) {
   indent();
   emitValue(op.getResult(0));
   os << " = ";
@@ -1845,7 +1849,7 @@ void TapaModuleEmitter::emitGeneralCast(UnrealizedConversionCastOp op) {
 }
 
 // TODO: overload
-void TapaModuleEmitter::emitCall(func::CallOp op) {
+void allo::hls::TapaModuleEmitter::emitCall(func::CallOp op) {
   // Handle returned value by the callee.
   for (auto result : op.getResults()) {
     if (!isDeclared(result)) {
@@ -1912,7 +1916,7 @@ void TapaModuleEmitter::emitCall(func::CallOp op) {
 }
 
 /// C++ component emitters.
-void TapaModuleEmitter::emitValueImpl(Value val, unsigned rank, bool isPtr,
+void allo::hls::TapaModuleEmitter::emitValueImpl(Value val, unsigned rank, bool isPtr,
                                       std::string name, bool isMmap) {
   assert(!(rank && isPtr) && "should be either an array or a pointer.");
 
@@ -1940,7 +1944,7 @@ void TapaModuleEmitter::emitValueImpl(Value val, unsigned rank, bool isPtr,
   }
 }
 
-void TapaModuleEmitter::emitArrayDeclImpl(Value array, bool isFunc,
+void allo::hls::TapaModuleEmitter::emitArrayDeclImpl(Value array, bool isFunc,
                                           std::string name, char type) {
   assert(!isDeclared(array) && "has been declared before.");
 
@@ -2038,7 +2042,7 @@ unsigned TapaModuleEmitter::emitNestedLoopHead(Value val) {
 }
 
 /// MLIR component and HLS C++ pragma emitters.
-void TapaModuleEmitter::emitBlock(Block &block) {
+void allo::hls::TapaModuleEmitter::emitBlock(Block &block) {
   for (auto &op : block) {
     if (ExprVisitor(*this).dispatchVisitor(&op))
       continue;
@@ -2051,7 +2055,7 @@ void TapaModuleEmitter::emitBlock(Block &block) {
 }
 
 // TODO: overload
-void TapaModuleEmitter::emitLoopDirectives(Operation *op) {
+void allo::hls::TapaModuleEmitter::emitLoopDirectives(Operation *op) {
   if (auto ii = getLoopDirective(op, "pipeline_ii")) {
     reduceIndent();
     indent();
@@ -2080,7 +2084,7 @@ void TapaModuleEmitter::emitLoopDirectives(Operation *op) {
   }
 }
 
-void TapaModuleEmitter::emitArrayDirectives(Value memref) {
+void allo::hls::TapaModuleEmitter::emitArrayDirectives(Value memref) {
   bool emitPragmaFlag = false;
   auto type = llvm::dyn_cast<MemRefType>(memref.getType());
 
@@ -2249,7 +2253,7 @@ void TapaModuleEmitter::emitArrayDirectives(Value memref) {
 }
 
 // TODO: overload
-void TapaModuleEmitter::emitFunctionDirectives(func::FuncOp func,
+void allo::hls::TapaModuleEmitter::emitFunctionDirectives(func::FuncOp func,
                                                ArrayRef<Value> portList) {
   // auto funcDirect = getFuncDirective(func);
   // if (!funcDirect)
@@ -2329,7 +2333,7 @@ void TapaModuleEmitter::emitFunctionDirectives(func::FuncOp func,
 }
 
 // TODO: overload
-void TapaModuleEmitter::emitFunction(func::FuncOp func) {
+void allo::hls::TapaModuleEmitter::emitFunction(func::FuncOp func) {
   if (func->hasAttr("bit"))
     BIT_FLAG = true;
 
@@ -2503,7 +2507,7 @@ void TapaModuleEmitter::emitFunction(func::FuncOp func) {
   os << "\n";
 }
 
-void TapaModuleEmitter::emitHostFunction(func::FuncOp func) {
+void allo::hls::TapaModuleEmitter::emitHostFunction(func::FuncOp func) {
   if (func.getBlocks().size() != 1)
     emitError(func, "has zero or more than one basic blocks.");
 
@@ -2525,7 +2529,7 @@ void TapaModuleEmitter::emitHostFunction(func::FuncOp func) {
 
 /// Top-level MLIR module emitter.
 // TODO: overload
-void TapaModuleEmitter::emitModule(ModuleOp module) {
+void allo::hls::TapaModuleEmitter::emitModule(ModuleOp module) {
   std::string device_header = R"XXX(
 //===------------------------------------------------------------*- C++ -*-===//
 //
@@ -2593,13 +2597,17 @@ using namespace std;
   }
 }
 
+} // namespace hls
+} // namespace allo
+} // namespace mlir
+
 //===----------------------------------------------------------------------===//
 // Entry of allo-translate
 //===----------------------------------------------------------------------===//
 
 LogicalResult allo::emitTapaHLS(ModuleOp module, llvm::raw_ostream &os) {
   AlloEmitterState state(os);
-  TapaModuleEmitter(state).emitModule(module);
+  hls::TapaModuleEmitter(state).emitModule(module);
   return failure(state.encounteredError);
 }
 

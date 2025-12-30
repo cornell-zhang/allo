@@ -53,10 +53,6 @@ protected:
   void emitFlattenedIndex(MemRefType memrefType,
                           Operation::operand_range indices);
 
-  /// Helper to emit flattened affine index.
-  void emitFlattenedAffineIndex(MemRefType memrefType, AffineMap affineMap,
-                                class AffineExprEmitter &affineEmitter);
-
   /// Helper method to get XLS-specific type names.
   SmallString<16> getTypeName(Type valType);
   SmallString<16> getTypeName(Value val);
