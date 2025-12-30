@@ -528,50 +528,55 @@ def allo_to_numpy_dtype(allo_type: AlloType) -> npt.DTypeLike:
         Corresponding numpy data type
     """
 
+    dtype = np.float32
+
     if isinstance(allo_type, Int):
         if allo_type.bits <= 8:
-            return np.int8
-        if allo_type.bits <= 16:
-            return np.int16
-        if allo_type.bits <= 32:
-            return np.int32
-        if allo_type.bits <= 64:
-            return np.int64
+            dtype = np.int8
+        elif allo_type.bits <= 16:
+            dtype = np.int16
+        elif allo_type.bits <= 32:
+            dtype = np.int32
+        elif allo_type.bits <= 64:
+            dtype = np.int64
         # For arbitrary precision, use int64 as fallback
-        return np.int64
+        else:
+            dtype = np.int64
 
-    if isinstance(allo_type, UInt):
+    elif isinstance(allo_type, UInt):
         if allo_type.bits <= 8:
-            return np.uint8
-        if allo_type.bits <= 16:
-            return np.uint16
-        if allo_type.bits <= 32:
-            return np.uint32
-        if allo_type.bits <= 64:
-            return np.uint64
-        return np.uint64
+            dtype = np.uint8
+        elif allo_type.bits <= 16:
+            dtype = np.uint16
+        elif allo_type.bits <= 32:
+            dtype = np.uint32
+        elif allo_type.bits <= 64:
+            dtype = np.uint64
+        else:
+            dtype = np.uint64
 
-    if isinstance(allo_type, Float):
+    elif isinstance(allo_type, Float):
         if allo_type.bits == 16:
-            return np.float16
-        if allo_type.bits == 32:
-            return np.float32
-        if allo_type.bits == 64:
-            return np.float64
-        return np.float32
+            dtype = np.float16
+        elif allo_type.bits == 32:
+            dtype = np.float32
+        elif allo_type.bits == 64:
+            dtype = np.float64
+        else:
+            dtype = np.float32
 
-    if isinstance(allo_type, Index):
-        return np.int32
+    elif isinstance(allo_type, Index):
+        dtype = np.int32
 
-    if isinstance(allo_type, (Fixed, UFixed)):
+    elif isinstance(allo_type, (Fixed, UFixed)):
         # Fixed point: use integer type of same bitwidth
         if allo_type.bits <= 8:
-            return np.int8 if isinstance(allo_type, Fixed) else np.uint8
-        if allo_type.bits <= 16:
-            return np.int16 if isinstance(allo_type, Fixed) else np.uint16
-        if allo_type.bits <= 32:
-            return np.int32 if isinstance(allo_type, Fixed) else np.uint32
-        return np.int64 if isinstance(allo_type, Fixed) else np.uint64
+            dtype = np.int8 if isinstance(allo_type, Fixed) else np.uint8
+        elif allo_type.bits <= 16:
+            dtype = np.int16 if isinstance(allo_type, Fixed) else np.uint16
+        elif allo_type.bits <= 32:
+            dtype = np.int32 if isinstance(allo_type, Fixed) else np.uint32
+        else:
+            dtype = np.int64 if isinstance(allo_type, Fixed) else np.uint64
 
-    # Safe default
-    return np.float32
+    return dtype
