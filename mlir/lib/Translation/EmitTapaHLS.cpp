@@ -908,7 +908,8 @@ void allo::hls::TapaModuleEmitter::emitAffineApply(AffineApplyOp op) {
 }
 
 template <typename OpType>
-void allo::hls::TapaModuleEmitter::emitAffineMaxMin(OpType op, const char *syntax) {
+void allo::hls::TapaModuleEmitter::emitAffineMaxMin(OpType op,
+                                                    const char *syntax) {
   indent();
   emitValue(op.getResult());
   os << " = ";
@@ -1322,7 +1323,8 @@ void allo::hls::TapaModuleEmitter::emitGetGlobal(memref::GetGlobalOp op) {
   emitInfoAndNewLine(op);
 }
 
-void allo::hls::TapaModuleEmitter::emitGetGlobalFixed(allo::GetGlobalFixedOp op) {
+void allo::hls::TapaModuleEmitter::emitGetGlobalFixed(
+    allo::GetGlobalFixedOp op) {
   indent();
   os << "// const ";
   Value result = op.getResult();
@@ -1839,7 +1841,8 @@ template <typename CastOpType> void TapaModuleEmitter::emitCast(CastOpType op) {
   emitInfoAndNewLine(op);
 }
 
-void allo::hls::TapaModuleEmitter::emitGeneralCast(UnrealizedConversionCastOp op) {
+void allo::hls::TapaModuleEmitter::emitGeneralCast(
+    UnrealizedConversionCastOp op) {
   indent();
   emitValue(op.getResult(0));
   os << " = ";
@@ -1916,8 +1919,9 @@ void allo::hls::TapaModuleEmitter::emitCall(func::CallOp op) {
 }
 
 /// C++ component emitters.
-void allo::hls::TapaModuleEmitter::emitValueImpl(Value val, unsigned rank, bool isPtr,
-                                      std::string name, bool isMmap) {
+void allo::hls::TapaModuleEmitter::emitValueImpl(Value val, unsigned rank,
+                                                 bool isPtr, std::string name,
+                                                 bool isMmap) {
   assert(!(rank && isPtr) && "should be either an array or a pointer.");
 
   // Value has been declared before or is a constant number.
@@ -1945,7 +1949,8 @@ void allo::hls::TapaModuleEmitter::emitValueImpl(Value val, unsigned rank, bool 
 }
 
 void allo::hls::TapaModuleEmitter::emitArrayDeclImpl(Value array, bool isFunc,
-                                          std::string name, char type) {
+                                                     std::string name,
+                                                     char type) {
   assert(!isDeclared(array) && "has been declared before.");
 
   auto arrayType = llvm::dyn_cast<ShapedType>(array.getType());
@@ -2253,8 +2258,8 @@ void allo::hls::TapaModuleEmitter::emitArrayDirectives(Value memref) {
 }
 
 // TODO: overload
-void allo::hls::TapaModuleEmitter::emitFunctionDirectives(func::FuncOp func,
-                                               ArrayRef<Value> portList) {
+void allo::hls::TapaModuleEmitter::emitFunctionDirectives(
+    func::FuncOp func, ArrayRef<Value> portList) {
   // auto funcDirect = getFuncDirective(func);
   // if (!funcDirect)
   //   return;

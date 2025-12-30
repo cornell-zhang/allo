@@ -19,4 +19,3 @@ MlirLogicalResult mlirEmitXlsHls(MlirModule module,
   mlir::detail::CallbackOstream stream(callback, userData);
   return wrap(emitXlsHLS(unwrap(module), stream, useMemory));
 }
-

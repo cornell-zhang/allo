@@ -194,9 +194,10 @@ private:
 };
 
 /// Local helper to emit flattened affine index.
-static void emitFlattenedAffineIndexHelper(
-    raw_ostream &os, MemRefType memrefType, AffineMap affineMap,
-    AffineExprEmitter &affineEmitter) {
+static void emitFlattenedAffineIndexHelper(raw_ostream &os,
+                                           MemRefType memrefType,
+                                           AffineMap affineMap,
+                                           AffineExprEmitter &affineEmitter) {
   // For __xls_memory (flattened), compute linear index from affine expressions
   auto shape = memrefType.getShape();
   auto results = affineMap.getResults();
@@ -244,8 +245,8 @@ SmallString<16> allo::hls::XlsModuleEmitter::getTypeName(Value val) {
   return getXLSTypeName(val.getType());
 }
 
-void allo::hls::XlsModuleEmitter::emitValue(Value val, unsigned rank, bool isPtr,
-                                 std::string name) {
+void allo::hls::XlsModuleEmitter::emitValue(Value val, unsigned rank,
+                                            bool isPtr, std::string name) {
   (void)rank;
   (void)isPtr;
 
@@ -264,8 +265,8 @@ void allo::hls::XlsModuleEmitter::emitValue(Value val, unsigned rank, bool isPtr
   }
 }
 
-void allo::hls::XlsModuleEmitter::emitFunctionDirectives(func::FuncOp func,
-                                              ArrayRef<Value> portList) {
+void allo::hls::XlsModuleEmitter::emitFunctionDirectives(
+    func::FuncOp func, ArrayRef<Value> portList) {
   // Note: #pragma hls_top is emitted at function definition level, not here
   // This function handles array directives for function ports
   for (auto &port : portList)
@@ -274,7 +275,7 @@ void allo::hls::XlsModuleEmitter::emitFunctionDirectives(func::FuncOp func,
 }
 
 void allo::hls::XlsModuleEmitter::emitArrayDecl(Value array, bool isFunc,
-                                     std::string name) {
+                                                std::string name) {
   assert(!isDeclared(array) && "has been declared before.");
 
   auto shapedType = llvm::dyn_cast<ShapedType>(array.getType());
@@ -599,7 +600,8 @@ void allo::hls::XlsModuleEmitter::emitScfFor(scf::ForOp op) {
   os << "}\n";
 }
 
-void allo::hls::XlsModuleEmitter::emitStreamConstruct(allo::StreamConstructOp op) {
+void allo::hls::XlsModuleEmitter::emitStreamConstruct(
+    allo::StreamConstructOp op) {
   indent();
   Value result = op.getResult();
 
@@ -655,8 +657,8 @@ void allo::hls::XlsModuleEmitter::emitArrayDirectives(Value memref) {
   VhlsModuleEmitter::emitArrayDirectives(memref);
 }
 
-void allo::hls::XlsModuleEmitter::emitFlattenedIndex(MemRefType memrefType,
-                          Operation::operand_range indices) {
+void allo::hls::XlsModuleEmitter::emitFlattenedIndex(
+    MemRefType memrefType, Operation::operand_range indices) {
   // For __xls_memory (flattened), compute linear index: i * d1 * d2 + j * d2 +
   // k
   auto shape = memrefType.getShape();

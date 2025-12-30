@@ -303,8 +303,9 @@ namespace allo {
 namespace hls {
 
 /// C++ component emitters.
-void allo::hls::IntelModuleEmitter::emitValueImpl(Value val, unsigned rank, bool isPtr,
-                                       std::string name, bool noType) {
+void allo::hls::IntelModuleEmitter::emitValueImpl(Value val, unsigned rank,
+                                                  bool isPtr, std::string name,
+                                                  bool noType) {
   assert(!(rank && isPtr) && "should be either an array or a pointer.");
 
   // Value has been declared before or is a constant number.
@@ -497,7 +498,7 @@ void allo::hls::IntelModuleEmitter::emitStore(memref::StoreOp op) {
 }
 
 void allo::hls::IntelModuleEmitter::emitArrayDecl(Value array, bool isFunc,
-                                       std::string name) {
+                                                  std::string name) {
   assert(!isDeclared(array) && "has been declared before.");
 
   auto arrayType = llvm::dyn_cast<ShapedType>(array.getType());
@@ -540,7 +541,8 @@ void allo::hls::IntelModuleEmitter::emitArrayDecl(Value array, bool isFunc,
 }
 
 void allo::hls::IntelModuleEmitter::emitBufferDecl(Value array, bool isAccessor,
-                                        bool isReadOnly, std::string name) {
+                                                   bool isReadOnly,
+                                                   std::string name) {
   auto arrayType = llvm::dyn_cast<ShapedType>(array.getType());
   assert(arrayType.hasStaticShape());
   auto memref = llvm::dyn_cast<MemRefType>(array.getType());
@@ -858,7 +860,8 @@ void allo::hls::IntelModuleEmitter::emitBlock(Block &block) {
   }
 }
 
-void allo::hls::IntelModuleEmitter::emitFunction(func::FuncOp func, bool isAccessor) {
+void allo::hls::IntelModuleEmitter::emitFunction(func::FuncOp func,
+                                                 bool isAccessor) {
 
   if (func.getBlocks().size() != 1)
     emitError(func, "has zero or more than one basic blocks.");
