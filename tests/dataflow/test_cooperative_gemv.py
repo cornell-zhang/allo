@@ -13,32 +13,32 @@ Mt = M // P0
 
 
 @df.region()
-def top():
+def top(A: Ty[M, N], x: Ty[N], y: Ty[M]):
     pipe: Stream[Ty[Mt], 2][P0]
 
-    @df.kernel(mapping=[P0])
-    def gemv0(A: Ty[M, N], x: Ty[N]):
+    @df.kernel(mapping=[P0], args=[A, x])
+    def gemv0(local_A: Ty[M, N], local_x: Ty[N]):
         pi = df.get_pid()
         y_out: Ty[Mt] = 0
         for m in range(pi * Mt, (pi + 1) * Mt):
             y_acc: Ty = 0
             for n in range(N // 2):
-                y_acc += A[m, n] * x[n]
+                y_acc += local_A[m, n] * local_x[n]
             y_out[m - pi * Mt] = y_acc
         pipe[pi].put(y_out)
 
-    @df.kernel(mapping=[P0])
-    def gemv1(A: Ty[M, N], x: Ty[N], y: Ty[M]):
+    @df.kernel(mapping=[P0], args=[A, x, y])
+    def gemv1(local_A: Ty[M, N], local_x: Ty[N], local_y: Ty[M]):
         pi = df.get_pid()
         y_out: Ty[Mt] = 0
         for m in range(pi * Mt, (pi + 1) * Mt):
             y_acc: Ty = 0
             for n in range(N // 2, N):
-                y_acc += A[m, n] * x[n]
+                y_acc += local_A[m, n] * local_x[n]
             y_out[m - pi * Mt] = y_acc
         y_prev: Ty[Mt] = pipe[pi].get()
         for m in range(pi * Mt, (pi + 1) * Mt):
-            y[m] = y_out[m - pi * Mt] + y_prev[m - pi * Mt]
+            local_y[m] = y_out[m - pi * Mt] + y_prev[m - pi * Mt]
 
 
 def test_cooperative_gemv():

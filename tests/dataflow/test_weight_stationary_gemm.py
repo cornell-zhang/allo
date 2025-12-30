@@ -12,12 +12,12 @@ P0, P1 = K, N + 2
 
 
 @df.region()
-def top():
+def top(A: float32[M, K], B: float32[K, N], C: float32[M, N]):
     fifo_A: Stream[float32, 4][P0, P1]
     fifo_B: Stream[float32, 4][P0, P1]
 
-    @df.kernel(mapping=[P0, P1])
-    def gemm(A: float32[M, K], B: float32[K, N], C: float32[M, N]):
+    @df.kernel(mapping=[P0, P1], args=[A, B, C])
+    def gemm(local_A: float32[M, K], local_B: float32[K, N], local_C: float32[M, N]):
         # Weight stationary GEMM systolic array
         # B is the matrix that contains the stationary weights
         i, j = df.get_pid()
@@ -25,7 +25,7 @@ def top():
         # periperals kernels
         with allo.meta_if(j == 0):
             for m in range(M):
-                fifo_A[i, j + 1].put(A[m, i])
+                fifo_A[i, j + 1].put(local_A[m, i])
 
         # drain
         with allo.meta_elif(j == N + 1):
@@ -36,7 +36,7 @@ def top():
         # There are three cases: i == 0, i == K - 1, and the rest
         with allo.meta_elif(i == 0):
             # Does not take partial sum from the previous PE
-            b: float32 = B[i, j - 1]
+            b: float32 = local_B[i, j - 1]
             for m in range(M):
                 a = fifo_A[i, j].get()
                 fifo_A[i, j + 1].put(a)
@@ -44,15 +44,15 @@ def top():
         with allo.meta_elif(i == K - 1):
             # Does not keep passing the partial sum to the next PE
             # Concludes the computation and writes to the output
-            b: float32 = B[i, j - 1]
+            b: float32 = local_B[i, j - 1]
             for m in range(M):
                 partial_sum = fifo_B[i, j].get()
                 a = fifo_A[i, j].get()
-                C[m, j - 1] = partial_sum + a * b
+                local_C[m, j - 1] = partial_sum + a * b
                 fifo_A[i, j + 1].put(a)
         with allo.meta_else():
             # Continues the computation
-            b: float32 = B[i, j - 1]
+            b: float32 = local_B[i, j - 1]
             for m in range(M):
                 partial_sum = fifo_B[i, j].get()
                 a = fifo_A[i, j].get()

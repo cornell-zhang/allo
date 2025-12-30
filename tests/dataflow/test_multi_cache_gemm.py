@@ -25,7 +25,7 @@ P0, P1 = Rt + 2, Ct + 2
 
 
 @df.region()
-def top():
+def top(A_Packed: UInt(Rt * 8)[M * K // Rt], B_Packed: UInt(Ct * 8)[K * N // Ct], C_Packed: UInt(Rt * 8)[M * N // Rt]):
     L3_A: Stream[UInt(Rt * 8), 4]
     L3_B: Stream[UInt(Ct * 8), 4]
     L3_C: Stream[UInt(Rt * 8), 4]
@@ -39,19 +39,19 @@ def top():
     fifo_A: Stream[int8, 4][Rt, Ct]
     fifo_B: Stream[int8, 4][Rt, Ct]
 
-    @df.kernel(mapping=[1])
-    def offchip_loadA(A_Packed: UInt(Rt * 8)[M * K // Rt]):
+    @df.kernel(mapping=[1], args=[A_Packed])
+    def offchip_loadA(local_A_Packed: UInt(Rt * 8)[M * K // Rt]):
         for mt, nt in dsl.grid(M // Rt, N // Ct):
             for k in range(K):
-                L3_A.put(A_Packed[mt * K + k])
+                L3_A.put(local_A_Packed[mt * K + k])
 
-    @df.kernel(mapping=[1])
-    def offchip_loadB(B_Packed: UInt(Ct * 8)[K * N // Ct]):
+    @df.kernel(mapping=[1], args=[B_Packed])
+    def offchip_loadB(local_B_Packed: UInt(Ct * 8)[K * N // Ct]):
         for mt, nt in dsl.grid(M // Rt, N // Ct):
             for k in range(K):
-                L3_B.put(B_Packed[nt * K + k])
+                L3_B.put(local_B_Packed[nt * K + k])
 
-    @df.kernel(mapping=[P0, P1])
+    @df.kernel(mapping=[P0, P1], args=[])
     def gemm():
         i, j = df.get_pid()
         # peripheral kernels
@@ -126,11 +126,11 @@ def top():
                         packed_c[m * 8 : (m + 1) * 8] = packed_tmp[m * 8 : (m + 1) * 8]
                 L1_C[i - 1, j - 1].put(packed_c)
 
-    @df.kernel(mapping=[1])
-    def offchip_store(C_Packed: UInt(Rt * 8)[M * N // Rt]):
+    @df.kernel(mapping=[1], args=[C_Packed])
+    def offchip_store(local_C_Packed: UInt(Rt * 8)[M * N // Rt]):
         for mt, nt in dsl.grid(M // Rt, N // Ct):
             for n in range(Ct):
-                C_Packed[mt * N + nt * Ct + n] = L3_C.get()
+                local_C_Packed[mt * N + nt * Ct + n] = L3_C.get()
 
 
 @pytest.mark.skip(

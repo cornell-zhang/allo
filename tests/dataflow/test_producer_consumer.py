@@ -14,24 +14,24 @@ M, N, K = 16, 16, 16
 
 
 @df.region()
-def top():
+def top(A: Ty[M, N], B: Ty[M, N]):
     pipe: Stream[Ty, 4]
 
-    @df.kernel(mapping=[1])
-    def producer(A: Ty[M, N]):
+    @df.kernel(mapping=[1], args=[A])
+    def producer(local_A: Ty[M, N]):
         for i, j in allo.grid(M, N):
             # load data
-            out: Ty = A[i, j]
+            out: Ty = local_A[i, j]
             # send data
             pipe.put(out)
 
-    @df.kernel(mapping=[1])
-    def consumer(B: Ty[M, N]):
+    @df.kernel(mapping=[1], args=[B])
+    def consumer(local_B: Ty[M, N]):
         for i, j in allo.grid(M, N):
             # receive data
             data = pipe.get()
             # computation
-            B[i, j] = data + 1
+            local_B[i, j] = data + 1
 
 
 def test_producer_consumer():
