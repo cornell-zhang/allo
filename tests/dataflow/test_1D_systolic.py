@@ -15,12 +15,12 @@ P0 = K + 2
 
 
 @df.region()
-def top():
+def top(A: float32[M, K], B: float32[K, N], C: float32[M, N]):
     fifo_A: Stream[float32, 4][2, P0]
     fifo_B: Stream[float32, 4][2, P0]
 
-    @df.kernel(mapping=[2, P0])
-    def gemm(A: float32[M, K], B: float32[K, N], C: float32[M, N]):
+    @df.kernel(mapping=[2, P0], args=[A, B, C])
+    def gemm(local_A: float32[M, K], local_B: float32[K, N], local_C: float32[M, N]):
         i, j = df.get_pid()
         with allo.meta_if(i == 0 and (j == 0 or j == P0 - 1)):
             pass
@@ -28,11 +28,11 @@ def top():
         with allo.meta_elif(i == 0):
             for _ in range(N):
                 for k in range(K):
-                    fifo_B[i + 1, j].put(B[k, j - 1])
+                    fifo_B[i + 1, j].put(local_B[k, j - 1])
         with allo.meta_elif(j == 0):
             for m in range(M):
                 for k in range(K):
-                    fifo_A[i, j + 1].put(A[m, k])
+                    fifo_A[i, j + 1].put(local_A[m, k])
         # drain
         with allo.meta_elif(j == P0 - 1):
             for m in range(M):
@@ -47,7 +47,7 @@ def top():
                     b: float32 = fifo_B[i, j].get()
                     c += a * b
                     fifo_A[i, j + 1].put(a)
-                C[m, j - 1] = c
+                local_C[m, j - 1] = c
 
 
 def test_systolic():

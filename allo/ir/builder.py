@@ -1846,6 +1846,12 @@ class ASTTransformer(ASTBuilder):
                                 ast.unparse(decorator.keywords[0].value),
                                 ctx.global_vars,
                             )
+                            # Extract args parameter if present
+                            kernel_args = None
+                            for kw in decorator.keywords:
+                                if kw.arg == "args":
+                                    kernel_args = kw.value
+                                    break
                             orig_name = node.name
                             if orig_name not in ctx.func_tag2instance:
                                 ctx.func_tag2instance[orig_name] = {}
@@ -1867,6 +1873,7 @@ class ASTTransformer(ASTBuilder):
                                 new_ctx.buffers = old_ctx.buffers.copy()
                                 new_ctx.scopes = old_ctx.scopes
                                 new_ctx.global_vars = old_ctx.global_vars.copy()
+                                new_ctx.kernel_args = kernel_args
                                 for axis, val in enumerate(dim):
                                     new_ctx.global_vars.update(
                                         {"df.p" + str(axis): val}

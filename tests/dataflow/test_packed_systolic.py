@@ -22,15 +22,19 @@ else:
 
 
 @df.region()
-def top():
+def top(
+    X_packed: allo_type[M, K // PP],
+    W_packed: allo_type[K // PP, N],
+    Z_packed: allo_type[M // PP, N],
+):
     fifo_A: Stream[allo_type, 4][P0, P1]
     fifo_B: Stream[allo_type, 4][P0, P1]
 
-    @df.kernel(mapping=[P0, P1])
+    @df.kernel(mapping=[P0, P1], args=[X_packed, W_packed, Z_packed])
     def gemm(
-        X_packed: allo_type[M, K // PP],
-        W_packed: allo_type[K // PP, N],
-        Z_packed: allo_type[M // PP, N],
+        local_X_packed: allo_type[M, K // PP],
+        local_W_packed: allo_type[K // PP, N],
+        local_Z_packed: allo_type[M // PP, N],
     ):
         i, j = df.get_pid()
         # Peripheral kernels
@@ -39,11 +43,11 @@ def top():
         with allo.meta_elif(j == 0):
             # i > 0
             for k in range(K):
-                fifo_A[i, j + 1].put(X_packed[(i - 1) * PP, k])
+                fifo_A[i, j + 1].put(local_X_packed[(i - 1) * PP, k])
         with allo.meta_elif(i == 0):
             # j > 0
             for k in range(K):
-                fifo_B[i + 1, j].put(W_packed[k // PP, j - 1])
+                fifo_B[i + 1, j].put(local_W_packed[k // PP, j - 1])
 
         # drain
         with allo.meta_elif(i == M // PP + 1 and j > 0):
@@ -54,7 +58,7 @@ def top():
                 a: allo_type = fifo_A[i, j].get()
         # main body
         with allo.meta_else():
-            Z_elm: allo_type = Z_packed[i - 1, j - 1]
+            Z_elm: allo_type = local_Z_packed[i - 1, j - 1]
             for k in range(K):
                 c: allo_type = 0
                 a: allo_type = fifo_A[i, j].get()
@@ -66,7 +70,7 @@ def top():
                 fifo_A[i, j + 1].put(a)
                 fifo_B[i + 1, j].put(b)
                 Z_elm[k * 8 : (k + 1) * 8] += c
-            Z_packed[i - 1, j - 1] = Z_elm
+            local_Z_packed[i - 1, j - 1] = Z_elm
 
 
 def test_packed_systolic():

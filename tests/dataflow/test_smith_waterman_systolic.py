@@ -38,7 +38,7 @@ def smith_waterman_score_matrix(seqA, seqB):
 
 
 @df.region()
-def top():
+def top(A: int8[M], B: int8[N], S: int32[P0 - 1, P1 - 1]):
     # FIFOs
     # FIFO A goes in increasing j direction
     # FIFO B goes in increasing i direction
@@ -47,8 +47,10 @@ def top():
     fifo_B: Stream[int32, 4][P0, P1]
     fifo_C: Stream[int32, 4][P0, P1]
 
-    @df.kernel(mapping=[P0, P1])
-    def Smith_Waterman(A: int8[M], B: int8[N], S: int32[P0 - 1, P1 - 1]):
+    @df.kernel(mapping=[P0, P1], args=[A, B, S])
+    def Smith_Waterman(
+        local_A: int8[M], local_B: int8[N], local_S: int32[P0 - 1, P1 - 1]
+    ):
         i, j = df.get_pid()
         # Does nothing for the two boundary PEs
         with allo.meta_if((i == 0 and j == P1 - 1) or (i == P0 - 1 and j == 0)):
@@ -77,12 +79,12 @@ def top():
             b = fifo_B[i, j].get()
             c = fifo_C[i, j].get()
             # Calculate the score for the current position
-            aligning: int32 = c + (Sim if A[i - 1] == B[j - 1] else Mis)
+            aligning: int32 = c + (Sim if local_A[i - 1] == local_B[j - 1] else Mis)
             gap_A: int32 = a - W
             gap_B: int32 = b - W
             # Choose the maximum score
             score: int32 = max(max(0, aligning), max(gap_A, gap_B))
-            S[i, j] = score
+            local_S[i, j] = score
             fifo_A[i, j + 1].put(max(gap_A, score))
             fifo_B[i + 1, j].put(max(gap_B, score))
             fifo_C[i + 1, j + 1].put(score)

@@ -12,12 +12,12 @@ P0, P1 = M + 2, N + 2
 
 
 @df.region()
-def top():
+def top(A: int32[M, K], B: int32[K, N], C: int32[M, N]):
     fifo_A: Stream[int32, 4][P0, P1]
     fifo_B: Stream[int32, 4][P0, P1]
 
-    @df.kernel(mapping=[P0, P1])
-    def semm(A: int32[M, K], B: int32[K, N], C: int32[M, N]):
+    @df.kernel(mapping=[P0, P1], args=[A, B, C])
+    def semm(local_A: int32[M, K], local_B: int32[K, N], local_C: int32[M, N]):
         """
         This kernel `semm` is a gemm implemented with a systolic array with an additional `if`
         check before multiply accumulating.
@@ -29,11 +29,11 @@ def top():
         with allo.meta_elif(j == 0):
             # i > 0
             for k in range(K):
-                fifo_A[i, j + 1].put(A[i - 1, k])
+                fifo_A[i, j + 1].put(local_A[i - 1, k])
         with allo.meta_elif(i == 0):
             # j > 0
             for k in range(K):
-                fifo_B[i + 1, j].put(B[k, j - 1])
+                fifo_B[i + 1, j].put(local_B[k, j - 1])
         # drain
         with allo.meta_elif(i == M + 1 and j > 0):
             for k in range(K):
@@ -51,7 +51,7 @@ def top():
                     c += a * b
                 fifo_A[i, j + 1].put(a)
                 fifo_B[i + 1, j].put(b)
-            C[i - 1, j - 1] = c
+            local_C[i - 1, j - 1] = c
 
 
 def test_sparse_systolic():
