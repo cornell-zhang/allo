@@ -52,6 +52,7 @@ class CMakeBuild(build_ext):
             f"-DMLIR_DIR={llvm_build_dir}/lib/cmake/mlir",
             f"-DPython3_EXECUTABLE={sys.executable}",
             f"-Dnanobind_DIR={nanobind_cmake_dir}",
+            "-DMLIR_BINDINGS_PYTHON_NB_DOMAIN=allo",
         ]
 
         build_temp = os.path.join(ext.sourcedir, "build")
