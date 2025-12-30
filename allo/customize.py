@@ -1,6 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=no-name-in-module, too-many-nested-blocks
+# pylint: disable=no-name-in-module, too-many-nested-blocks, too-many-instance-attributes
 
 import re
 import inspect
