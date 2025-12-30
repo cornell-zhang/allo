@@ -108,6 +108,8 @@ def stateful(dtype: AlloType):
     tuple
         A marker tuple that will be processed during type inference
     """
+    # TODO: Return type should be AlloType with stateful attribute set,
+    #       but currently returns tuple for AST
     return ("stateful", dtype)
 
 

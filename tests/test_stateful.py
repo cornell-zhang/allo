@@ -340,3 +340,98 @@ def test_tpu():
     assert result8 == 150, f"Expected 150, got {result8}"
 
     print("test_tpu passed!")
+
+
+def test_nested_stateful_collision():
+    """Test that stateful variables in nested functions don't collide"""
+
+    def inner_func(x: int32) -> int32:
+        counter: stateful(int32) = 100
+        counter = counter + x
+        return counter
+
+    def outer_func(x: int32) -> int32:
+        counter: stateful(int32) = 0
+        counter = counter + x
+
+        inner_result: int32 = inner_func(x)
+
+        return counter * 1000 + inner_result
+
+    s = allo.customize(outer_func)
+    mod = s.build(target="llvm")
+
+    # First call: outer_func(5)
+    # - outer counter: 0 + 5 = 5
+    # - inner counter: 100 + 5 = 105
+    # - result: 5 * 1000 + 105 = 5105
+    result1 = mod(5)
+    assert result1 == 5105, f"Expected 5105, got {result1}"
+
+    # Second call: outer_func(10)
+    # - outer counter: 5 + 10 = 15
+    # - inner counter: 105 + 10 = 115
+    # - result: 15 * 1000 + 115 = 15115
+    result2 = mod(10)
+    assert result2 == 15115, f"Expected 15115, got {result2}"
+
+    # Third call: outer_func(3)
+    # - outer counter: 15 + 3 = 18
+    # - inner counter: 115 + 3 = 118
+    # - result: 18 * 1000 + 118 = 18118
+    result3 = mod(3)
+    assert result3 == 18118, f"Expected 18118, got {result3}"
+
+    print("test_nested_stateful_collision passed!")
+
+
+def test_multiple_nested_same_name():
+    """Test multiple nested functions with same stateful variable name"""
+
+    def accumulator_a(x: int32) -> int32:
+        value: stateful(int32) = 0
+        value = value + x
+        return value
+
+    def accumulator_b(x: int32) -> int32:
+        value: stateful(int32) = 1000
+        value = value + x * 2
+        return value
+
+    def caller(x: int32) -> int32:
+        value: stateful(int32) = 10000
+        value = value + x * 10
+
+        result_a: int32 = accumulator_a(x)
+        result_b: int32 = accumulator_b(x)
+
+        return value + result_a + result_b
+
+    s = allo.customize(caller)
+    mod = s.build(target="llvm")
+
+    # First call: caller(5)
+    # - caller value: 10000 + 5*10 = 10050
+    # - accumulator_a: 0 + 5 = 5
+    # - accumulator_b: 1000 + 5*2 = 1010
+    # - total: 10050 + 5 + 1010 = 11065
+    result1 = mod(5)
+    assert result1 == 11065, f"Expected 11065, got {result1}"
+
+    # Second call: caller(10)
+    # - caller value: 10050 + 10*10 = 10150
+    # - accumulator_a: 5 + 10 = 15
+    # - accumulator_b: 1010 + 10*2 = 1030
+    # - total: 10150 + 15 + 1030 = 11195
+    result2 = mod(10)
+    assert result2 == 11195, f"Expected 11195, got {result2}"
+
+    # Third call: caller(2)
+    # - caller value: 10150 + 2*10 = 10170
+    # - accumulator_a: 15 + 2 = 17
+    # - accumulator_b: 1030 + 2*2 = 1034
+    # - total: 10170 + 17 + 1034 = 11221
+    result3 = mod(2)
+    assert result3 == 11221, f"Expected 11221, got {result3}"
+
+    print("test_multiple_nested_same_name passed!")

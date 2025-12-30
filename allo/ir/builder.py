@@ -160,19 +160,19 @@ class ASTTransformer(ASTBuilder):
     @staticmethod
     def build_Name(ctx: ASTContext, node: ast.Name, val=None):
         if val is not None and isinstance(node.ctx, ast.Store):
-            if hasattr(ctx, "custom_globals") and node.id in ctx.custom_globals:
-                global_name = ctx.custom_globals[node.id][0]
-                if global_name in ctx.func_globals:
-                    buffer = ctx.func_globals[global_name]
+            if hasattr(ctx, "stateful_var_map") and node.id in ctx.stateful_var_map:
+                global_name = ctx.stateful_var_map[node.id][0]
+                if global_name in ctx.global_op_cache:
+                    buffer = ctx.global_op_cache[global_name]
                 else:
                     # Create new op and cache it
-                    memref_type = ctx.custom_globals[node.id][1]
+                    memref_type = ctx.stateful_var_map[node.id][1]
                     get_global_op = memref_d.GetGlobalOp(
                         memref_type,
                         FlatSymbolRefAttr.get(global_name),
                         ip=ctx.get_ip(),
                     )
-                    ctx.func_globals[global_name] = get_global_op
+                    ctx.global_op_cache[global_name] = get_global_op
                     buffer = get_global_op
             else:
                 buffer = ctx.get_symbol(node.id)
@@ -185,20 +185,20 @@ class ASTTransformer(ASTBuilder):
             )
         ret = ctx.get_symbol(node.id, allow_missing=True)
         if ret is not None:
-            # Check if this is a stateful variable via ctx.custom_globals
-            if hasattr(ctx, "custom_globals") and node.id in ctx.custom_globals:
-                global_name = ctx.custom_globals[node.id][0]
-                if global_name in ctx.func_globals:
-                    ret = ctx.func_globals[global_name]
+            # Check if this is a stateful variable via ctx.stateful_var_map
+            if hasattr(ctx, "stateful_var_map") and node.id in ctx.stateful_var_map:
+                global_name = ctx.stateful_var_map[node.id][0]
+                if global_name in ctx.global_op_cache:
+                    ret = ctx.global_op_cache[global_name]
                 else:
                     # Create new op and cache it
-                    memref_type = ctx.custom_globals[node.id][1]
+                    memref_type = ctx.stateful_var_map[node.id][1]
                     get_global_op = memref_d.GetGlobalOp(
                         memref_type,
                         FlatSymbolRefAttr.get(global_name),
                         ip=ctx.get_ip(),
                     )
-                    ctx.func_globals[global_name] = get_global_op
+                    ctx.global_op_cache[global_name] = get_global_op
                     ret = get_global_op
             ret_result = ASTTransformer.get_mlir_op_result(ctx, ret)
             if (
@@ -1833,8 +1833,8 @@ class ASTTransformer(ASTBuilder):
                 f"__stateful_{func_name}_{node.target.id}_{ctx.stateful_counter}"
             )
 
-            # Check if already in custom_globals (avoid redeclaration)
-            if global_name not in getattr(ctx, "custom_globals", {}):
+            # Check if already in stateful_var_map (avoid redeclaration)
+            if global_name not in getattr(ctx, "stateful_var_map", {}):
                 # Create memref.global declaration
                 if len(shape) == 0:
                     # For scalars, use memref<dtype> not just dtype
@@ -1890,13 +1890,13 @@ class ASTTransformer(ASTBuilder):
                 )
                 global_op.attributes["static"] = UnitAttr.get()
 
-                # Track in custom_globals
-                if not hasattr(ctx, "custom_globals"):
-                    ctx.custom_globals = {}
-                ctx.custom_globals[node.target.id] = (global_name, memref_type)
+                # Track in stateful_var_map
+                if not hasattr(ctx, "stateful_var_map"):
+                    ctx.stateful_var_map = {}
+                ctx.stateful_var_map[node.target.id] = (global_name, memref_type)
 
             # Get the global reference for use in the function
-            global_name, memref_type = ctx.custom_globals[node.target.id]
+            global_name, memref_type = ctx.stateful_var_map[node.target.id]
             get_global_op = memref_d.GetGlobalOp(
                 memref_type,
                 FlatSymbolRefAttr.get(global_name),
@@ -1905,7 +1905,7 @@ class ASTTransformer(ASTBuilder):
 
             # Store in context
             ctx.buffers[node.target.id] = get_global_op
-            ctx.func_globals[global_name] = get_global_op
+            ctx.global_op_cache[global_name] = get_global_op
             ctx.put_symbol(name=node.target.id, val=get_global_op)
 
             return None
@@ -1943,8 +1943,8 @@ class ASTTransformer(ASTBuilder):
 
     @staticmethod
     def build_FunctionDef(ctx: ASTContext, node: ast.FunctionDef):
-        if not hasattr(ctx, "func_globals"):
-            ctx.func_globals = {}
+        if not hasattr(ctx, "global_op_cache"):
+            ctx.global_op_cache = {}
         func_name = node.name if ctx.func_id is None else f"{node.name}_{ctx.func_id}"
         # pylint: disable=too-many-nested-blocks
         if ctx.top_func is not None:
@@ -2116,7 +2116,7 @@ class ASTTransformer(ASTBuilder):
         # Add the built function to global variable for later reference
         ctx.global_vars[func_name] = func_op
 
-        del ctx.func_globals
+        del ctx.global_op_cache
         return func_op
 
     @staticmethod
@@ -2340,6 +2340,8 @@ class ASTTransformer(ASTBuilder):
     @staticmethod
     def build_Module(ctx: ASTContext, node: ast.Module):
         ASTTransformer.global_var_cnt.clear()
+        if not hasattr(ctx, "global_op_cache"):
+            ctx.global_op_cache = {}
         with ctx.mlir_ctx:
             module = Module.create()
         ctx.set_ip(module.body)
