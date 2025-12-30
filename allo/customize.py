@@ -1163,51 +1163,46 @@ class Schedule:
                 raise TypeError("The first argument must be a Schedule object")
 
             if hasattr(sch, "custom_globals"):
-                if not hasattr(self, "_stateful_seen"):
-                    self._stateful_seen = {}
+                stateful_seen = getattr(self, "_stateful_seen", {})
+                self._stateful_seen = stateful_seen
+
+                func_name = f"{sch.top_func_name}_{id}" if id else sch.top_func_name
+                func = self._find_function(func_name)
 
                 for _, (global_name, _) in sch.custom_globals.items():
-                    new_name = (
-                        f"{global_name}_{id}"
-                        if id
-                        else f"{global_name}_inst{len(self._stateful_seen.get(global_name, []))}"
-                    )
+                    seen = stateful_seen.setdefault(global_name, [])
 
-                    original_global = None
-                    for op in self.module.body.operations:
-                        if (
-                            isinstance(op, memref_d.GlobalOp)
+                    suffix = id if id else f"inst{len(seen)}"
+                    new_name = f"{global_name}_{suffix}"
+
+                    original_global = next(
+                        (
+                            op
+                            for op in self.module.body.operations
+                            if isinstance(op, memref_d.GlobalOp)
                             and op.attributes["sym_name"].value == global_name
-                        ):
-                            original_global = op
-                            break
-
+                        ),
+                        None,
+                    )
                     if original_global is None:
                         raise RuntimeError(f"Stateful global {global_name} not found")
 
-                    is_first = global_name not in self._stateful_seen
-                    if is_first:
-                        original_global.attributes["sym_name"] = StringAttr.get(
-                            new_name
-                        )
-                        self._stateful_seen[global_name] = [new_name]
-                    else:
-                        cloned = original_global.operation.clone(
+                    target = (
+                        original_global
+                        if not seen
+                        else original_global.operation.clone(
                             InsertionPoint(original_global)
                         )
-                        cloned.attributes["sym_name"] = StringAttr.get(new_name)
-                        self._stateful_seen[global_name].append(new_name)
+                    )
+                    target.attributes["sym_name"] = StringAttr.get(new_name)
+                    seen.append(new_name)
 
-                    # Update references in composed function
-                    func_name = f"{sch.top_func_name}_{id}" if id else sch.top_func_name
-                    func = self._find_function(func_name)
                     for op in func.entry_block.operations:
-                        if isinstance(op, memref_d.GetGlobalOp):
-                            if (
-                                FlatSymbolRefAttr(op.attributes["name"]).value
-                                == global_name
-                            ):
-                                op.attributes["name"] = FlatSymbolRefAttr.get(new_name)
+                        if isinstance(op, memref_d.GetGlobalOp) and (
+                            FlatSymbolRefAttr(op.attributes["name"]).value
+                            == global_name
+                        ):
+                            op.attributes["name"] = FlatSymbolRefAttr.get(new_name)
 
             for primitive in sch.primitive_sequences:
                 args, kwargs = primitive[1:]
