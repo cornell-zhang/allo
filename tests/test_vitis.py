@@ -196,16 +196,17 @@ def test_vadd():
     np_256 = get_np_struct_type(VLEN)
 
     @df.region()
-    def top():
-        @df.kernel(mapping=[1])
+    def top(A: uint256[1], B: uint256[1], C: uint256[1]):
+        @df.kernel(mapping=[1], args=[A, B, C])
         def VEC(
-            A: uint256[1],
-            B: uint256[1],
-            C: uint256[1],
+            local_A: uint256[1],
+            local_B: uint256[1],
+            local_C: uint256[1],
         ):
             for i in allo.grid(VLEN // ELEN, name="vec_nest"):
-                C[0][i * ELEN : (i + 1) * ELEN] = (
-                    A[0][i * ELEN : (i + 1) * ELEN] + B[0][i * ELEN : (i + 1) * ELEN]
+                local_C[0][i * ELEN : (i + 1) * ELEN] = (
+                    local_A[0][i * ELEN : (i + 1) * ELEN]
+                    + local_B[0][i * ELEN : (i + 1) * ELEN]
                 )
 
     A = np.random.randint(0, 64, (VLEN // ELEN,)).astype(np.uint32)
