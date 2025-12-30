@@ -2116,7 +2116,6 @@ class ASTTransformer(ASTBuilder):
         # Add the built function to global variable for later reference
         ctx.global_vars[func_name] = func_op
 
-        del ctx.global_op_cache
         return func_op
 
     @staticmethod
@@ -2340,8 +2339,6 @@ class ASTTransformer(ASTBuilder):
     @staticmethod
     def build_Module(ctx: ASTContext, node: ast.Module):
         ASTTransformer.global_var_cnt.clear()
-        if not hasattr(ctx, "global_op_cache"):
-            ctx.global_op_cache = {}
         with ctx.mlir_ctx:
             module = Module.create()
         ctx.set_ip(module.body)
