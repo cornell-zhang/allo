@@ -1162,7 +1162,7 @@ class Schedule:
             if not isinstance(sch, Schedule):
                 raise TypeError("The first argument must be a Schedule object")
 
-            if hasattr(sch, "stateful_var_map"):
+            if hasattr(sch, "stateful_var_map") and sch.stateful_var_map:
                 stateful_seen = getattr(self, "_stateful_seen", {})
                 self._stateful_seen = stateful_seen
 
