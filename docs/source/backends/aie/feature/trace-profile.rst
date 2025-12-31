@@ -141,8 +141,8 @@ such as vectorization of external kernels. The following example demonstrates
 how to use trace profiling on some convolution kernels.
 
 In this case, due to the relatively small computation scale, the difference
-between the vectorized (``allo/library/aie/conv_small_vector.cc``) and
-scalar (``allo/library/aie/conv_small_scalar.cc``) versions of the kernel is not
+between the vectorized (``allo/library/aie/kernels/conv_small_vector.cc``) and
+scalar (``allo/library/aie/kernels/conv_small_scalar.cc``) versions of the kernel is not
 clearly observable using timing-based profiling. Instead, one can insert event
 markers (``event0();`` and ``event1();``) directly into the external C++ code
 and run the trace on the compute tile executing the external kernel. Sample code

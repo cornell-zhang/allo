@@ -61,7 +61,7 @@ np.random.seed(0)
 # ===============================================================================
 USE_ALL_NPU_KERNELS = True  # if False, we will offload softmax and gelu to cpu
 KERNEL_LIB_PATH = os.path.join(
-    os.path.dirname(__file__), "../../../../allo/library/aie/"
+    os.path.dirname(__file__), "../../../../allo/library/aie/kernels/"
 )
 BATCH = 1  # fixme: don't care for now
 SEQ = 64

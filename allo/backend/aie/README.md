@@ -382,17 +382,17 @@ For programs that use virtual mapping primitives, two visualization results are 
 #### `ALLO_EXTERNAL_KERNEL_DIR`
 
 This variable specifies the path to the Allo external kernel library.
-You can find this library under [`allo/library/aie`](../../library/aie/).
+You can find this library under [`allo/library/aie/kernels`](../../library/aie/kernels/).
 
 Allo has modified and extended the [`mm.cc` kernel](https://github.com/Xilinx/mlir-aie/blob/v1.0/aie_kernels/aie2/mm.cc) in the `mlir-aie` kernel library.
 The changes include:
 * Adding support for `int4`.
 * Avoiding certain function name conflicts.
 
-If you want to use [Allo’s customized `mm.cc`](../../library/aie/mm.cc) or other external kernels in Allo external kernel library, you can set:
+If you want to use [Allo’s customized `mm.cc`](../../library/aie/kernels/mm.cc) or other external kernels in Allo external kernel library, you can set:
 
 ```
-ALLO_EXTERNAL_KERNEL_DIR=/path/to/allo/root/allo/library/aie
+ALLO_EXTERNAL_KERNEL_DIR=/path/to/allo/root/allo/library/aie/kernels
 ```
 
 #### `COALESCE_MORE`
@@ -547,9 +547,9 @@ print("PASSED!")
 ```
 ##### Using Trace to Measure the Performance of External Kernels
 Trace is useful for evaluating the performance of an external kernel running on a single compute tile. 
-This is especially important when profiling for optimizations such as vectorization of external kernels. The following example demonstrates how to use trace profiling on some [convolution kernels](../../library/aie/).
+This is especially important when profiling for optimizations such as vectorization of external kernels. The following example demonstrates how to use trace profiling on some [convolution kernels](../../library/aie/kernels/).
 
-In this case, due to the relatively small computation scale, the difference between the [vectorized](../../library/aie/conv_small_vector.cc) and [scalar](../../library/aie/conv_small_scalar.cc) versions of the kernel is not clearly observable using timing-based profiling to measure NPU time. 
+In this case, due to the relatively small computation scale, the difference between the [vectorized](../../library/aie/kernels/conv_small_vector.cc) and [scalar](../../library/aie/kernels/conv_small_scalar.cc) versions of the kernel is not clearly observable using timing-based profiling to measure NPU time. 
 Instead, one can insert event markers, such as `event0();` and `event1();`, directly into the external C++ code and run the trace on the compute tile executing the external kernel. Sample code can be found in [`test_trace_conv.py`](../../../tests/dataflow/aie/test_trace_conv.py).
 
 Process the generated trace (in `top.prj/trace.txt`) with [`parse_trace.py`](https://github.com/Xilinx/mlir-aie/blob/v1.0/programming_examples/utils/parse_trace.py).
@@ -661,5 +661,5 @@ And the external module can then be used in an Allo kernel.
 An example can be found in [`tests/dataflow/aie/test_norm.py`](../../../tests/dataflow/aie/test_norm.py).
 
 ##### Allo External Kernel Library 
-The [`kernels`](../../library/aie/) directory contains several external kernels used in the GPT-2 block.
+The [`kernels`](../../library/aie/kernels/) directory contains several external kernels used in the GPT-2 block.
 Corresponding tests can be found in [`tests/dataflow/aie/gpt2`](../../../tests/dataflow/aie/gpt2/).

@@ -15,7 +15,9 @@ from allo.backend.aie import is_available
 @pytest.fixture(scope="module", autouse=True)
 def setup_env():
     dir_path = os.path.dirname(os.path.abspath(__file__))
-    os.environ["ALLO_EXTERNAL_KERNEL_DIR"] = f"{dir_path}/../../../allo/library/aie/"
+    os.environ["ALLO_EXTERNAL_KERNEL_DIR"] = (
+        f"{dir_path}/../../../allo/library/aie/kernels/"
+    )
     yield
     del os.environ["ALLO_EXTERNAL_KERNEL_DIR"]
 
@@ -247,9 +249,11 @@ def test_pingpong_mixed_gemm(M, N, K, Pm, Pn, Pk):
 
 
 if __name__ == "__main__":
-    # [NOTE]: export ALLO_EXTERNAL_KERNEL_DIR=/allo/root/dir/allo/library/aie/
+    # [NOTE]: export ALLO_EXTERNAL_KERNEL_DIR=/allo/root/dir/allo/library/aie/kernels/
     dir_path = os.path.dirname(os.path.abspath(__file__))
-    os.environ["ALLO_EXTERNAL_KERNEL_DIR"] = f"{dir_path}/../../../allo/library/aie/"
+    os.environ["ALLO_EXTERNAL_KERNEL_DIR"] = (
+        f"{dir_path}/../../../allo/library/aie/kernels/"
+    )
 
     test_gemm_1D()
     test_gemm_2D()

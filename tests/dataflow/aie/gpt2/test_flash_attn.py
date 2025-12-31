@@ -266,7 +266,9 @@ def _test_flash_attention(
 
 if __name__ == "__main__":
     dir_path = os.path.dirname(os.path.abspath(__file__))
-    os.environ["ALLO_EXTERNAL_KERNEL_DIR"] = f"{dir_path}/../../../../allo/library/aie/"
+    os.environ["ALLO_EXTERNAL_KERNEL_DIR"] = (
+        f"{dir_path}/../../../../allo/library/aie/kernels/"
+    )
     os.environ["ENABLE_AGGRESSIVE_PORT_UTILIZATION_PATCH"] = "1"
     os.environ["COALESCE_MORE"] = "1"
     os.environ["FORCE_UNROLL_INDEX"] = "0"

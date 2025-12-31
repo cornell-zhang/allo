@@ -51,7 +51,7 @@ def conv2d_simple(
 
 def kernel_paths():
     dir_path = os.path.dirname(os.path.abspath(__file__))
-    kernel_dir = os.path.join(dir_path, "../../../allo/library/aie/")
+    kernel_dir = os.path.join(dir_path, "../../../allo/library/aie/kernels/")
     return [
         os.path.join(kernel_dir, "conv_small_scalar.cc"),
         os.path.join(kernel_dir, "conv_small_vector.cc"),
@@ -117,6 +117,6 @@ def test_trace_conv2d(kernel_path: str):
 
 if __name__ == "__main__":
     dir_path = os.path.dirname(os.path.abspath(__file__))
-    KERNEL_LIB_PATH = f"{dir_path}/../../../allo/library/aie/"
+    KERNEL_LIB_PATH = f"{dir_path}/../../../allo/library/aie/kernels/"
     test_trace_conv2d(KERNEL_LIB_PATH + "conv_small_scalar.cc")
     test_trace_conv2d(KERNEL_LIB_PATH + "conv_small_vector.cc")

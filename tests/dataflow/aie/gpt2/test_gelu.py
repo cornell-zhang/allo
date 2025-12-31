@@ -13,7 +13,7 @@ from allo.ir.types import float32
 
 KERNEL_LIB_PATH = os.path.join(
     os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "../../../../allo/library/aie")
+        os.path.join(os.path.dirname(__file__), "../../../../allo/library/aie/kernels")
     ),
     "",
 )
