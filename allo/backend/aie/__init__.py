@@ -67,7 +67,6 @@ class AIE_MLIRModule:
         self,
         module: allo_ir.ir.Module,
         top_func_name: str,
-        parameter_list: dict[str, int],
         func_args: dict,
         project_dir: str,
         stream_info: dict,
@@ -86,9 +85,7 @@ class AIE_MLIRModule:
         self.project_dir: str = project_dir
         self.allo_module: allo_ir.ir.Module = module
         self.top_func_name: str = top_func_name
-        self.module_parameter_list = [
-            k for k, _ in sorted(parameter_list.items(), key=lambda item: item[1])
-        ]
+        self.module_parameter_list = []
         self.func_instances = func_instances
 
         self.external_kernel_lib: dict[str, ExternalModule] = {}
