@@ -276,7 +276,7 @@ def remove_unused_func_ops(s, func_names):
             func_op.erase()
 
 
-def _build_top(s, stream_info, target="vitis_hls", get_parameter_list: bool = False):
+def _build_top(s, stream_info, enable_layout=False):
     """
     s: top-level schedule
     stream_info: {func_name: [(stream_names, direction)]}
@@ -352,7 +352,8 @@ def _build_top(s, stream_info, target="vitis_hls", get_parameter_list: bool = Fa
             stream_lst = [
                 stream_map[stream_name] for stream_name, _ in stream_info[func_name]
             ]
-            if target != "aie":
+            # FIXME: this `call_op` is required for current 'simulator' backend, but is incompatible with sharding
+            if not enable_layout:
                 call_op = func_d.CallOp(
                     [],
                     FlatSymbolRefAttr.get(func_name),
@@ -363,8 +364,6 @@ def _build_top(s, stream_info, target="vitis_hls", get_parameter_list: bool = Fa
                     call_op.attributes["last"] = UnitAttr.get()
         new_top.attributes["dataflow"] = UnitAttr.get()
     s.top_func = new_top
-    if get_parameter_list:
-        return used_args, s
     return s
 
 
@@ -425,7 +424,7 @@ def customize(func, enable_tensor=False, opt_default=False):
     global_vars = get_global_vars(func)
     s = _customize(func, global_vars=global_vars, enable_tensor=enable_tensor)
     stream_info = move_stream_to_interface(s)
-    s = _build_top(s, stream_info, enable_tensor)
+    s = _build_top(s, stream_info)
 
     if opt_default:
         df_primitive_default(s)
@@ -468,9 +467,7 @@ def build(
         stream_info, stream_types_dict, extra_stream_info = move_stream_to_interface(
             s, with_stream_type=True, with_extra_info=True, unroll=False
         )
-        parameter_list, s = _build_top(
-            s, stream_info, target=target, get_parameter_list=True
-        )
+        s = _build_top(s, stream_info, True)
         aie_mod = AIE_MLIRModule(
             s.module,
             s.top_func_name,

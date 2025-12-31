@@ -179,8 +179,7 @@ if __name__ == "__main__":
     test_gemm_2D()
     # allow modify
     TyI, TyO = int16, int32
-    M, N, K = 32, 32, 32
-    P0, P1 = 4, 4
+    M, N, K = 64, 64, 32
 
     A = np.random.randint(0, 64, (M, K)).astype(np.int16)
     B = np.random.randint(0, 64, (K, N)).astype(np.int16)

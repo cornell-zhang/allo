@@ -693,16 +693,16 @@ class TypeInferer(ASTVisitor):
                             kernel_args = None
                             for kw in decorator.keywords:
                                 if kw.arg == "args":
-                                    assert isinstance( kw.value, ast.List)
+                                    assert isinstance(kw.value, ast.List)
                                     kernel_args = kw.value
                                     break
-                            if kernel_args is None:
-                                raise ValueError(
-                                    f"Missing required 'args' parameter in @df.kernel decorator for function '{node.name}'. "
-                                    "Please specify the top-level function arguments to pass to this kernel, "
-                                    "e.g., @df.kernel(mapping=[P0, P1], args=[A, B, C])"
-                                )
-                            old_ctx.kernel_args = kernel_args
+                            # if kernel_args is None:
+                            #     raise ValueError(
+                            #         f"Missing required 'args' parameter in @df.kernel decorator for function '{node.name}'. "
+                            #         "Please specify the top-level function arguments to pass to this kernel, "
+                            #         "e.g., @df.kernel(mapping=[P0, P1], args=[A, B, C])"
+                            #     )
+                            # old_ctx.kernel_args = kernel_args
                             orig_name = node.name
                             old_ctx.func_predicate_tags[orig_name] = {}
                             if ctx.unroll:
