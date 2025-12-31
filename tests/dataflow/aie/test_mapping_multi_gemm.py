@@ -73,38 +73,49 @@ def test_batched_gemm(M, N, K, Pm, Pn, Pk, TyI, TyO):
     LyC = Layout("S1S0")
 
     @df.region()
-    def top():
+    def top(
+        A: TyI[M, K],
+        B: TyI[K, N],
+        C: TyO[M, N],
+        D: TyI[M, K],
+        E: TyI[K, N],
+        F: TyO[M, N],
+    ):
         pipe_a: Stream[TyO[Mt, Nt], 2][Pk - 1, Pm, Pn]
 
-        @df.kernel(mapping=[Pk, Pm, Pn])
-        def gemma(A: TyI[M, K] @ LyA, B: TyI[K, N] @ LyB, C: TyO[M, N] @ LyC):
+        @df.kernel(mapping=[Pk, Pm, Pn], args=[A, B, C])
+        def gemma(
+            local_A: TyI[M, K] @ LyA, local_B: TyI[K, N] @ LyB, local_C: TyO[M, N] @ LyC
+        ):
             pk, pm, pn = df.get_pid()
             C_in: TyO[Mt, Nt]
             with allo.meta_if(pk > 0):
                 C_in[:, :] = pipe_a[pk - 1, pm, pn].get()
             with allo.meta_else():
                 C_in[:, :] = 0
-            C_out: TyO[Mt, Nt] = allo.add(allo.matmul(A, B), C_in)
+            C_out: TyO[Mt, Nt] = allo.add(allo.matmul(local_A, local_B), C_in)
             with allo.meta_if(pk < Pk - 1):
                 pipe_a[pk, pm, pn].put(C_out)
             with allo.meta_elif(pk == Pk - 1):
-                C[:, :] = C_out
+                local_C[:, :] = C_out
 
         pipe_b: Stream[TyO[Mt, Nt], 2][Pk - 1, Pm, Pn]
 
-        @df.kernel(mapping=[Pk, Pm, Pn])
-        def gemmb(D: TyI[M, K] @ LyA, E: TyI[K, N] @ LyB, F: TyO[M, N] @ LyC):
+        @df.kernel(mapping=[Pk, Pm, Pn], args=[D, E, F])
+        def gemmb(
+            local_D: TyI[M, K] @ LyA, local_E: TyI[K, N] @ LyB, local_F: TyO[M, N] @ LyC
+        ):
             pk, pm, pn = df.get_pid()
             F_in: TyO[Mt, Nt]
             with allo.meta_if(pk > 0):
                 F_in[:, :] = pipe_b[pk - 1, pm, pn].get()
             with allo.meta_else():
                 F_in[:, :] = 0
-            F_out: TyO[Mt, Nt] = allo.add(allo.matmul(D, E), F_in)
+            F_out: TyO[Mt, Nt] = allo.add(allo.matmul(local_D, local_E), F_in)
             with allo.meta_if(pk < Pk - 1):
                 pipe_b[pk, pm, pn].put(F_out)
             with allo.meta_elif(pk == Pk - 1):
-                F[:, :] = F_out
+                local_F[:, :] = F_out
 
     mapping_primitives = gen_gemm_mapping_primitive(
         "gemma", Pm, Pn, Pk, col_num=2, row_num=2

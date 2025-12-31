@@ -85,7 +85,6 @@ class AIE_MLIRModule:
         self.project_dir: str = project_dir
         self.allo_module: allo_ir.ir.Module = module
         self.top_func_name: str = top_func_name
-        self.module_parameter_list = []
         self.func_instances = func_instances
 
         self.external_kernel_lib: dict[str, ExternalModule] = {}
@@ -934,10 +933,6 @@ class AIE_MLIRModule:
             process.wait()
         if process.returncode != 0:
             raise RuntimeError("Failed to build AIE project.")
-
-    def help(self):
-        # print the parameter list of the module
-        print("Parameter reference:", self.module_parameter_list)
 
     def __call__(self, *args):
         for idx, dtensor in self.global_tensors.items():

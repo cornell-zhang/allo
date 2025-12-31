@@ -12,16 +12,16 @@ M, N = 32, 32
 
 
 @df.region()
-def top():
+def top(A: Ty[M, N], B: Ty[M, N]):
     pipe: Stream[Ty[M, N], 2]
 
-    @df.kernel(mapping=[1])
-    def producer(A: Ty[M, N]):
-        pipe.put(A)
+    @df.kernel(mapping=[1], args=[A])
+    def producer(local_A: Ty[M, N]):
+        pipe.put(local_A)
 
-    @df.kernel(mapping=[1])
-    def consumer(B: Ty[M, N]):
-        B[:, :] = pipe.get()
+    @df.kernel(mapping=[1], args=[B])
+    def consumer(local_B: Ty[M, N]):
+        local_B[:, :] = pipe.get()
 
 
 @pytest.mark.skipif(

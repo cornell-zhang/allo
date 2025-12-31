@@ -15,12 +15,12 @@ def test_vector_scalar_add():
     M = 1024
 
     @df.region()
-    def top():
-        @df.kernel(mapping=[1])
-        def core(A: Ty[M], B: Ty[M]):
+    def top(A: Ty[M], B: Ty[M]):
+        @df.kernel(mapping=[1], args=[A, B])
+        def core(local_A: Ty[M], local_B: Ty[M]):
             # [NOTE]: this will be optimized as `for i in range(M):` (though such usage is not recommended)
             with allo.meta_for(M) as i:
-                B[i] = A[i] + 1
+                local_B[i] = local_A[i] + 1
 
     A = np.random.randint(0, 100, M).astype(np.int32)
     B = np.zeros(M).astype(np.int32)
@@ -43,20 +43,20 @@ def test_gather():
     LyB = Layout("S0R")
 
     @df.region()
-    def top():
+    def top(A: Ty[M, K], B: Ty[K, N], C: Ty[M, N]):
         pipe: Stream[Ty[M, N], 2][Pk]
 
-        @df.kernel(mapping=[Pk])
-        def partial_gemm(A: Ty[M, K] @ LyA, B: Ty[K, N] @ LyB):
+        @df.kernel(mapping=[Pk], args=[A, B])
+        def partial_gemm(local_A: Ty[M, K] @ LyA, local_B: Ty[K, N] @ LyB):
             pk = df.get_pid()
-            pipe[pk].put(allo.matmul(A, B))
+            pipe[pk].put(allo.matmul(local_A, local_B))
 
-        @df.kernel(mapping=[1])
-        def acc(C: Ty[M, N]):
+        @df.kernel(mapping=[1], args=[C])
+        def acc(local_C: Ty[M, N]):
             C_: Ty[M, N] = 0
             with allo.meta_for(Pk) as i:
                 C_[:, :] += pipe[i].get()
-            C[:, :] = C_
+            local_C[:, :] = C_
 
     A = np.random.randint(0, 64, (M, K)).astype(np.int16)
     B = np.random.randint(0, 64, (K, N)).astype(np.int16)
@@ -94,7 +94,7 @@ def test_scatter():
     Ly = Layout("S0")
 
     @df.region()
-    def top():
+    def top(A: Ty[M], B: Ty[M]):
         pipe: Stream[Ty[M // P], 2][P]
 
         @df.kernel(mapping=[1])
@@ -103,10 +103,10 @@ def test_scatter():
             with allo.meta_for(P) as i:
                 pipe[i].put(Acc)
 
-        @df.kernel(mapping=[P])
-        def core(A: Ty[M] @ Ly, B: Ty[M] @ Ly):
+        @df.kernel(mapping=[P], args=[A, B])
+        def core(local_A: Ty[M] @ Ly, local_B: Ty[M] @ Ly):
             pk = df.get_pid()
-            B[:] = allo.add(A, pipe[pk].get())
+            local_B[:] = allo.add(local_A, pipe[pk].get())
 
     A = np.random.randint(0, 100, M).astype(np.int32)
     B = np.zeros(M).astype(np.int32)
@@ -152,18 +152,18 @@ def test_scatter2():
     Ly = Layout("S0")
 
     @df.region()
-    def top():
+    def top(Inc: Ty[M // P], A: Ty[M], B: Ty[M]):
         pipe: Stream[Ty[M // P], 2][P]
 
-        @df.kernel(mapping=[1])
-        def prod(Inc: Ty[M // P] @ Ly):
+        @df.kernel(mapping=[1], args=[Inc])
+        def prod(local_Inc: Ty[M // P] @ Ly):
             with allo.meta_for(P) as i:
-                pipe[i].put(Inc)
+                pipe[i].put(local_Inc)
 
-        @df.kernel(mapping=[P])
-        def core(A: Ty[M] @ Ly, B: Ty[M] @ Ly):
+        @df.kernel(mapping=[P], args=[A, B])
+        def core(local_A: Ty[M] @ Ly, local_B: Ty[M] @ Ly):
             pk = df.get_pid()
-            B[:] = allo.add(A, pipe[pk].get())
+            local_B[:] = allo.add(local_A, pipe[pk].get())
 
     Inc = np.ones(M // P).astype(np.int32)
     A = np.random.randint(0, 100, M).astype(np.int32)

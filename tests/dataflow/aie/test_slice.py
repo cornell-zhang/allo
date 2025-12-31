@@ -15,12 +15,12 @@ def test_store_slice():
     Pk = 4
 
     @df.region()
-    def top_v1():
+    def top_v1(A: Ty[N], B: Ty[Pk, N]):
 
-        @df.kernel(mapping=[1])
-        def core(A: Ty[N], B: Ty[Pk, N]):
+        @df.kernel(mapping=[1], args=[A, B])
+        def core(local_A: Ty[N], local_B: Ty[Pk, N]):
             for i in range(Pk):
-                B[i, :] = A
+                local_B[i, :] = local_A
 
     A = np.random.randint(0, 64, (N)).astype(np.int16)
     B = np.zeros((Pk, N)).astype(np.int16)
@@ -37,14 +37,14 @@ def test_store_slice():
         print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 
     @df.region()
-    def top_v2():
+    def top_v2(A: Ty[N], B: Ty[Pk, N]):
 
-        @df.kernel(mapping=[1])
-        def core(A: Ty[N], B: Ty[Pk, N]):
+        @df.kernel(mapping=[1], args=[A, B])
+        def core(local_A: Ty[N], local_B: Ty[Pk, N]):
             for i in range(0, Pk, 2):
-                B[i, :] = allo.add(A, 1)
+                local_B[i, :] = allo.add(local_A, 1)
             for i in range(1, Pk, 2):
-                B[i, :] = allo.add(A, -1)
+                local_B[i, :] = allo.add(local_A, -1)
 
     if is_available():
         mod = df.build(top_v2, target="aie")
@@ -65,12 +65,12 @@ def test_load_slice():
     Pk = 4
 
     @df.region()
-    def top():
+    def top(A: Ty[Pk, N], B: Ty[Pk, N]):
 
-        @df.kernel(mapping=[1])
-        def core(A: Ty[Pk, N], B: Ty[Pk, N]):
+        @df.kernel(mapping=[1], args=[A, B])
+        def core(local_A: Ty[Pk, N], local_B: Ty[Pk, N]):
             for i in range(Pk):
-                B[i, :] = A[i, :]
+                local_B[i, :] = local_A[i, :]
 
     A = np.random.randint(0, 64, (Pk, N)).astype(np.int16)
     B = np.zeros((Pk, N)).astype(np.int16)

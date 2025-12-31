@@ -20,28 +20,28 @@ def test_cannon():
     m, k, n = M // P, K // P, N // P
 
     @df.region()
-    def top():
+    def top(A: Ty[M, K], B: Ty[K, N], C: Ty[M, N]):
         A_init: Stream[Ty[m, k], 2][P, P]
         B_init: Stream[Ty[k, n], 2][P, P]
 
         A_pipe: Stream[Ty[m, k], 2][P, P]
         B_pipe: Stream[Ty[k, n], 2][P, P]
 
-        @df.kernel(mapping=[P, P])
-        def init(A: Ty[M, K] @ LyA, B: Ty[K, N] @ LyB):
+        @df.kernel(mapping=[P, P], args=[A, B])
+        def init(local_A: Ty[M, K] @ LyA, local_B: Ty[K, N] @ LyB):
             pi, pj = df.get_pid()
 
-            A_init[(pi - pj) % P, pj].put(A)
-            B_init[pi, (pj - pi) % P].put(B)
+            A_init[(pi - pj) % P, pj].put(local_A)
+            B_init[pi, (pj - pi) % P].put(local_B)
 
-        @df.kernel(mapping=[P, P])
-        def cannon(C: Ty[M, N] @ LyC):
+        @df.kernel(mapping=[P, P], args=[C])
+        def cannon(local_C: Ty[M, N] @ LyC):
             pi, pj = df.get_pid()
 
             A_out: Ty[m, k] = A_init[pi, pj].get()
             B_out: Ty[k, n] = B_init[pi, pj].get()
 
-            C[:, :] = allo.matmul(A_out, B_out)
+            local_C[:, :] = allo.matmul(A_out, B_out)
 
             A_pipe[(pi - 1) % P, pj].put(A_out)
             B_pipe[pi, (pj - 1) % P].put(B_out)
@@ -57,7 +57,7 @@ def test_cannon():
                 """
                 A_out_: Ty[m, k] = A_pipe[pi, pj].get()
                 B_out_: Ty[k, n] = B_pipe[pi, pj].get()
-                C[:, :] += allo.matmul(A_out_, B_out_)
+                local_C[:, :] += allo.matmul(A_out_, B_out_)
                 A_pipe[(pi - 1) % P, pj].put(A_out_)
                 B_pipe[pi, (pj - 1) % P].put(B_out_)
 

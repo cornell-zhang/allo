@@ -19,16 +19,20 @@ def test_gemm_temporal_reduction():
     M, N, K = 64, 64, 64
 
     @df.region()
-    def top1():
-        @df.kernel(mapping=[4, 4])
-        def gemm(A: TyI[M, K] @ LyA, B: TyI[K, N] @ LyB, C: TyO[M, N] @ LyC):
-            C[:, :] = allo.matmul(A, B)
+    def top1(A: TyI[M, K], B: TyI[K, N], C: TyO[M, N]):
+        @df.kernel(mapping=[4, 4], args=[A, B, C])
+        def gemm(
+            local_A: TyI[M, K] @ LyA, local_B: TyI[K, N] @ LyB, local_C: TyO[M, N] @ LyC
+        ):
+            local_C[:, :] = allo.matmul(local_A, local_B)
 
     @df.region()
-    def top2():
-        @df.kernel(mapping=[2, 4])
-        def core(A: TyO[M, N] @ LyC, B: TyO[M, N] @ LyC, C: TyO[M, N] @ LyC):
-            C[:, :] = allo.add(A, B)
+    def top2(A: TyO[M, N], B: TyO[M, N], C: TyO[M, N]):
+        @df.kernel(mapping=[2, 4], args=[A, B, C])
+        def core(
+            local_A: TyO[M, N] @ LyC, local_B: TyO[M, N] @ LyC, local_C: TyO[M, N] @ LyC
+        ):
+            local_C[:, :] = allo.add(local_A, local_B)
 
     if is_available():
         print("Building AIE modules...")

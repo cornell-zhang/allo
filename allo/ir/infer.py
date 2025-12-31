@@ -683,8 +683,7 @@ class TypeInferer(ASTVisitor):
                 if isinstance(decorator, ast.Call):
                     if isinstance(decorator.func, ast.Attribute):
                         if decorator.func.attr == "kernel":
-                            # Extract args parameter - now mandatory
-                            mapping, kernel_args = None, None
+                            mapping, kernel_args = None, []
                             for kw in decorator.keywords:
                                 if kw.arg == "mapping":
                                     mapping = eval(
@@ -693,18 +692,15 @@ class TypeInferer(ASTVisitor):
                                     )
                                 elif kw.arg == "args":
                                     assert isinstance(kw.value, ast.List)
-                                    kernel_args = kw.value
-                            if mapping is None or kernel_args is None:
-                                raise ValueError(
-                                    f"Missing required 'mapping' and 'args' parameter in @df.kernel decorator for function '{node.name}'. "
-                                    "Please specify the top-level function arguments to pass to this kernel, "
-                                    "e.g., @df.kernel(mapping=[P0, P1], args=[A, B, C])"
-                                )
+                                    kernel_args = kw.value.elts
+                            assert (
+                                mapping is not None
+                            ), f"Invalid @df.kernel decorator on function '{node.name}': missing required 'mapping' parameter."
                             old_ctx.mapping = mapping
-                            old_ctx.kernel_args = kernel_args
-                            for top_arg_name, arg in zip(
-                                kernel_args.elts, node.args.args
-                            ):
+                            assert len(kernel_args) == len(
+                                node.args.args
+                            ), f"Invalid @df.kernel decorator on function '{node.name}': 'args' length mismatch (expected {len(node.args.args)}, got {len(kernel_args)})."
+                            for top_arg_name, arg in zip(kernel_args, node.args.args):
                                 top_arg = ctx.get_symbol(name=top_arg_name.id)
                                 dtype, shape, _ = TypeInferer.visit_type_hint(
                                     ctx, arg.annotation

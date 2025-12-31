@@ -46,10 +46,10 @@ def test_layer_norm(enable_trace: bool):
     M, N = seq_len, hidden_size
 
     @df.region()
-    def top():
-        @df.kernel(mapping=[4])
-        def core(A: Ty[M, N] @ LyA, B: Ty[N] @ Ly, C: Ty[M, N] @ LyA):
-            norm(A, B, C)
+    def top(A: Ty[M, N], B: Ty[N], C: Ty[M, N]):
+        @df.kernel(mapping=[4], args=[A, B, C])
+        def core(local_A: Ty[M, N] @ LyA, local_B: Ty[N] @ Ly, local_C: Ty[M, N] @ LyA):
+            norm(local_A, local_B, local_C)
 
     input_tensor = torch.randn(seq_len, hidden_size, dtype=torch.float32)
     weight = torch.randn(hidden_size, dtype=torch.float32)
@@ -98,10 +98,10 @@ def test_rms_norm():
     M, N = seq_len, hidden_size
 
     @df.region()
-    def top():
-        @df.kernel(mapping=[4])
-        def core(A: Ty[M, N] @ LyA, B: Ty[N] @ Ly, C: Ty[M, N] @ LyA):
-            norm(A, B, C)
+    def top(A: Ty[M, N], B: Ty[N], C: Ty[M, N]):
+        @df.kernel(mapping=[4], args=[A, B, C])
+        def core(local_A: Ty[M, N] @ LyA, local_B: Ty[N] @ Ly, local_C: Ty[M, N] @ LyA):
+            norm(local_A, local_B, local_C)
 
     input_tensor = torch.randn(seq_len, hidden_size, dtype=torch.float32)
     weight = torch.randn(hidden_size, dtype=torch.float32)
@@ -132,12 +132,12 @@ def test_single_row_layer_norm():
     M, N = 4, 512
 
     @df.region()
-    def top():
-        @df.kernel(mapping=[1])
-        def core(A: Ty[M, N], B: Ty[N], C: Ty[M, N]):
+    def top(A: Ty[M, N], B: Ty[N], C: Ty[M, N]):
+        @df.kernel(mapping=[1], args=[A, B, C])
+        def core(local_A: Ty[M, N], local_B: Ty[N], local_C: Ty[M, N]):
             for i in range(M):
                 # [NOTE]: test using buffer slice as customized external kernel arguments
-                norm(A[i], B, C[i])
+                norm(local_A[i], local_B, local_C[i])
 
     input_tensor = torch.randn(M, N, dtype=torch.float32)
     weight = torch.randn(N, dtype=torch.float32)
