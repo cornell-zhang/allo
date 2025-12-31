@@ -19,10 +19,10 @@ def test_matrix_scalar_add():
     P0 = 4
 
     @df.region()
-    def top():
-        @df.kernel(mapping=[P0])
-        def core(A: Ty[M, N] @ LyA, B: Ty[M, N] @ LyA):
-            B[:, :] = allo.add(A, 1)
+    def top(A: Ty[M, N], B: Ty[M, N]):
+        @df.kernel(mapping=[P0], args=[A, B])
+        def core(local_A: Ty[M, N] @ LyA, local_B: Ty[M, N] @ LyA):
+            local_B[:, :] = allo.add(local_A, 1)
 
     A = np.random.randint(0, 100, (M, N)).astype(np.int32)
 
@@ -49,10 +49,12 @@ def test_matrix_matrix_add():
     P0 = 4
 
     @df.region()
-    def top():
-        @df.kernel(mapping=[P0])
-        def core(A: Ty[M, N] @ LyA, B: Ty[M, N] @ LyA, C: Ty[M, N] @ LyA):
-            C[:, :] = allo.add(A, B)
+    def top(A: Ty[M, N], B: Ty[M, N], C: Ty[M, N]):
+        @df.kernel(mapping=[P0], args=[A, B, C])
+        def core(
+            local_A: Ty[M, N] @ LyA, local_B: Ty[M, N] @ LyA, local_C: Ty[M, N] @ LyA
+        ):
+            local_C[:, :] = allo.add(local_A, local_B)
 
     A = np.random.randint(0, 100, (M, N)).astype(np.int32)
     B = np.random.randint(0, 100, (M, N)).astype(np.int32)
@@ -77,10 +79,10 @@ def test_gemm_1D():
     P0 = 2
 
     @df.region()
-    def top():
-        @df.kernel(mapping=[P0])
-        def gemm(A: Ty[M, K] @ LyA, B: Ty[K, N], C: Ty[M, N] @ LyA):
-            C[:, :] = allo.matmul(A, B)
+    def top(A: Ty[M, K], B: Ty[K, N], C: Ty[M, N]):
+        @df.kernel(mapping=[P0], args=[A, B, C])
+        def gemm(local_A: Ty[M, K] @ LyA, local_B: Ty[K, N], local_C: Ty[M, N] @ LyA):
+            local_C[:, :] = allo.matmul(local_A, local_B)
 
     A = np.random.randint(0, 64, (M, K)).astype(np.int16)
     B = np.random.randint(0, 64, (K, N)).astype(np.int16)
@@ -101,11 +103,13 @@ def test_gemm_1D_mixed():
     P0 = 2
 
     @df.region()
-    def top():
-        @df.kernel(mapping=[P0])
-        def gemm(A: TyI[M, K] @ LyA, B: TyI[K, N], C: TyO[M, N] @ LyA):
-            C_part: TyO[M // P0, N] = allo.matmul(A, B)
-            C[:, :] = C_part
+    def top(A: TyI[M, K], B: TyI[K, N], C: TyO[M, N]):
+        @df.kernel(mapping=[P0], args=[A, B, C])
+        def gemm(
+            local_A: TyI[M, K] @ LyA, local_B: TyI[K, N], local_C: TyO[M, N] @ LyA
+        ):
+            local_C_part: TyO[M // P0, N] = allo.matmul(local_A, local_B)
+            local_C[:, :] = local_C_part
 
     A = np.random.randint(0, 64, (M, K)).astype(np.int16)
     B = np.random.randint(0, 64, (K, N)).astype(np.int16)
@@ -125,10 +129,13 @@ def test_gemm_2D():
     P0, P1 = 4, 4
 
     @df.region()
-    def top():
-        @df.kernel(mapping=[P0, P1])
-        def gemm(A: TyI[M, K] @ LyA, B: TyI[K, N] @ LyB, C: TyO[M, N] @ LyC):
-            C[:, :] = allo.matmul(A, B)
+    def top(A: TyI[M, K], B: TyI[K, N], C: TyO[M, N]):
+        @df.kernel(mapping=[P0, P1], args=[A, B, C])
+        def gemm(
+            local_A: TyI[M, K] @ LyA, local_B: TyI[K, N] @ LyB, local_C: TyO[M, N] @ LyC
+        ):
+            local_C_part: TyO[M // P0, N // P1] = allo.matmul(local_A, local_B)
+            local_C[:, :] = local_C_part
 
     if is_available():
         mod = df.build(top, target="aie")
@@ -150,11 +157,13 @@ def test_gemm_2D_mixed():
     P0, P1 = 4, 4
 
     @df.region()
-    def top():
-        @df.kernel(mapping=[P0, P1])
-        def gemm(A: TyI[M, K] @ LyA, B: TyI[K, N] @ LyB, C: TyO[M, N] @ LyC):
-            C_part: TyO[M // P0, N // P1] = allo.matmul(A, B)
-            C[:, :] = C_part
+    def top(A: TyI[M, K], B: TyI[K, N], C: TyO[M, N]):
+        @df.kernel(mapping=[P0, P1], args=[A, B, C])
+        def gemm(
+            local_A: TyI[M, K] @ LyA, local_B: TyI[K, N] @ LyB, local_C: TyO[M, N] @ LyC
+        ):
+            local_C_part: TyO[M // P0, N // P1] = allo.matmul(local_A, local_B)
+            local_C[:, :] = local_C_part
 
     if is_available():
         mod = df.build(top, target="aie")
