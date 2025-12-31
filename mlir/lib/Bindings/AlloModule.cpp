@@ -12,6 +12,7 @@
 #include "allo-c/Translation/EmitIntelHLS.h"
 #include "allo-c/Translation/EmitTapaHLS.h"
 #include "allo-c/Translation/EmitVivadoHLS.h"
+#include "allo-c/Translation/EmitXlsHLS.h"
 #include "allo/Conversion/Passes.h"
 #include "allo/Dialect/AlloDialect.h"
 #include "allo/Support/Liveness.h"
@@ -117,6 +118,14 @@ static bool emitVivadoHls(MlirModule &mod, nb::object fileObject,
   nb::gil_scoped_release release;
   return mlirLogicalResultIsSuccess(mlirEmitVivadoHls(
       mod, accum.getCallback(), accum.getUserData(), flatten));
+}
+
+static bool emitXlsHls(MlirModule &mod, nb::object fileObject,
+                       bool useMemory = false) {
+  PyFileAccumulator accum(fileObject, false);
+  nb::gil_scoped_release release;
+  return mlirLogicalResultIsSuccess(mlirEmitXlsHls(
+      mod, accum.getCallback(), accum.getUserData(), useMemory));
 }
 
 static bool emitIntelHls(MlirModule &mod, nb::object fileObject) {
@@ -320,6 +329,8 @@ NB_MODULE(_allo, m) {
              nb::arg("file_object"), nb::arg("flatten") = false);
   allo_m.def("emit_ihls", &emitIntelHls);
   allo_m.def("emit_thls", &emitTapaHls);
+  allo_m.def("emit_xhls", &emitXlsHls, nb::arg("module"),
+             nb::arg("file_object"), nb::arg("use_memory") = false);
 
   // LLVM backend APIs.
   allo_m.def("lower_allo_to_llvm", &lowerAlloToLLVM);
