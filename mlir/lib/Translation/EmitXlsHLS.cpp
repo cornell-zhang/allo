@@ -1208,14 +1208,14 @@ void allo::hls::XlsModuleEmitter::emitFunction(func::FuncOp func) {
               }
               os << ");\n";
 
-            reduceIndent();
-            indent();
-            os << "}\n";
-            break;
+              reduceIndent();
+              indent();
+              os << "}\n";
+              break;
+            }
           }
         }
       }
-    }
     }
 
     // Reset state

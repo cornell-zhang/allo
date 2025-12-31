@@ -124,8 +124,8 @@ static bool emitXlsHls(MlirModule &mod, nb::object fileObject,
                        bool useMemory = false) {
   PyFileAccumulator accum(fileObject, false);
   nb::gil_scoped_release release;
-  return mlirLogicalResultIsSuccess(mlirEmitXlsHls(
-      mod, accum.getCallback(), accum.getUserData(), useMemory));
+  return mlirLogicalResultIsSuccess(
+      mlirEmitXlsHls(mod, accum.getCallback(), accum.getUserData(), useMemory));
 }
 
 static bool emitIntelHls(MlirModule &mod, nb::object fileObject) {
