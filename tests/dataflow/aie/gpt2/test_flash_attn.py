@@ -119,7 +119,12 @@ def _test_flash_attention(
     Ly_K = Layout("RS0")
 
     @df.region()
-    def top():
+    def top(
+        Q: Ty[Q_tile_size, HEAD_DIM],
+        K: Ty[HEAD_DIM, SEQ_LEN],
+        V: Ty[SEQ_LEN, HEAD_DIM],
+        O: Ty[Q_tile_size, HEAD_DIM],
+    ):
         q_pipe: Stream[Ty[q_chunk_size, HEAD_DIM], 2][
             Q_tile_size // q_chunk_size, SEQ_LEN // kv_chunk_size
         ]
@@ -135,17 +140,19 @@ def _test_flash_attention(
         exp_sum_pipe: Stream[Ty[kv_chunk_size], 2][Q_tile_size // q_chunk_size]
         exp_scale_pipe: Stream[Ty[kv_chunk_size], 2][Q_tile_size // q_chunk_size]
 
-        @df.kernel(mapping=[Q_tile_size // q_chunk_size, 1])
-        def send_q(Q: Ty[Q_tile_size, HEAD_DIM] @ Ly_outer):
+        @df.kernel(mapping=[Q_tile_size // q_chunk_size, 1], args=[Q])
+        def send_q(local_Q: Ty[Q_tile_size, HEAD_DIM] @ Ly_outer):
             po, _ = df.get_pid()
             with allo.meta_for(SEQ_LEN // kv_chunk_size) as i:
-                q_pipe[po, i].put(Q)
+                q_pipe[po, i].put(local_Q)
 
-        @df.kernel(mapping=[Q_tile_size // q_chunk_size, SEQ_LEN // kv_chunk_size])
-        def cal_attn_score(K: Ty[HEAD_DIM, SEQ_LEN] @ Ly_K):
+        @df.kernel(
+            mapping=[Q_tile_size // q_chunk_size, SEQ_LEN // kv_chunk_size], args=[K]
+        )
+        def cal_attn_score(local_K: Ty[HEAD_DIM, SEQ_LEN] @ Ly_K):
             po, pi = df.get_pid()
             score: Ty[q_chunk_size, kv_chunk_size] = allo.matmul(
-                q_pipe[po, pi].get(), K
+                q_pipe[po, pi].get(), local_K
             )
             score_pipe[po, pi].put(score)
 
@@ -172,19 +179,21 @@ def _test_flash_attention(
                 weight_pipe[po, i].put(attn_weight)
             exp_sum_pipe[po].put(sum_exp)
 
-        @df.kernel(mapping=[Q_tile_size // q_chunk_size, SEQ_LEN // kv_chunk_size])
-        def attn(V: Ty[SEQ_LEN, HEAD_DIM] @ Ly_inner):
+        @df.kernel(
+            mapping=[Q_tile_size // q_chunk_size, SEQ_LEN // kv_chunk_size], args=[V]
+        )
+        def attn(local_V: Ty[SEQ_LEN, HEAD_DIM] @ Ly_inner):
             po, pi = df.get_pid()
-            o_pipe[po, pi].put(allo.matmul(weight_pipe[po, pi].get(), V))
+            o_pipe[po, pi].put(allo.matmul(weight_pipe[po, pi].get(), local_V))
 
-        @df.kernel(mapping=[Q_tile_size // q_chunk_size, 1])
-        def acc(O: Ty[Q_tile_size, HEAD_DIM] @ Ly_outer):
+        @df.kernel(mapping=[Q_tile_size // q_chunk_size, 1], args=[O])
+        def acc(local_O: Ty[Q_tile_size, HEAD_DIM] @ Ly_outer):
             attn_output: Ty[q_chunk_size, HEAD_DIM] = 0
             po, _ = df.get_pid()
             with allo.meta_for(SEQ_LEN // kv_chunk_size) as i:
                 rescale_attn_output(attn_output, exp_scale_pipe[po].get(), attn_output)
                 attn_output[:, :] = allo.add(attn_output, o_pipe[po, i].get())
-            scale_attn_output(attn_output, exp_sum_pipe[po].get(), O)
+            scale_attn_output(attn_output, exp_sum_pipe[po].get(), local_O)
 
     mapping_primitives_ = []
     sub_graphs = []

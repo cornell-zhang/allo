@@ -103,22 +103,22 @@ def gen_attn_score_primitives():
 
 
 @df.region()
-def attn_score_kernel():
+def attn_score_kernel(A: Ty[N, D], B: Ty[D, N], C: Ty[N, N]):
     pipe: Stream[Ty[Mt, Nt], 2][Pk - 1, Pm, Pn]
 
-    @df.kernel(mapping=[Pk, Pm, Pn])
-    def gemm(A: Ty[N, D] @ LyA, B: Ty[D, N] @ LyB, C: Ty[N, N] @ LyC):
+    @df.kernel(mapping=[Pk, Pm, Pn], args=[A, B, C])
+    def gemm(local_A: Ty[N, D] @ LyA, local_B: Ty[D, N] @ LyB, local_C: Ty[N, N] @ LyC):
         pk, pm, pn = df.get_pid()
         C_in: Ty[Mt, Nt]
         with allo.meta_if(pk > 0):
             C_in[:, :] = pipe[pk - 1, pm, pn].get()
         with allo.meta_else():
             C_in[:, :] = 0
-        C_out: Ty[Mt, Nt] = allo.add(allo.matmul(A, B), C_in)
+        C_out: Ty[Mt, Nt] = allo.add(allo.matmul(local_A, local_B), C_in)
         with allo.meta_if(pk < Pk - 1):
             pipe[pk, pm, pn].put(C_out)
         with allo.meta_elif(pk == Pk - 1):
-            C[:, :] = C_out
+            local_C[:, :] = C_out
 
 
 attn_score_mod = df.build(
@@ -137,11 +137,11 @@ SCALING_P1 = N // 64
 
 
 @df.region()
-def scaling_kernel():
+def scaling_kernel(C_in: Ty[N, N], C_out: Ty[N, N]):
 
-    @df.kernel(mapping=[SCALING_P0, SCALING_P1])
-    def core(C_in: Ty[N, N] @ LyC, C_out: Ty[N, N] @ LyC):
-        C_out[:, :] = allo.mul(C_in, 0.125)
+    @df.kernel(mapping=[SCALING_P0, SCALING_P1], args=[C_in, C_out])
+    def core(local_C_in: Ty[N, N] @ LyC, local_C_out: Ty[N, N] @ LyC):
+        local_C_out[:, :] = allo.mul(local_C_in, 0.125)
 
 
 def gen_scaling_primitives():
@@ -189,13 +189,13 @@ def gen_softmax_primitives():
 
 
 @df.region()
-def softmax_kernel():
-    @df.kernel(mapping=[SOFTMAX_P0])
+def softmax_kernel(input_x: Ty[N, N], output_x: Ty[N, N]):
+    @df.kernel(mapping=[SOFTMAX_P0], args=[input_x, output_x])
     def core(
-        input_x: Ty[N, N] @ SOFTMAX_Ly,
-        output_x: Ty[N, N] @ SOFTMAX_Ly,
+        local_input_x: Ty[N, N] @ SOFTMAX_Ly,
+        local_output_x: Ty[N, N] @ SOFTMAX_Ly,
     ):
-        softmax(input_x, output_x)
+        softmax(local_input_x, local_output_x)
 
 
 softmax_mod = df.build(
@@ -216,22 +216,22 @@ LyC = Layout("S1S0")
 
 
 @df.region()
-def top():
+def top(A: Ty[N, N], B: Ty[N, D], C: Ty[N, D]):
     pipe: Stream[Ty[Mt, Nt], 2][Pk - 1, Pm, Pn]
 
-    @df.kernel(mapping=[Pk, Pm, Pn])
-    def gemm(A: Ty[N, N] @ LyA, B: Ty[N, D] @ LyB, C: Ty[N, D] @ LyC):
+    @df.kernel(mapping=[Pk, Pm, Pn], args=[A, B, C])
+    def gemm(local_A: Ty[N, N] @ LyA, local_B: Ty[N, D] @ LyB, local_C: Ty[N, D] @ LyC):
         pk, pm, pn = df.get_pid()
         C_in: Ty[Mt, Nt]
         with allo.meta_if(pk > 0):
             C_in[:, :] = pipe[pk - 1, pm, pn].get()
         with allo.meta_else():
             C_in[:, :] = 0
-        C_out: Ty[Mt, Nt] = allo.add(allo.matmul(A, B), C_in)
+        C_out: Ty[Mt, Nt] = allo.add(allo.matmul(local_A, local_B), C_in)
         with allo.meta_if(pk < Pk - 1):
             pipe[pk, pm, pn].put(C_out)
         with allo.meta_elif(pk == Pk - 1):
-            C[:, :] = C_out
+            local_C[:, :] = C_out
 
 
 def gen_gemm_primitive():
