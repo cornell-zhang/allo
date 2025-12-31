@@ -109,10 +109,10 @@ Tracing tile ``(0, 0)`` of the ``allo.dataflow.kernel`` named ``gemm``.
    P0, P1 = 2, 4
 
    @df.region()
-   def top():
-       @df.kernel(mapping=[P0, P1])
-       def gemm(A: TyI[M, K] @ LyA, B: TyI[K, N] @ LyB, C: TyO[M, N] @ LyC):
-           C[:, :] = allo.matmul(A, B)
+   def top(A: TyI[M, K], B: TyI[K, N], C: TyO[M, N]):
+       @df.kernel(mapping=[P0, P1], args=[A, B, C])
+       def gemm(local_A: TyI[M, K] @ LyA, local_B: TyI[K, N] @ LyB, local_C: TyO[M, N] @ LyC):
+           local_C[:, :] = allo.matmul(local_A, local_B)
 
    # trace tile (0, 0) of gemm df.kernel
    mod = df.build(

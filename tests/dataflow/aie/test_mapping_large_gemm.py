@@ -5,7 +5,7 @@ import os
 import pytest
 from allo.ir.types import int4, int8
 import allo.dataflow as df
-from allo.library.aie.modules.gemm import gen_gemm_mapping_primitive, GEMM
+from allo.library.aie.modules.gemm import GEMM
 import numpy as np
 from allo.backend.aie import is_available
 
@@ -17,8 +17,7 @@ from allo.backend.aie import is_available
     ],
 )
 def test_pingpong_gemm(M, N, K, Pm, Pn, Pk, TyI, TyO):
-    top = GEMM(M, N, K, Pm, Pn, Pk, TyI, TyO)
-    mapping_primitives = gen_gemm_mapping_primitive(Pm, Pn, Pk)
+    top, mapping_primitives = GEMM(M, N, K, Pm, Pn, Pk, TyI, TyO)
 
     if is_available():
         os.environ["ENABLE_AGGRESSIVE_PORT_UTILIZATION_PATCH"] = "1"

@@ -39,25 +39,25 @@ The design consists of a top-level region that contains two kernels: a producer 
    M, N, K = 16, 16, 16
 
    @df.region()
-   def top():
+   def top(A: Ty[M, N], B: Ty[M, N]):
        # Create a pipe with a depth of 4
        pipe: Stream[Ty, 4]
 
-       @df.kernel(mapping=[1])
-       def producer(A: Ty[M, N]):
+       @df.kernel(mapping=[1], args=[A])
+       def producer(local_A: Ty[M, N]):
            for i, j in allo.grid(M, N):
                # Load data from the input matrix
-               out: Ty = A[i, j]
+               out: Ty = local_A[i, j]
                # Send data to the pipe
                pipe.put(out)
 
-       @df.kernel(mapping=[1])
-       def consumer(B: Ty[M, N]):
+       @df.kernel(mapping=[1], args=[B])
+       def consumer(local_B: Ty[M, N]):
            for i, j in allo.grid(M, N):
                # Receive data from the pipe
                data = pipe.get()
                # Perform a simple computation (increment by 1)
-               B[i, j] = data + 1
+               local_B[i, j] = data + 1
 
 Simulation and Testing
 -----------------------

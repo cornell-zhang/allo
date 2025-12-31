@@ -78,10 +78,10 @@ Example
    LyC = Layout("S1S0")
 
    @df.region()
-   def top1():
-       @df.kernel(mapping=[Pk, Pm, Pn])
-       def gemm(A: Ty[M, K] @ LyA, B: Ty[K, N] @ LyB, C: int32[M, N] @ LyC):
-           C[:, :] = allo.matmul(A, B)
+   def top1(A: Ty[M, K], B: Ty[K, N], C: int32[M, N]):
+        @df.kernel(mapping=[Pk, Pm, Pn], args=[A, B, C])
+        def gemm(local_A: Ty[M, K] @ LyA, local_B: Ty[K, N] @ LyB, local_C: int32[M, N] @ LyC):
+            local_C[:, :] = allo.matmul(local_A, local_B)
 
    mod = df.build(
        top1,

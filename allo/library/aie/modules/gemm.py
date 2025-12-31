@@ -76,7 +76,7 @@ def gen_gemm_mapping_primitive_v2(Pm, Pn, Pk, col_num=4, row_num=4):
     return mapping_primitives
 
 
-def GEMM(M, N, K, Pm, Pn, Pk, TyI, TyO):
+def GEMM(M, N, K, Pm, Pn, Pk, TyI, TyO, col_num=4, row_num=4):
     Mt, Nt = M // Pm, N // Pn
 
     LyA = Layout("S1S2")
@@ -103,4 +103,4 @@ def GEMM(M, N, K, Pm, Pn, Pk, TyI, TyO):
             with allo.meta_elif(pk == Pk - 1):
                 local_C[:, :] = C_out
 
-    return top
+    return top, gen_gemm_mapping_primitive(Pm, Pn, Pk, col_num, row_num)

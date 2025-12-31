@@ -162,16 +162,16 @@ from allo.memory import Layout
 Ly = Layout("S0")
 
 
-def _test_vector_scalar_add():
+def test_vector_scalar_add():
     # https://github.com/Xilinx/mlir-aie/tree/main/programming_examples/basic/vector_scalar_add
     Ty = int32
     M = 1024
 
     @df.region()
-    def top():
-        @df.kernel(mapping=[1])
-        def core(A: Ty[M], B: Ty[M]):
-            B[:] = allo.add(A, 1)
+    def top(A: Ty[M], B: Ty[M]):
+        @df.kernel(mapping=[1], args=[A, B])
+        def core(local_A: Ty[M], local_B: Ty[M]):
+            local_B[:] = allo.add(local_A, 1)
 
     A = np.random.randint(0, 100, M).astype(np.int32)
     if "MLIR_AIE_INSTALL_DIR" in os.environ:
@@ -197,16 +197,16 @@ LyB = Layout("RS1")
 LyC = Layout("S0S1")
 
 
-def _test_gemm_1D():
+def test_gemm_1D():
     Ty = int32
     M, N, K = 16, 16, 16
     P0 = 2
 
     @df.region()
-    def top():
-        @df.kernel(mapping=[P0])
-        def gemm(A: Ty[M, K] @ LyA, B: Ty[K, N], C: Ty[M, N] @ LyA):
-            C[:, :] = allo.matmul(A, B)
+    def top(A: Ty[M, K], B: Ty[K, N], C: Ty[M, N]):
+        @df.kernel(mapping=[P0], args=[A, B, C])
+        def gemm(local_A: Ty[M, K] @ LyA, local_B: Ty[K, N], local_C: Ty[M, N] @ LyA):
+            local_C[:, :] = allo.matmul(local_A, local_B)
 
     mod = df.build(top, target="aie")
     A = np.random.randint(0, 64, (M, K)).astype(np.int32)
@@ -230,24 +230,24 @@ M, N, K = 16, 16, 16
 
 
 @df.region()
-def top():
+def top(A: Ty[M, N], B: Ty[M, N]):
     pipe: Stream[Ty, 4]
 
-    @df.kernel(mapping=[1])
-    def producer(A: Ty[M, N]):
+    @df.kernel(mapping=[1], args=[A])
+    def producer(local_A: Ty[M, N]):
         for i, j in allo.grid(M, N):
             # load data
-            out: Ty = A[i, j]
+            out: Ty = local_A[i, j]
             # send data
             pipe.put(out)
 
-    @df.kernel(mapping=[1])
-    def consumer(B: Ty[M, N]):
+    @df.kernel(mapping=[1], args=[B])
+    def consumer(local_B: Ty[M, N]):
         for i, j in allo.grid(M, N):
             # receive data
             data = pipe.get()
             # computation
-            B[i, j] = data + 1
+            local_B[i, j] = data + 1
 
 
 def test_producer_consumer():
@@ -283,17 +283,21 @@ M, N, K = 128, 128, 32
 
 
 @df.region()
-def top1():
-    @df.kernel(mapping=[4, 4])
-    def gemm(A: TyI[M, K] @ LyA, B: TyI[K, N] @ LyB, C: TyO[M, N] @ LyC):
-        C[:, :] = allo.matmul(A, B)
+def top1(A: TyI[M, K], B: TyI[K, N], C: TyO[M, N]):
+    @df.kernel(mapping=[4, 4], args=[A, B, C])
+    def gemm(
+        local_A: TyI[M, K] @ LyA, local_B: TyI[K, N] @ LyB, local_C: TyO[M, N] @ LyC
+    ):
+        local_C[:, :] = allo.matmul(local_A, local_B)
 
 
 @df.region()
-def top2():
-    @df.kernel(mapping=[2, 4])
-    def core(A: TyO[M, N] @ LyC, B: TyO[M, N] @ LyC, C: TyO[M, N] @ LyC):
-        C[:, :] = allo.add(A, B)
+def top2(A: TyO[M, N], B: TyO[M, N], C: TyO[M, N]):
+    @df.kernel(mapping=[2, 4], args=[A, B, C])
+    def core(
+        local_A: TyO[M, N] @ LyC, local_B: TyO[M, N] @ LyC, local_C: TyO[M, N] @ LyC
+    ):
+        local_C[:, :] = allo.add(local_A, local_B)
 
 
 mod1 = df.build(top1, target="aie", project="top1.prj")
@@ -450,10 +454,10 @@ LyB = Layout("S2S0")
 LyC = Layout("S1S0")
 
 @df.region()
-def top1():
-    @df.kernel(mapping=[Pk, Pm, Pn])
-    def gemm(A: Ty[M, K] @ LyA, B: Ty[K, N] @ LyB, C: int32[M, N] @ LyC):
-        C[:, :] = allo.matmul(A, B)
+def top1(A: Ty[M, K], B: Ty[K, N], C: int32[M, N]):
+    @df.kernel(mapping=[Pk, Pm, Pn], args=[A, B, C])
+    def gemm(local_A: Ty[M, K] @ LyA, local_B: Ty[K, N] @ LyB, local_C: int32[M, N] @ LyC):
+        local_C[:, :] = allo.matmul(local_A, local_B)
 
 mod = df.build(
     top1,
@@ -523,10 +527,10 @@ M, N, K = 32, 32, 32
 P0, P1 = 2, 4
 
 @df.region()
-def top():
-    @df.kernel(mapping=[P0, P1])
-    def gemm(A: TyI[M, K] @ LyA, B: TyI[K, N] @ LyB, C: TyO[M, N] @ LyC):
-        C[:, :] = allo.matmul(A, B)
+def top(A: TyI[M, K], B: TyI[K, N], C: TyO[M, N]):
+    @df.kernel(mapping=[P0, P1], args=[A, B, C])
+    def gemm(local_A: TyI[M, K] @ LyA, local_B: TyI[K, N] @ LyB, local_C: TyO[M, N] @ LyC):
+        local_C[:, :] = allo.matmul(local_A, local_B)
 
 # trace tile (0, 0) of gemm df.kernel
 mod = df.build(

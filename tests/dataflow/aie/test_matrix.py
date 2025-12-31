@@ -134,8 +134,7 @@ def test_gemm_2D():
         def gemm(
             local_A: TyI[M, K] @ LyA, local_B: TyI[K, N] @ LyB, local_C: TyO[M, N] @ LyC
         ):
-            local_C_part: TyO[M // P0, N // P1] = allo.matmul(local_A, local_B)
-            local_C[:, :] = local_C_part
+            local_C[:, :] = allo.matmul(local_A, local_B)
 
     if is_available():
         mod = df.build(top, target="aie")
