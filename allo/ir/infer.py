@@ -683,26 +683,36 @@ class TypeInferer(ASTVisitor):
                 if isinstance(decorator, ast.Call):
                     if isinstance(decorator.func, ast.Attribute):
                         if decorator.func.attr == "kernel":
-                            assert len(decorator.keywords) > 0, "Missing kernel mapping"
-                            mapping = eval(
-                                ast.unparse(decorator.keywords[0].value),
-                                ctx.global_vars,
-                            )
-                            old_ctx.mapping = mapping
                             # Extract args parameter - now mandatory
-                            kernel_args = None
+                            mapping, kernel_args = None, None
                             for kw in decorator.keywords:
-                                if kw.arg == "args":
+                                if kw.arg == "mapping":
+                                    mapping = eval(
+                                        ast.unparse(kw.value),
+                                        ctx.global_vars,
+                                    )
+                                elif kw.arg == "args":
                                     assert isinstance(kw.value, ast.List)
                                     kernel_args = kw.value
-                                    break
-                            # if kernel_args is None:
-                            #     raise ValueError(
-                            #         f"Missing required 'args' parameter in @df.kernel decorator for function '{node.name}'. "
-                            #         "Please specify the top-level function arguments to pass to this kernel, "
-                            #         "e.g., @df.kernel(mapping=[P0, P1], args=[A, B, C])"
-                            #     )
-                            # old_ctx.kernel_args = kernel_args
+                            if mapping is None or kernel_args is None:
+                                raise ValueError(
+                                    f"Missing required 'mapping' and 'args' parameter in @df.kernel decorator for function '{node.name}'. "
+                                    "Please specify the top-level function arguments to pass to this kernel, "
+                                    "e.g., @df.kernel(mapping=[P0, P1], args=[A, B, C])"
+                                )
+                            old_ctx.mapping = mapping
+                            old_ctx.kernel_args = kernel_args
+                            for top_arg_name, arg in zip(
+                                kernel_args.elts, node.args.args
+                            ):
+                                top_arg = ctx.get_symbol(name=top_arg_name.id)
+                                dtype, shape, _ = TypeInferer.visit_type_hint(
+                                    ctx, arg.annotation
+                                )
+                                assert (
+                                    top_arg.dtype == dtype and top_arg.shape == shape
+                                ), f"df.kernel argument {arg.arg} do not match {top_arg_name.id}."
+                                arg.top_arg = top_arg_name.id
                             orig_name = node.name
                             old_ctx.func_predicate_tags[orig_name] = {}
                             if ctx.unroll:
@@ -791,7 +801,13 @@ class TypeInferer(ASTVisitor):
                     ctx, arg.annotation
                 )
                 arg.dtensor = DTensor(
-                    ctx.rank, ctx.mapping, arg.shape, arg.dtype, arg.spec, name=arg.arg
+                    ctx.rank,
+                    ctx.mapping,
+                    arg.shape,
+                    arg.dtype,
+                    arg.spec,
+                    name=arg.arg,
+                    top_name=arg.arg if not hasattr(arg, "top_arg") else arg.top_arg,
                 )
                 # update shape
                 arg.shape = arg.dtensor.get_local_shape()

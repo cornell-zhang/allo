@@ -197,7 +197,7 @@ def test_vector_scalar_add_p0():
     @df.region()
     def top(A: Ty[M], B: Ty[M]):
         @df.kernel(mapping=[P0], args=[A, B])
-        def core(local_A: Ty[M], local_B: Ty[M]):
+        def core(local_A: Ty[M] @ Ly, local_B: Ty[M] @ Ly):
             local_B[:] = allo.add(local_A[:], 1)
 
     if is_available():
@@ -223,7 +223,7 @@ def test_vector_vector_add_p0():
     @df.region()
     def top(A: Ty[M], B: Ty[M], C: Ty[M]):
         @df.kernel(mapping=[P0], args=[A, B, C])
-        def core(local_A: Ty[M], local_B: Ty[M], local_C: Ty[M]):
+        def core(local_A: Ty[M] @ Ly, local_B: Ty[M] @ Ly, local_C: Ty[M] @ Ly):
             local_C[:] = allo.add(local_A, local_B)
 
     if is_available():

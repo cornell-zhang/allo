@@ -231,6 +231,7 @@ class AIE_MLIRModule:
             - self.core_func_args: function name -> (argument index -> (argument, is_input))
             - self.global_tensors: global argument index -> DTensor
         """
+        top_func_args = [arg.dtensor.name for arg in self.func_args[self.top_func_name]]
         tag_to_read_write_pattern: dict[str, tuple[list, list]] = {}
         # init
         self.core_func_args = {}
@@ -270,9 +271,7 @@ class AIE_MLIRModule:
                             argument.dtensor.type_as_param = kernel.arguments[
                                 io_idx
                             ].type.shape
-                            global_idx = self.func_args[self.top_func_name].index(
-                                argument
-                            )
+                            global_idx = top_func_args.index(argument.dtensor.top_name)
                             argument.dtensor.set_global_info(
                                 global_idx, io_type == "in"
                             )

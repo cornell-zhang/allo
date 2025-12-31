@@ -311,7 +311,6 @@ def _build_top(s, stream_info, enable_layout=False):
                     input_types.append((dtensor.shape, dtensor.dtype))
                     if "itypes" in func.attributes:
                         input_signed += func.attributes["itypes"].value[i]
-                    s.func_args[s.top_func_name].append(s.func_args[func_name][i])
                 arg_mapping[func_name].append(used_args[arg_name])
     # update top function
     top_func = None
