@@ -61,7 +61,7 @@ np.random.seed(0)
 # ===============================================================================
 USE_ALL_NPU_KERNELS = True  # if False, we will offload softmax and gelu to cpu
 KERNEL_LIB_PATH = os.path.join(
-    os.path.dirname(__file__), "../../../../allo/library/aie/"
+    os.path.dirname(__file__), "../../../../allo/library/aie/kernels/"
 )
 BATCH = 1  # fixme: don't care for now
 SEQ = 64
@@ -179,27 +179,32 @@ def run(x_fp32: np.ndarray, params: dict):
     norm_arg_layout = Layout("R")
 
     @df.region()
-    def layer_norm_kernel():
+    def layer_norm_kernel(
+        input_x: Ty[NORM_SEQ_TILE, EMBD],
+        weight: Ty[EMBD],
+        bias: Ty[EMBD],
+        output_x: Ty[NORM_SEQ_TILE, EMBD],
+    ):
         pipe: Stream[Ty[NORM_TILE, EMBD], 1][NORM_P0]
 
-        @df.kernel(mapping=[NORM_P0])
+        @df.kernel(mapping=[NORM_P0], args=[input_x, weight])
         def norm_no_bias(
-            input_x: Ty[NORM_SEQ_TILE, EMBD] @ norm_io_layout,
-            weight: Ty[EMBD] @ norm_arg_layout,
+            local_input_x: Ty[NORM_SEQ_TILE, EMBD] @ norm_io_layout,
+            local_weight: Ty[EMBD] @ norm_arg_layout,
         ):
             pi = df.get_pid()
             tmp: Ty[NORM_TILE, EMBD] = 0
-            norm(input_x, weight, tmp)
+            norm(local_input_x, local_weight, tmp)
             pipe[pi].put(tmp)
 
-        @df.kernel(mapping=[NORM_P0])
+        @df.kernel(mapping=[NORM_P0], args=[bias, output_x])
         def norm_add_bias(
-            bias: Ty[EMBD] @ norm_arg_layout,
-            output_x: Ty[NORM_SEQ_TILE, EMBD] @ norm_io_layout,
+            local_bias: Ty[EMBD] @ norm_arg_layout,
+            local_output_x: Ty[NORM_SEQ_TILE, EMBD] @ norm_io_layout,
         ):
             pi = df.get_pid()
             data = pipe[pi].get()
-            output_x[:, :] = allo.add(data, bias)
+            local_output_x[:, :] = allo.add(data, local_bias)
 
     # ----------------------------------------------------------------
     # Linear
@@ -210,24 +215,28 @@ def run(x_fp32: np.ndarray, params: dict):
     linear_C_layout = Layout("S0S1")
 
     @df.region()
-    def linear_matmul_kernel():
-        @df.kernel(mapping=[4, 4])
+    def linear_matmul_kernel(
+        A: Ty[LINEAR_M, LINEAR_K], B: Ty[LINEAR_K, LINEAR_N], C: Ty[LINEAR_M, LINEAR_N]
+    ):
+        @df.kernel(mapping=[4, 4], args=[A, B, C])
         def gemm(
-            A: Ty[LINEAR_M, LINEAR_K] @ linear_A_layout,
-            B: Ty[LINEAR_K, LINEAR_N] @ linear_B_layout,
-            C: Ty[LINEAR_M, LINEAR_N] @ linear_C_layout,
+            local_A: Ty[LINEAR_M, LINEAR_K] @ linear_A_layout,
+            local_B: Ty[LINEAR_K, LINEAR_N] @ linear_B_layout,
+            local_C: Ty[LINEAR_M, LINEAR_N] @ linear_C_layout,
         ):
-            C[:, :] = allo.matmul(A, B)
+            local_C[:, :] = allo.matmul(local_A, local_B)
 
     @df.region()
-    def linear_accumulate_kernel():
-        @df.kernel(mapping=[2, 4])
+    def linear_accumulate_kernel(
+        A: Ty[LINEAR_M, LINEAR_N], B: Ty[LINEAR_M, LINEAR_N], C: Ty[LINEAR_M, LINEAR_N]
+    ):
+        @df.kernel(mapping=[2, 4], args=[A, B, C])
         def core(
-            A: Ty[LINEAR_M, LINEAR_N] @ linear_C_layout,
-            B: Ty[LINEAR_M, LINEAR_N] @ linear_C_layout,
-            C: Ty[LINEAR_M, LINEAR_N] @ linear_C_layout,
+            local_A: Ty[LINEAR_M, LINEAR_N] @ linear_C_layout,
+            local_B: Ty[LINEAR_M, LINEAR_N] @ linear_C_layout,
+            local_C: Ty[LINEAR_M, LINEAR_N] @ linear_C_layout,
         ):
-            C[:, :] = allo.add(A, B)
+            local_C[:, :] = allo.add(local_A, local_B)
 
     # ----------------------------------------------------------------
     # Attention Score
@@ -247,14 +256,18 @@ def run(x_fp32: np.ndarray, params: dict):
     ATTN_SCORE_LyC = Layout("S0S1")
 
     @df.region()
-    def attn_score_kernel():
-        @df.kernel(mapping=[ATTN_P0, ATTN_P1])
+    def attn_score_kernel(
+        A: Ty[ATTN_SCORE_M_TILE, HEAD_DIM],
+        B: Ty[ATTN_SCORE_N_TILE, HEAD_DIM],
+        C: Ty[ATTN_SCORE_M_TILE, ATTN_SCORE_N_TILE],
+    ):
+        @df.kernel(mapping=[ATTN_P0, ATTN_P1], args=[A, B, C])
         def core(
-            A: Ty[ATTN_SCORE_M_TILE, HEAD_DIM] @ ATTN_SCORE_LyA,
-            B: Ty[ATTN_SCORE_N_TILE, HEAD_DIM] @ ATTN_SCORE_LyB,
-            C: Ty[ATTN_SCORE_M_TILE, ATTN_SCORE_N_TILE] @ ATTN_SCORE_LyC,
+            local_A: Ty[ATTN_SCORE_M_TILE, HEAD_DIM] @ ATTN_SCORE_LyA,
+            local_B: Ty[ATTN_SCORE_N_TILE, HEAD_DIM] @ ATTN_SCORE_LyB,
+            local_C: Ty[ATTN_SCORE_M_TILE, ATTN_SCORE_N_TILE] @ ATTN_SCORE_LyC,
         ):
-            attn_score(A, B, C)
+            attn_score(local_A, local_B, local_C)
 
     # ----------------------------------------------------------------
     # Masked Softmax
@@ -274,14 +287,18 @@ def run(x_fp32: np.ndarray, params: dict):
     SOFTMAX_ROW_Ly = Layout("S1")
 
     @df.region()
-    def masked_softmax_kernel():
-        @df.kernel(mapping=[SOFTMAX_P0, SOFTMAX_P1])
+    def masked_softmax_kernel(
+        input_x: Ty[SEQ, SEQ * SOFTMAX_HEAD_TILE],
+        row: Tint[SOFTMAX_P0],
+        output_x: Ty[SEQ, SEQ * SOFTMAX_HEAD_TILE],
+    ):
+        @df.kernel(mapping=[SOFTMAX_P0, SOFTMAX_P1], args=[input_x, row, output_x])
         def core(
-            input_x: Ty[SEQ, SEQ * SOFTMAX_HEAD_TILE] @ SOFTMAX_Ly,
-            row: Tint[SOFTMAX_P0] @ SOFTMAX_ROW_Ly,
-            output_x: Ty[SEQ, SEQ * SOFTMAX_HEAD_TILE] @ SOFTMAX_Ly,
+            local_input_x: Ty[SEQ, SEQ * SOFTMAX_HEAD_TILE] @ SOFTMAX_Ly,
+            local_row: Tint[SOFTMAX_P0] @ SOFTMAX_ROW_Ly,
+            local_output_x: Ty[SEQ, SEQ * SOFTMAX_HEAD_TILE] @ SOFTMAX_Ly,
         ):
-            masked_softmax(input_x, row, output_x)
+            masked_softmax(local_input_x, local_row, local_output_x)
 
     # ----------------------------------------------------------------
     # Gelu
@@ -298,13 +315,15 @@ def run(x_fp32: np.ndarray, params: dict):
     GELU_Ly = Layout("S0S1")
 
     @df.region()
-    def gelu_kernel():
-        @df.kernel(mapping=[GELU_P0, GELU_P1])
+    def gelu_kernel(
+        input_x: Ty[GELU_SEQ_TILE, FFN_HID], output_x: Ty[GELU_SEQ_TILE, FFN_HID]
+    ):
+        @df.kernel(mapping=[GELU_P0, GELU_P1], args=[input_x, output_x])
         def core(
-            input_x: Ty[GELU_SEQ_TILE, FFN_HID] @ GELU_Ly,
-            output_x: Ty[GELU_SEQ_TILE, FFN_HID] @ GELU_Ly,
+            local_input_x: Ty[GELU_SEQ_TILE, FFN_HID] @ GELU_Ly,
+            local_output_x: Ty[GELU_SEQ_TILE, FFN_HID] @ GELU_Ly,
         ):
-            gelu(input_x, output_x)
+            gelu(local_input_x, local_output_x)
 
     # ##############################################################
     # BUILD

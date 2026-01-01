@@ -1,6 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=c-extension-no-member, too-many-instance-attributes, too-many-nested-blocks, no-name-in-module, too-many-arguments, unsupported-binary-operation
+# pylint: disable=c-extension-no-member, too-many-instance-attributes, too-many-nested-blocks, no-name-in-module, unsupported-binary-operation
 
 import os
 import re
@@ -67,7 +67,6 @@ class AIE_MLIRModule:
         self,
         module: allo_ir.ir.Module,
         top_func_name: str,
-        parameter_list: dict[str, int],
         func_args: dict,
         project_dir: str,
         stream_info: dict,
@@ -86,9 +85,6 @@ class AIE_MLIRModule:
         self.project_dir: str = project_dir
         self.allo_module: allo_ir.ir.Module = module
         self.top_func_name: str = top_func_name
-        self.module_parameter_list = [
-            k for k, _ in sorted(parameter_list.items(), key=lambda item: item[1])
-        ]
         self.func_instances = func_instances
 
         self.external_kernel_lib: dict[str, ExternalModule] = {}
@@ -234,6 +230,7 @@ class AIE_MLIRModule:
             - self.core_func_args: function name -> (argument index -> (argument, is_input))
             - self.global_tensors: global argument index -> DTensor
         """
+        top_func_args = [arg.dtensor.name for arg in self.func_args[self.top_func_name]]
         tag_to_read_write_pattern: dict[str, tuple[list, list]] = {}
         # init
         self.core_func_args = {}
@@ -273,9 +270,7 @@ class AIE_MLIRModule:
                             argument.dtensor.type_as_param = kernel.arguments[
                                 io_idx
                             ].type.shape
-                            global_idx = self.func_args[self.top_func_name].index(
-                                argument
-                            )
+                            global_idx = top_func_args.index(argument.dtensor.top_name)
                             argument.dtensor.set_global_info(
                                 global_idx, io_type == "in"
                             )
@@ -938,10 +933,6 @@ class AIE_MLIRModule:
             process.wait()
         if process.returncode != 0:
             raise RuntimeError("Failed to build AIE project.")
-
-    def help(self):
-        # print the parameter list of the module
-        print("Parameter reference:", self.module_parameter_list)
 
     def __call__(self, *args):
         for idx, dtensor in self.global_tensors.items():

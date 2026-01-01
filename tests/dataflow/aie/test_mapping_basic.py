@@ -16,10 +16,10 @@ def test_vector_scalar_add_v1():
     M = 1024
 
     @df.region()
-    def top():
-        @df.kernel(mapping=[4])
-        def core(A: Ty[M] @ Ly, B: Ty[M] @ Ly):
-            B[:] = allo.add(A, 1)
+    def top(A: Ty[M], B: Ty[M]):
+        @df.kernel(mapping=[4], args=[A, B])
+        def core(local_A: Ty[M] @ Ly, local_B: Ty[M] @ Ly):
+            local_B[:] = allo.add(local_A, 1)
 
     A = np.random.randint(0, 100, M).astype(np.int32)
     B = np.zeros(M).astype(np.int32)
@@ -43,10 +43,10 @@ def test_vector_scalar_add_v2():
     M = 1024
 
     @df.region()
-    def top():
-        @df.kernel(mapping=[4])
-        def core(A: Ty[M] @ Ly, B: Ty[M] @ Ly):
-            B[:] = allo.add(A, 1)
+    def top(A: Ty[M], B: Ty[M]):
+        @df.kernel(mapping=[4], args=[A, B])
+        def core(local_A: Ty[M] @ Ly, local_B: Ty[M] @ Ly):
+            local_B[:] = allo.add(local_A, 1)
 
     A = np.random.randint(0, 100, M).astype(np.int32)
     B = np.zeros(M).astype(np.int32)
@@ -73,10 +73,10 @@ def test_vector_scalar_add_v3():
     M = 1024
 
     @df.region()
-    def top():
-        @df.kernel(mapping=[4])
-        def core(A: Ty[M] @ Ly, B: Ty[M] @ Ly):
-            B[:] = allo.add(A, 1)
+    def top(A: Ty[M], B: Ty[M]):
+        @df.kernel(mapping=[4], args=[A, B])
+        def core(local_A: Ty[M] @ Ly, local_B: Ty[M] @ Ly):
+            local_B[:] = allo.add(local_A, 1)
 
     A = np.random.randint(0, 100, M).astype(np.int32)
     B = np.zeros(M).astype(np.int32)
@@ -105,19 +105,19 @@ def test_producer_consumer():
     M, N, K = 16, 16, 16
 
     @df.region()
-    def top():
+    def top(A: Ty[M, N], B: Ty[M, N]):
         pipe: Stream[Ty[M, N], 1]
 
-        @df.kernel(mapping=[1])
-        def producer(A: Ty[M, N]):
-            pipe.put(A)
+        @df.kernel(mapping=[1], args=[A])
+        def producer(local_A: Ty[M, N]):
+            pipe.put(local_A)
 
-        @df.kernel(mapping=[1])
-        def consumer(B: Ty[M, N]):
+        @df.kernel(mapping=[1], args=[B])
+        def consumer(local_B: Ty[M, N]):
             data = pipe.get()
             for i, j in allo.grid(M, N):
                 # computation
-                B[i, j] = data[i, j] + 1
+                local_B[i, j] = data[i, j] + 1
 
     A = np.random.randint(0, 64, (M, K)).astype(np.int32)
     B = np.zeros((M, N), dtype=np.int32)

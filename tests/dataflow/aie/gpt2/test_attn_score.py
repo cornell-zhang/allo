@@ -13,7 +13,7 @@ from allo.ir.types import float32
 
 KERNEL_LIB_PATH = os.path.join(
     os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "../../../../allo/library/aie")
+        os.path.join(os.path.dirname(__file__), "../../../../allo/library/aie/kernels")
     ),
     "",
 )
@@ -46,14 +46,16 @@ def _test_attn_score():
     Ty = float32
 
     @df.region()
-    def top():
-        @df.kernel(mapping=[4, 4])
+    def top(
+        A: Ty[seq_len, head_dim], B: Ty[seq_len, head_dim], C: Ty[seq_len, seq_len]
+    ):
+        @df.kernel(mapping=[4, 4], args=[A, B, C])
         def core(
-            A: Ty[seq_len, head_dim] @ LyA,
-            B: Ty[seq_len, head_dim] @ LyB,
-            C: Ty[seq_len, seq_len] @ LyC,
+            local_A: Ty[seq_len, head_dim] @ LyA,
+            local_B: Ty[seq_len, head_dim] @ LyB,
+            local_C: Ty[seq_len, seq_len] @ LyC,
         ):
-            attn_score(A, B, C)
+            attn_score(local_A, local_B, local_C)
 
     input_tensor_a = torch.randn(seq_len, head_dim, dtype=torch.float32)
     input_tensor_b = torch.randn(seq_len, head_dim, dtype=torch.float32)

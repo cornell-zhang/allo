@@ -15,7 +15,9 @@ from allo.backend.aie import is_available
 @pytest.fixture(scope="module", autouse=True)
 def setup_env():
     dir_path = os.path.dirname(os.path.abspath(__file__))
-    os.environ["ALLO_EXTERNAL_KERNEL_DIR"] = f"{dir_path}/../../../allo/library/aie/"
+    os.environ["ALLO_EXTERNAL_KERNEL_DIR"] = (
+        f"{dir_path}/../../../allo/library/aie/kernels/"
+    )
     yield
     del os.environ["ALLO_EXTERNAL_KERNEL_DIR"]
 
@@ -33,10 +35,12 @@ def test_gemm_1D():
     LyA = Layout("S0R")
 
     @df.region()
-    def top():
-        @df.kernel(mapping=[P0])
-        def gemm(A: TyI[M, K] @ LyA, B: TyI[K, N], C: TyO[M, N] @ LyA):
-            C[:, :] = allo.matmul(A, B)
+    def top(A: TyI[M, K], B: TyI[K, N], C: TyO[M, N]):
+        @df.kernel(mapping=[P0], args=[A, B, C])
+        def gemm(
+            local_A: TyI[M, K] @ LyA, local_B: TyI[K, N], local_C: TyO[M, N] @ LyA
+        ):
+            local_C[:, :] = allo.matmul(local_A, local_B)
 
     if is_available():
         mod = df.build(top, target="aie")
@@ -64,10 +68,12 @@ def test_gemm_2D():
     LyC = Layout("S0S1")
 
     @df.region()
-    def top():
-        @df.kernel(mapping=[P0, P1])
-        def gemm(A: TyI[M, K] @ LyA, B: TyI[K, N] @ LyB, C: TyO[M, N] @ LyC):
-            C[:, :] = allo.matmul(A, B)
+    def top(A: TyI[M, K], B: TyI[K, N], C: TyO[M, N]):
+        @df.kernel(mapping=[P0, P1], args=[A, B, C])
+        def gemm(
+            local_A: TyI[M, K] @ LyA, local_B: TyI[K, N] @ LyB, local_C: TyO[M, N] @ LyC
+        ):
+            local_C[:, :] = allo.matmul(local_A, local_B)
 
     if is_available():
         mod = df.build(top, target="aie")
@@ -95,10 +101,12 @@ def test_mixed_gemm_1D():
     LyA = Layout("S0R")
 
     @df.region()
-    def top():
-        @df.kernel(mapping=[P0])
-        def gemm(A: Ty_l[M, K] @ LyA, B: Ty_l[K, N], C: Ty[M, N] @ LyA):
-            C[:, :] = allo.matmul(A, B)
+    def top(A: Ty_l[M, K], B: Ty_l[K, N], C: Ty[M, N]):
+        @df.kernel(mapping=[P0], args=[A, B, C])
+        def gemm(
+            local_A: Ty_l[M, K] @ LyA, local_B: Ty_l[K, N], local_C: Ty[M, N] @ LyA
+        ):
+            local_C[:, :] = allo.matmul(local_A, local_B)
 
     if is_available():
         mod = df.build(top, target="aie")
@@ -126,10 +134,12 @@ def test_mixed_gemm_2D():
     LyC = Layout("S0S1")
 
     @df.region()
-    def top():
-        @df.kernel(mapping=[P0, P1])
-        def gemm(A: Ty[M, K] @ LyA, B: Ty_l[K, N] @ LyB, C: Ty[M, N] @ LyC):
-            C[:, :] = allo.matmul(A, B)
+    def top(A: Ty[M, K], B: Ty_l[K, N], C: Ty[M, N]):
+        @df.kernel(mapping=[P0, P1], args=[A, B, C])
+        def gemm(
+            local_A: Ty[M, K] @ LyA, local_B: Ty_l[K, N] @ LyB, local_C: Ty[M, N] @ LyC
+        ):
+            local_C[:, :] = allo.matmul(local_A, local_B)
 
     if is_available():
         mod = df.build(top, target="aie")
@@ -196,22 +206,26 @@ def test_pingpong_mixed_gemm(M, N, K, Pm, Pn, Pk):
     LyC = Layout("S1S0")
 
     @df.region()
-    def top():
+    def top(A: TyI[M, K], B: TyI_l[K, N], C: TyO[M, N]):
         pipe: Stream[TyO[Mt, Nt], 2][Pk - 1, Pm, Pn]
 
-        @df.kernel(mapping=[Pk, Pm, Pn])
-        def gemm(A: TyI[M, K] @ LyA, B: TyI_l[K, N] @ LyB, C: TyO[M, N] @ LyC):
+        @df.kernel(mapping=[Pk, Pm, Pn], args=[A, B, C])
+        def gemm(
+            local_A: TyI[M, K] @ LyA,
+            local_B: TyI_l[K, N] @ LyB,
+            local_C: TyO[M, N] @ LyC,
+        ):
             pk, pm, pn = df.get_pid()
             C_in: TyO[Mt, Nt]
             with allo.meta_if(pk > 0):
                 C_in[:, :] = pipe[pk - 1, pm, pn].get()
             with allo.meta_else():
                 C_in[:, :] = 0
-            C_out: TyO[Mt, Nt] = allo.add(allo.matmul(A, B), C_in)
+            C_out: TyO[Mt, Nt] = allo.add(allo.matmul(local_A, local_B), C_in)
             with allo.meta_if(pk < Pk - 1):
                 pipe[pk, pm, pn].put(C_out)
             with allo.meta_elif(pk == Pk - 1):
-                C[:, :] = C_out
+                local_C[:, :] = C_out
 
     mapping_primitives = gen_gemm_mapping_primitive(Pm, Pn, Pk)
 
@@ -235,9 +249,11 @@ def test_pingpong_mixed_gemm(M, N, K, Pm, Pn, Pk):
 
 
 if __name__ == "__main__":
-    # [NOTE]: export ALLO_EXTERNAL_KERNEL_DIR=/allo/root/dir/allo/library/aie/
+    # [NOTE]: export ALLO_EXTERNAL_KERNEL_DIR=/allo/root/dir/allo/library/aie/kernels/
     dir_path = os.path.dirname(os.path.abspath(__file__))
-    os.environ["ALLO_EXTERNAL_KERNEL_DIR"] = f"{dir_path}/../../../allo/library/aie/"
+    os.environ["ALLO_EXTERNAL_KERNEL_DIR"] = (
+        f"{dir_path}/../../../allo/library/aie/kernels/"
+    )
 
     test_gemm_1D()
     test_gemm_2D()

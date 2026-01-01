@@ -51,7 +51,7 @@ def conv2d_simple(
 
 def kernel_paths():
     dir_path = os.path.dirname(os.path.abspath(__file__))
-    kernel_dir = os.path.join(dir_path, "../../../allo/library/aie/")
+    kernel_dir = os.path.join(dir_path, "../../../allo/library/aie/kernels/")
     return [
         os.path.join(kernel_dir, "conv_small_scalar.cc"),
         os.path.join(kernel_dir, "conv_small_vector.cc"),
@@ -75,14 +75,14 @@ def test_trace_conv2d(kernel_path: str):
     Ty = int32
 
     @df.region()
-    def top():
-        @df.kernel(mapping=[1])
+    def top(Input: Ty[IN_H, IN_W], Kernel: Ty[K_H, K_W], Output: Ty[OUT_H, OUT_W]):
+        @df.kernel(mapping=[1], args=[Input, Kernel, Output])
         def core(
-            Input: Ty[IN_H, IN_W] @ Ly,
-            Kernel: Ty[K_H, K_W] @ Ly,
-            Output: Ty[OUT_H, OUT_W] @ Ly,
+            local_Input: Ty[IN_H, IN_W] @ Ly,
+            local_Kernel: Ty[K_H, K_W] @ Ly,
+            local_Output: Ty[OUT_H, OUT_W] @ Ly,
         ):
-            conv(Input, Kernel, Output)
+            conv(local_Input, local_Kernel, local_Output)
 
     # Create random input data
     input_tensor = torch.randint(-10, 10, (IN_H, IN_W), dtype=torch.int32)
@@ -117,6 +117,6 @@ def test_trace_conv2d(kernel_path: str):
 
 if __name__ == "__main__":
     dir_path = os.path.dirname(os.path.abspath(__file__))
-    KERNEL_LIB_PATH = f"{dir_path}/../../../allo/library/aie/"
+    KERNEL_LIB_PATH = f"{dir_path}/../../../allo/library/aie/kernels/"
     test_trace_conv2d(KERNEL_LIB_PATH + "conv_small_scalar.cc")
     test_trace_conv2d(KERNEL_LIB_PATH + "conv_small_vector.cc")

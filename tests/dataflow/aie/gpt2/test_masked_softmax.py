@@ -13,7 +13,7 @@ from allo.backend.aie.external_kernel import ExternalModule
 
 KERNEL_LIB_PATH = os.path.join(
     os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "../../../../allo/library/aie")
+        os.path.join(os.path.dirname(__file__), "../../../../allo/library/aie/kernels")
     ),
     "",
 )
@@ -69,14 +69,18 @@ def _test_masked_softmax_tiled():
     Ty_1 = int32
 
     @df.region()
-    def top():
-        @df.kernel(mapping=[2, HEAD_TILE])
+    def top(
+        Input: Ty[SEQ_LEN_TILED, SEQ_LEN * HEAD_TILE],
+        TileRowStart: Ty_1[2],
+        Output: Ty[SEQ_LEN_TILED, SEQ_LEN * HEAD_TILE],
+    ):
+        @df.kernel(mapping=[2, HEAD_TILE], args=[Input, TileRowStart, Output])
         def core(
-            Input: Ty[SEQ_LEN_TILED, SEQ_LEN * HEAD_TILE] @ Ly,
-            TileRowStart: Ty_1[2] @ Ly_1,
-            Output: Ty[SEQ_LEN_TILED, SEQ_LEN * HEAD_TILE] @ Ly,
+            local_Input: Ty[SEQ_LEN_TILED, SEQ_LEN * HEAD_TILE] @ Ly,
+            local_TileRowStart: Ty_1[2] @ Ly_1,
+            local_Output: Ty[SEQ_LEN_TILED, SEQ_LEN * HEAD_TILE] @ Ly,
         ):
-            masked_softmax_kernel(Input, TileRowStart, Output)
+            masked_softmax_kernel(local_Input, local_TileRowStart, local_Output)
 
     # Create random input data
     input_tensor = torch.randn(SEQ_LEN_TILED, SEQ_LEN * HEAD_TILE, dtype=torch.float32)

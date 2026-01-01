@@ -13,7 +13,7 @@ from allo.ir.types import float32
 
 KERNEL_LIB_PATH = os.path.join(
     os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "../../../../allo/library/aie")
+        os.path.join(os.path.dirname(__file__), "../../../../allo/library/aie/kernels")
     ),
     "",
 )
@@ -33,13 +33,13 @@ def _test_gelu():
     )
 
     @df.region()
-    def top():
-        @df.kernel(mapping=[4, 4])
+    def top(input_x: Ty[seq_tile, feature_dim], output_x: Ty[seq_tile, feature_dim]):
+        @df.kernel(mapping=[4, 4], args=[input_x, output_x])
         def core(
-            input_x: Ty[seq_tile, feature_dim] @ Ly,
-            output_x: Ty[seq_tile, feature_dim] @ Ly,
+            local_input_x: Ty[seq_tile, feature_dim] @ Ly,
+            local_output_x: Ty[seq_tile, feature_dim] @ Ly,
         ):
-            gelu(input_x, output_x)
+            gelu(local_input_x, local_output_x)
 
     gelu_model = nn.GELU()
     input_tensor = torch.randn(seq_tile, feature_dim, dtype=torch.float32)

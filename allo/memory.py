@@ -328,12 +328,13 @@ class DTensor:
     Distributed tensor.
     """
 
-    def __init__(self, rank, mapping, shape, dtype, spec, name=None):
+    def __init__(self, rank, mapping, shape, dtype, spec, name=None, top_name=None):
         self.rank = rank
         self.mapping = mapping  # mesh dims
         self.shape = shape  # tensor shape
         self.dtype = dtype
         self.name = name
+        self.top_name = top_name
 
         # Handle spec: can be Layout, Memory, or None
         self.layout: Layout = None

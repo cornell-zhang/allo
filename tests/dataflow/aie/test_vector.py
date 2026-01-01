@@ -18,10 +18,10 @@ def test_vector_scalar_add():
     M = 1024
 
     @df.region()
-    def top():
-        @df.kernel(mapping=[1])
-        def core(A: Ty[M], B: Ty[M]):
-            B[:] = allo.add(A, 1)
+    def top(A: Ty[M], B: Ty[M]):
+        @df.kernel(mapping=[1], args=[A, B])
+        def core(local_A: Ty[M], local_B: Ty[M]):
+            local_B[:] = allo.add(local_A, 1)
 
     A = np.random.randint(0, 100, M).astype(np.int32)
     if is_available():
@@ -45,14 +45,14 @@ def test_vector_scalar_conditional_add():
     P = 4
 
     @df.region()
-    def top():
-        @df.kernel(mapping=[P])
-        def core(A: Ty[M] @ Ly, B: Ty[M] @ Ly):
+    def top(A: Ty[M], B: Ty[M]):
+        @df.kernel(mapping=[P], args=[A, B])
+        def core(local_A: Ty[M] @ Ly, local_B: Ty[M] @ Ly):
             pi = df.get_pid()
             with allo.meta_if(pi < P // 2):
-                B[:] = allo.add(A, 1)
+                local_B[:] = allo.add(local_A, 1)
             with allo.meta_else():
-                B[:] = allo.add(A, -1)
+                local_B[:] = allo.add(local_A, -1)
 
     A = np.random.randint(0, 100, M).astype(np.int32)
     if is_available():
@@ -73,10 +73,10 @@ def test_vector_scalar_mul():
     M = 512
 
     @df.region()
-    def top():
-        @df.kernel(mapping=[1])
-        def core(A: Ty[M], B: Ty[M]):
-            B[:] = allo.mul(A, 2)
+    def top(A: Ty[M], B: Ty[M]):
+        @df.kernel(mapping=[1], args=[A, B])
+        def core(local_A: Ty[M], local_B: Ty[M]):
+            local_B[:] = allo.mul(local_A, 2)
 
     A = np.random.random(M).astype(np.float32)
     if is_available():
@@ -100,10 +100,10 @@ def test_vector_vector_add():
     M = 1024
 
     @df.region()
-    def top():
-        @df.kernel(mapping=[1])
-        def core(A: Ty[M], B: Ty[M], C: Ty[M]):
-            C[:] = allo.add(A, B)
+    def top(A: Ty[M], B: Ty[M], C: Ty[M]):
+        @df.kernel(mapping=[1], args=[A, B, C])
+        def core(local_A: Ty[M], local_B: Ty[M], local_C: Ty[M]):
+            local_C[:] = allo.add(local_A, local_B)
 
     A = np.random.randint(0, 100, M).astype(np.int32)
     B = np.random.randint(0, 100, M).astype(np.int32)
@@ -129,10 +129,10 @@ def test_vector_vector_bf16_add():
     M = 1024
 
     @df.region()
-    def top():
-        @df.kernel(mapping=[1])
-        def core(A: Ty[M], B: Ty[M], C: Ty[M]):
-            C[:] = allo.add(A, B)
+    def top(A: Ty[M], B: Ty[M], C: Ty[M]):
+        @df.kernel(mapping=[1], args=[A, B, C])
+        def core(local_A: Ty[M], local_B: Ty[M], local_C: Ty[M]):
+            local_C[:] = allo.add(local_A, local_B)
 
     A = np.random.random(M).astype(np_bfloat16)
     B = np.random.random(M).astype(np_bfloat16)
@@ -161,10 +161,10 @@ def test_vector_vector_mul():
     M = 1024
 
     @df.region()
-    def top():
-        @df.kernel(mapping=[1])
-        def core(A: Ty[M], B: Ty[M], C: Ty[M]):
-            C[:] = allo.mul(A, B)
+    def top(A: Ty[M], B: Ty[M], C: Ty[M]):
+        @df.kernel(mapping=[1], args=[A, B, C])
+        def core(local_A: Ty[M], local_B: Ty[M], local_C: Ty[M]):
+            local_C[:] = allo.mul(local_A, local_B)
 
     A = np.random.random(M).astype(np.float32)
     B = np.random.random(M).astype(np.float32)
@@ -195,10 +195,10 @@ def test_vector_scalar_add_p0():
     P0 = 4
 
     @df.region()
-    def top():
-        @df.kernel(mapping=[P0])
-        def core(A: Ty[M] @ Ly, B: Ty[M] @ Ly):
-            B[:] = allo.add(A[:], 1)
+    def top(A: Ty[M], B: Ty[M]):
+        @df.kernel(mapping=[P0], args=[A, B])
+        def core(local_A: Ty[M] @ Ly, local_B: Ty[M] @ Ly):
+            local_B[:] = allo.add(local_A[:], 1)
 
     if is_available():
         mod = df.build(top, target="aie")
@@ -221,10 +221,10 @@ def test_vector_vector_add_p0():
     P0 = 4
 
     @df.region()
-    def top():
-        @df.kernel(mapping=[P0])
-        def core(A: Ty[M] @ Ly, B: Ty[M] @ Ly, C: Ty[M] @ Ly):
-            C[:] = allo.add(A, B)
+    def top(A: Ty[M], B: Ty[M], C: Ty[M]):
+        @df.kernel(mapping=[P0], args=[A, B, C])
+        def core(local_A: Ty[M] @ Ly, local_B: Ty[M] @ Ly, local_C: Ty[M] @ Ly):
+            local_C[:] = allo.add(local_A, local_B)
 
     if is_available():
         mod = df.build(top, target="aie")
@@ -239,8 +239,8 @@ def test_vector_vector_add_p0():
 
 
 if __name__ == "__main__":
-    test_vector_scalar_conditional_add()
     test_vector_scalar_add()
+    test_vector_scalar_conditional_add()
     test_vector_scalar_mul()
     test_vector_vector_add()
     test_vector_vector_bf16_add()

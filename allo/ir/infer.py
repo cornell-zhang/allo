@@ -1,6 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=unused-argument, eval-used, redefined-variable-type, cell-var-from-loop, too-many-branches
+# pylint: disable=unused-argument, eval-used, redefined-variable-type, cell-var-from-loop
 
 import ast
 import copy
@@ -693,25 +693,32 @@ class TypeInferer(ASTVisitor):
                 if isinstance(decorator, ast.Call):
                     if isinstance(decorator.func, ast.Attribute):
                         if decorator.func.attr == "kernel":
-                            assert len(decorator.keywords) > 0, "Missing kernel mapping"
-                            mapping = eval(
-                                ast.unparse(decorator.keywords[0].value),
-                                ctx.global_vars,
-                            )
-                            old_ctx.mapping = mapping
-                            # Extract args parameter - now mandatory
-                            kernel_args = None
+                            mapping, kernel_args = None, []
                             for kw in decorator.keywords:
-                                if kw.arg == "args":
-                                    kernel_args = kw.value
-                                    break
-                            if kernel_args is None:
-                                raise ValueError(
-                                    f"Missing required 'args' parameter in @df.kernel decorator for function '{node.name}'. "
-                                    "Please specify the top-level function arguments to pass to this kernel, "
-                                    "e.g., @df.kernel(mapping=[P0, P1], args=[A, B, C])"
+                                if kw.arg == "mapping":
+                                    mapping = eval(
+                                        ast.unparse(kw.value),
+                                        ctx.global_vars,
+                                    )
+                                elif kw.arg == "args":
+                                    assert isinstance(kw.value, ast.List)
+                                    kernel_args = kw.value.elts
+                            assert (
+                                mapping is not None
+                            ), f"Invalid @df.kernel decorator on function '{node.name}': missing required 'mapping' parameter."
+                            old_ctx.mapping = mapping
+                            assert len(kernel_args) == len(
+                                node.args.args
+                            ), f"Invalid @df.kernel decorator on function '{node.name}': 'args' length mismatch (expected {len(node.args.args)}, got {len(kernel_args)})."
+                            for top_arg_name, arg in zip(kernel_args, node.args.args):
+                                top_arg = ctx.get_symbol(name=top_arg_name.id)
+                                dtype, shape, _ = TypeInferer.visit_type_hint(
+                                    ctx, arg.annotation
                                 )
-                            old_ctx.kernel_args = kernel_args
+                                assert (
+                                    top_arg.dtype == dtype and top_arg.shape == shape
+                                ), f"df.kernel argument {arg.arg} do not match {top_arg_name.id}."
+                                arg.top_arg = top_arg_name.id
                             orig_name = node.name
                             old_ctx.func_predicate_tags[orig_name] = {}
                             if ctx.unroll:
@@ -795,98 +802,31 @@ class TypeInferer(ASTVisitor):
 
         with ctx.block_scope_guard():
             # Input types
-            # For dataflow kernels, kernel_args is mandatory
-            if hasattr(ctx, "kernel_args") and ctx.kernel_args is not None:
-                # Use kernel_args from decorator to get type info from top-level function
-                assert (
-                    ctx.top_func_tree is not None
-                ), "kernel_args requires top-level function context"
-                kernel_arg_list = (
-                    ctx.kernel_args.elts
-                    if isinstance(ctx.kernel_args, ast.Tuple)
-                    else [ctx.kernel_args]
+            for arg in node.args.args:
+                arg.dtype, arg.shape, arg.spec = TypeInferer.visit_type_hint(
+                    ctx, arg.annotation
                 )
-                if not isinstance(ctx.kernel_args, ast.List):
-                    kernel_arg_list = (
-                        ctx.kernel_args.elts
-                        if isinstance(ctx.kernel_args, ast.Tuple)
-                        else [ctx.kernel_args]
+                if hasattr(arg.dtype, "stateful") and arg.dtype.stateful:
+                    raise RuntimeError(
+                        f"Function parameter '{arg.arg}' cannot be Stateful. "
+                        "Stateful variables can only be declared locally within a kernel."
                     )
-                else:
-                    kernel_arg_list = ctx.kernel_args.elts
-
-                # Build mapping from top-level arg names to their type info
-                top_level_args = {}
-                for top_arg in ctx.top_func_tree.args.args:
-                    top_level_args[top_arg.arg] = top_arg
-
-                # Process each kernel argument based on the specified args list
-                for _, (kernel_arg_node, func_arg) in enumerate(
-                    zip(kernel_arg_list, node.args.args)
-                ):
-                    # Get the name of the top-level argument to use
-                    if isinstance(kernel_arg_node, ast.Name):
-                        top_arg_name = kernel_arg_node.id
-                    else:
-                        raise ValueError(
-                            f"Kernel args must be simple names, got {ast.unparse(kernel_arg_node)}"
-                        )
-
-                    # Look up the type info from the top-level function
-                    if top_arg_name not in top_level_args:
-                        raise ValueError(
-                            f"Kernel arg '{top_arg_name}' not found in top-level function arguments"
-                        )
-
-                    top_arg = top_level_args[top_arg_name]
-                    # Use the type hint from the top-level argument
-                    func_arg.dtype, func_arg.shape, func_arg.spec = (
-                        TypeInferer.visit_type_hint(ctx, top_arg.annotation)
-                    )
-                    # Use top_arg_name for DTensor so it maps to the top-level function argument
-                    func_arg.dtensor = DTensor(
-                        ctx.rank,
-                        ctx.mapping,
-                        func_arg.shape,
-                        func_arg.dtype,
-                        func_arg.spec,
-                        name=top_arg_name,
-                    )
-                    # update shape
-                    func_arg.shape = func_arg.dtensor.get_local_shape()
-                    assert (
-                        ctx.get_symbol(name=func_arg.arg, allow_missing=True) is None
-                    ), (
-                        f"Argument name '{func_arg.arg}' conflicts with an existing symbol. "
-                        f"Please choose a different name to avoid the conflict."
-                    )
-                    ctx.put_symbol(name=func_arg.arg, val=func_arg)
-            else:
-                # Non-dataflow kernels: use function signature
-                for arg in node.args.args:
-                    arg.dtype, arg.shape, arg.spec = TypeInferer.visit_type_hint(
-                        ctx, arg.annotation
-                    )
-                    if hasattr(arg.dtype, "stateful") and arg.dtype.stateful:
-                        raise RuntimeError(
-                            f"Function parameter '{arg.arg}' cannot be Stateful. "
-                            "Stateful variables can only be declared locally within a kernel."
-                        )
-                    arg.dtensor = DTensor(
-                        ctx.rank,
-                        ctx.mapping,
-                        arg.shape,
-                        arg.dtype,
-                        arg.spec,
-                        name=arg.arg,
-                    )
-                    # update shape
-                    arg.shape = arg.dtensor.get_local_shape()
-                    assert ctx.get_symbol(name=arg.arg, allow_missing=True) is None, (
-                        f"Argument name '{arg.arg}' conflicts with an existing symbol. "
-                        f"Please choose a different name to avoid the conflict."
-                    )
-                    ctx.put_symbol(name=arg.arg, val=arg)
+                arg.dtensor = DTensor(
+                    ctx.rank,
+                    ctx.mapping,
+                    arg.shape,
+                    arg.dtype,
+                    arg.spec,
+                    name=arg.arg,
+                    top_name=arg.arg if not hasattr(arg, "top_arg") else arg.top_arg,
+                )
+                # update shape
+                arg.shape = arg.dtensor.get_local_shape()
+                assert ctx.get_symbol(name=arg.arg, allow_missing=True) is None, (
+                    f"Argument name '{arg.arg}' conflicts with an existing symbol. "
+                    f"Please choose a different name to avoid the conflict."
+                )
+                ctx.put_symbol(name=arg.arg, val=arg)
 
             func_name = (
                 node.name if ctx.func_id is None else f"{node.name}_{ctx.func_id}"
