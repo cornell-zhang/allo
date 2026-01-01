@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import io
+import os
+import shutil
 
 # pylint: disable=no-name-in-module
 from .._mlir.dialects import allo as allo_d
@@ -12,7 +14,6 @@ from .._mlir.passmanager import PassManager
 from ..ir.transform import find_func_in_module
 
 from .xlscc.xls_wrapper import wrap_xlscc, validate_xls_ir
-
 
 class XLSCCModule:
     def __init__(
