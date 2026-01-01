@@ -182,7 +182,7 @@
   <h1>Source code for allo.customize</h1><div class="highlight"><pre>
 <span></span><span class="c1"># Copyright Allo authors. All Rights Reserved.</span>
 <span class="c1"># SPDX-License-Identifier: Apache-2.0</span>
-<span class="c1"># pylint: disable=no-name-in-module, too-many-nested-blocks</span>
+<span class="c1"># pylint: disable=no-name-in-module, too-many-nested-blocks, too-many-instance-attributes</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">inspect</span>
@@ -1398,6 +1398,49 @@
                 <span class="n">sch</span> <span class="o">=</span> <span class="n">KERNEL2SCHEDULE</span><span class="p">[</span><span class="n">sch</span><span class="p">](</span><span class="n">schedule</span><span class="p">)</span>
             <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">sch</span><span class="p">,</span> <span class="n">Schedule</span><span class="p">):</span>
                 <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;The first argument must be a Schedule object&quot;</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">sch</span><span class="p">,</span> <span class="s2">&quot;stateful_var_map&quot;</span><span class="p">)</span> <span class="ow">and</span> <span class="n">sch</span><span class="o">.</span><span class="n">stateful_var_map</span><span class="p">:</span>
+                <span class="n">stateful_seen</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;_stateful_seen&quot;</span><span class="p">,</span> <span class="p">{})</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_stateful_seen</span> <span class="o">=</span> <span class="n">stateful_seen</span>
+
+                <span class="n">func_name</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">sch</span><span class="o">.</span><span class="n">top_func_name</span><span class="si">}</span><span class="s2">_</span><span class="si">{</span><span class="nb">id</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">if</span> <span class="nb">id</span> <span class="k">else</span> <span class="n">sch</span><span class="o">.</span><span class="n">top_func_name</span>
+                <span class="n">func</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_find_function</span><span class="p">(</span><span class="n">func_name</span><span class="p">)</span>
+
+                <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="p">(</span><span class="n">global_name</span><span class="p">,</span> <span class="n">_</span><span class="p">)</span> <span class="ow">in</span> <span class="n">sch</span><span class="o">.</span><span class="n">stateful_var_map</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                    <span class="n">seen</span> <span class="o">=</span> <span class="n">stateful_seen</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">global_name</span><span class="p">,</span> <span class="p">[])</span>
+
+                    <span class="n">suffix</span> <span class="o">=</span> <span class="nb">id</span> <span class="k">if</span> <span class="nb">id</span> <span class="k">else</span> <span class="sa">f</span><span class="s2">&quot;inst</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">seen</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+                    <span class="n">new_name</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">global_name</span><span class="si">}</span><span class="s2">_</span><span class="si">{</span><span class="n">suffix</span><span class="si">}</span><span class="s2">&quot;</span>
+
+                    <span class="n">original_global</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span>
+                        <span class="p">(</span>
+                            <span class="n">op</span>
+                            <span class="k">for</span> <span class="n">op</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">module</span><span class="o">.</span><span class="n">body</span><span class="o">.</span><span class="n">operations</span>
+                            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">memref_d</span><span class="o">.</span><span class="n">GlobalOp</span><span class="p">)</span>
+                            <span class="ow">and</span> <span class="n">op</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;sym_name&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">value</span> <span class="o">==</span> <span class="n">global_name</span>
+                        <span class="p">),</span>
+                        <span class="kc">None</span><span class="p">,</span>
+                    <span class="p">)</span>
+                    <span class="k">if</span> <span class="n">original_global</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Stateful global </span><span class="si">{</span><span class="n">global_name</span><span class="si">}</span><span class="s2"> not found&quot;</span><span class="p">)</span>
+
+                    <span class="n">target</span> <span class="o">=</span> <span class="p">(</span>
+                        <span class="n">original_global</span>
+                        <span class="k">if</span> <span class="ow">not</span> <span class="n">seen</span>
+                        <span class="k">else</span> <span class="n">original_global</span><span class="o">.</span><span class="n">operation</span><span class="o">.</span><span class="n">clone</span><span class="p">(</span>
+                            <span class="n">InsertionPoint</span><span class="p">(</span><span class="n">original_global</span><span class="p">)</span>
+                        <span class="p">)</span>
+                    <span class="p">)</span>
+                    <span class="n">target</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;sym_name&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">StringAttr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">new_name</span><span class="p">)</span>
+                    <span class="n">seen</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">new_name</span><span class="p">)</span>
+
+                    <span class="k">for</span> <span class="n">op</span> <span class="ow">in</span> <span class="n">func</span><span class="o">.</span><span class="n">entry_block</span><span class="o">.</span><span class="n">operations</span><span class="p">:</span>
+                        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">memref_d</span><span class="o">.</span><span class="n">GetGlobalOp</span><span class="p">)</span> <span class="ow">and</span> <span class="p">(</span>
+                            <span class="n">FlatSymbolRefAttr</span><span class="p">(</span><span class="n">op</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">])</span><span class="o">.</span><span class="n">value</span>
+                            <span class="o">==</span> <span class="n">global_name</span>
+                        <span class="p">):</span>
+                            <span class="n">op</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">FlatSymbolRefAttr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">new_name</span><span class="p">)</span>
+
             <span class="k">for</span> <span class="n">primitive</span> <span class="ow">in</span> <span class="n">sch</span><span class="o">.</span><span class="n">primitive_sequences</span><span class="p">:</span>
                 <span class="n">args</span><span class="p">,</span> <span class="n">kwargs</span> <span class="o">=</span> <span class="n">primitive</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>
                 <span class="c1"># Avoid changing the original schedule</span>
@@ -1452,14 +1495,7 @@
                 <span class="k">return</span> <span class="n">ele</span>
         <span class="k">return</span> <span class="p">[]</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">build</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span>
-        <span class="n">target</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-        <span class="n">mode</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-        <span class="n">project</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-        <span class="n">configs</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-        <span class="n">wrap_io</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-    <span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">build</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">target</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">project</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">configs</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">wrap_io</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
         <span class="k">if</span> <span class="n">target</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">target</span> <span class="o">==</span> <span class="s2">&quot;llvm&quot;</span><span class="p">:</span>
             <span class="n">target</span> <span class="o">=</span> <span class="s2">&quot;llvm&quot;</span>
             <span class="k">return</span> <span class="n">LLVMModule</span><span class="p">(</span>
@@ -1571,6 +1607,7 @@
         <span class="n">inst_list</span><span class="o">=</span><span class="n">instantiate</span><span class="p">,</span>
         <span class="n">func_instances</span><span class="o">=</span><span class="n">func_instances</span><span class="p">,</span>
     <span class="p">)</span>
+    <span class="n">sch</span><span class="o">.</span><span class="n">stateful_var_map</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="s2">&quot;stateful_var_map&quot;</span><span class="p">,</span> <span class="p">{})</span>
     <span class="c1"># Attach buffers to schedule:</span>
     <span class="c1"># The reason why we do not attach buffers to function is that</span>
     <span class="c1"># we may have multiple schedules referring to the same function,</span>

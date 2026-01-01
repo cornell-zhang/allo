@@ -109,10 +109,10 @@ Tracing tile ``(0, 0)`` of the ``allo.dataflow.kernel`` named ``gemm``.
    P0, P1 = 2, 4
 
    @df.region()
-   def top():
-       @df.kernel(mapping=[P0, P1])
-       def gemm(A: TyI[M, K] @ LyA, B: TyI[K, N] @ LyB, C: TyO[M, N] @ LyC):
-           C[:, :] = allo.matmul(A, B)
+   def top(A: TyI[M, K], B: TyI[K, N], C: TyO[M, N]):
+       @df.kernel(mapping=[P0, P1], args=[A, B, C])
+       def gemm(local_A: TyI[M, K] @ LyA, local_B: TyI[K, N] @ LyB, local_C: TyO[M, N] @ LyC):
+           local_C[:, :] = allo.matmul(local_A, local_B)
 
    # trace tile (0, 0) of gemm df.kernel
    mod = df.build(
@@ -141,8 +141,8 @@ such as vectorization of external kernels. The following example demonstrates
 how to use trace profiling on some convolution kernels.
 
 In this case, due to the relatively small computation scale, the difference
-between the vectorized (``allo/library/aie/conv_small_vector.cc``) and
-scalar (``allo/library/aie/conv_small_scalar.cc``) versions of the kernel is not
+between the vectorized (``allo/library/aie/kernels/conv_small_vector.cc``) and
+scalar (``allo/library/aie/kernels/conv_small_scalar.cc``) versions of the kernel is not
 clearly observable using timing-based profiling. Instead, one can insert event
 markers (``event0();`` and ``event1();``) directly into the external C++ code
 and run the trace on the compute tile executing the external kernel. Sample code

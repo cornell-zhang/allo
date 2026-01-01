@@ -197,25 +197,25 @@
 <span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">,</span> <span class="n">K</span> <span class="o">=</span> <span class="mi">16</span><span class="p">,</span> <span class="mi">16</span><span class="p">,</span> <span class="mi">16</span>
 
 <span class="nd">@df</span><span class="o">.</span><span class="n">region</span><span class="p">()</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">top</span><span class="p">():</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">top</span><span class="p">(</span><span class="n">A</span><span class="p">:</span> <span class="n">Ty</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">],</span> <span class="n">B</span><span class="p">:</span> <span class="n">Ty</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">]):</span>
     <span class="c1"># Create a pipe with a depth of 4</span>
     <span class="n">pipe</span><span class="p">:</span> <span class="n">Stream</span><span class="p">[</span><span class="n">Ty</span><span class="p">,</span> <span class="mi">4</span><span class="p">]</span>
 
-    <span class="nd">@df</span><span class="o">.</span><span class="n">kernel</span><span class="p">(</span><span class="n">mapping</span><span class="o">=</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">producer</span><span class="p">(</span><span class="n">A</span><span class="p">:</span> <span class="n">Ty</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">]):</span>
+    <span class="nd">@df</span><span class="o">.</span><span class="n">kernel</span><span class="p">(</span><span class="n">mapping</span><span class="o">=</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">args</span><span class="o">=</span><span class="p">[</span><span class="n">A</span><span class="p">])</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">producer</span><span class="p">(</span><span class="n">local_A</span><span class="p">:</span> <span class="n">Ty</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">]):</span>
         <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">j</span> <span class="ow">in</span> <span class="n">allo</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">):</span>
             <span class="c1"># Load data from the input matrix</span>
-            <span class="n">out</span><span class="p">:</span> <span class="n">Ty</span> <span class="o">=</span> <span class="n">A</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span>
+            <span class="n">out</span><span class="p">:</span> <span class="n">Ty</span> <span class="o">=</span> <span class="n">local_A</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span>
             <span class="c1"># Send data to the pipe</span>
             <span class="n">pipe</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">out</span><span class="p">)</span>
 
-    <span class="nd">@df</span><span class="o">.</span><span class="n">kernel</span><span class="p">(</span><span class="n">mapping</span><span class="o">=</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">consumer</span><span class="p">(</span><span class="n">B</span><span class="p">:</span> <span class="n">Ty</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">]):</span>
+    <span class="nd">@df</span><span class="o">.</span><span class="n">kernel</span><span class="p">(</span><span class="n">mapping</span><span class="o">=</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">args</span><span class="o">=</span><span class="p">[</span><span class="n">B</span><span class="p">])</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">consumer</span><span class="p">(</span><span class="n">local_B</span><span class="p">:</span> <span class="n">Ty</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">]):</span>
         <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">j</span> <span class="ow">in</span> <span class="n">allo</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">):</span>
             <span class="c1"># Receive data from the pipe</span>
             <span class="n">data</span> <span class="o">=</span> <span class="n">pipe</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
             <span class="c1"># Perform a simple computation (increment by 1)</span>
-            <span class="n">B</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span> <span class="o">=</span> <span class="n">data</span> <span class="o">+</span> <span class="mi">1</span>
+            <span class="n">local_B</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span> <span class="o">=</span> <span class="n">data</span> <span class="o">+</span> <span class="mi">1</span>
 </pre></div>
 </div>
 </section>
