@@ -116,6 +116,16 @@ class TypeInferer(ASTVisitor):
             assert dtype is not None, f"Unsupported type `{node.id}`"
             return dtype, tuple(), None
         if isinstance(node, ast.Call):
+            if isinstance(node.func, ast.Name) and node.func.id == "stateful":
+                # Process the inner type
+                inner_dtype, inner_shape, inner_layout = TypeInferer.visit_type_hint(
+                    ctx, node.args[0]
+                )
+                # Create a copy with stateful=True
+                stateful_dtype = copy.deepcopy(inner_dtype)
+                stateful_dtype.stateful = True
+                return stateful_dtype, inner_shape, inner_layout
+
             dtype = TypeInferer.visit_call_type(ctx, node)
             return dtype, tuple(), None
         if isinstance(node, ast.Constant):
@@ -857,6 +867,11 @@ class TypeInferer(ASTVisitor):
                     arg.dtype, arg.shape, arg.spec = TypeInferer.visit_type_hint(
                         ctx, arg.annotation
                     )
+                    if hasattr(arg.dtype, "stateful") and arg.dtype.stateful:
+                        raise RuntimeError(
+                            f"Function parameter '{arg.arg}' cannot be Stateful. "
+                            "Stateful variables can only be declared locally within a kernel."
+                        )
                     arg.dtensor = DTensor(
                         ctx.rank,
                         ctx.mapping,
