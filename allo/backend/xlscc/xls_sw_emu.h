@@ -172,8 +172,16 @@ class XlsInt {
   }
 };
 
+// Channel direction enum (for XLS[cc] compatibility)
+enum __xls_channel_dir {
+  __xls_channel_dir_In,
+  __xls_channel_dir_Out,
+  __xls_channel_dir_InOut
+};
+
 // __xls_channel: FIFO channel model for streaming
-template <typename T, int Depth = 1024>
+// Template accepts T (type) and optional Dir (direction, ignored for sw_emu)
+template <typename T, __xls_channel_dir Dir = __xls_channel_dir_InOut, int Depth = 1024>
 class __xls_channel {
  public:
   __xls_channel() {}

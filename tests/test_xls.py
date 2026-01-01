@@ -1,6 +1,7 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 # pylint: disable=invalid-name,import-outside-toplevel,unsupported-assignment-operation
+# pylint: disable=broad-exception-caught
 
 import tempfile
 import os
@@ -104,6 +105,154 @@ def test_sw_emu_subtract():
             assert not failures
         else:
             print("test_sw_emu_subtract . (codegen only)")
+
+
+def test_sw_emu_mac():
+    # Multiply-accumulate: a*b + c (common in GEMM)
+    def mac(a: int32, b: int32, c: int32) -> int32:
+        return a * b + c
+
+    s = allo.customize(mac)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        mod = s.build(target="xls", mode="sw_emu", project=tmpdir)
+
+        if xls_sw_emu_available():
+            # Test cases: (a, b, c, expected = a*b+c)
+            test_cases = [
+                (2, 3, 4, 10),  # 2*3+4=10
+                (5, 5, 0, 25),  # 5*5+0=25
+                (-2, 3, 10, 4),  # -2*3+10=4
+                (10, 10, 100, 200),  # 10*10+100=200
+            ]
+            failures = []
+            print("test_sw_emu_mac ", end="")
+            for a_val, b_val, c_val, expected in test_cases:
+                result = mod(a_val, b_val, c_val)
+                if result == expected:
+                    print(".", end="", flush=True)
+                else:
+                    print("F", end="", flush=True)
+                    failures.append(
+                        f"mac({a_val}, {b_val}, {c_val}) = {result}, expected {expected}"
+                    )
+            print()
+            for msg in failures:
+                print(f"  FAIL: {msg}")
+            assert not failures
+        else:
+            print("test_sw_emu_mac . (codegen only)")
+
+
+def test_sw_emu_dot2():
+    # 2-element dot product: a0*b0 + a1*b1
+    def dot2(a0: int32, a1: int32, b0: int32, b1: int32) -> int32:
+        return a0 * b0 + a1 * b1
+
+    s = allo.customize(dot2)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        mod = s.build(target="xls", mode="sw_emu", project=tmpdir)
+
+        if xls_sw_emu_available():
+            # Test cases: (a0, a1, b0, b1, expected)
+            test_cases = [
+                (1, 2, 3, 4, 11),  # 1*3 + 2*4 = 11
+                (2, 2, 2, 2, 8),  # 2*2 + 2*2 = 8
+                (1, 0, 5, 10, 5),  # 1*5 + 0*10 = 5
+                (-1, 1, 1, 1, 0),  # -1*1 + 1*1 = 0
+            ]
+            failures = []
+            print("test_sw_emu_dot2 ", end="")
+            for a0, a1, b0, b1, expected in test_cases:
+                result = mod(a0, a1, b0, b1)
+                if result == expected:
+                    print(".", end="", flush=True)
+                else:
+                    print("F", end="", flush=True)
+                    failures.append(
+                        f"dot2({a0},{a1},{b0},{b1}) = {result}, expected {expected}"
+                    )
+            print()
+            for msg in failures:
+                print(f"  FAIL: {msg}")
+            assert not failures
+        else:
+            print("test_sw_emu_dot2 . (codegen only)")
+
+
+def test_sw_emu_vvadd():
+    import numpy as np
+
+    def vvadd(A: int32[8], B: int32[8]) -> int32[8]:
+        C: int32[8] = 0
+        for i in allo.grid(8):
+            C[i] = A[i] + B[i]
+        return C
+
+    s = allo.customize(vvadd)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        mod = s.build(target="xls", mode="sw_emu", project=tmpdir)
+
+        if xls_sw_emu_available():
+            A = np.array([1, 2, 3, 4, 5, 6, 7, 8], dtype=np.int32)
+            B = np.array([10, 20, 30, 40, 50, 60, 70, 80], dtype=np.int32)
+            expected = A + B
+
+            print("test_sw_emu_vvadd ", end="")
+            try:
+                result = mod(A, B)
+                if result is not None and np.array_equal(result, expected):
+                    print(".")
+                else:
+                    print("F")
+                    print(f"  FAIL: got {result}, expected {expected}")
+                    assert False
+            except Exception as e:
+                print("F")
+                print(f"  FAIL: {e}")
+                assert False
+        else:
+            print("test_sw_emu_vvadd . (codegen only)")
+
+
+def test_sw_emu_gemm():
+    import numpy as np
+
+    def gemm(A: int32[2, 2], B: int32[2, 2]) -> int32[2, 2]:
+        C: int32[2, 2] = 0
+        for i in allo.grid(2):
+            for j in allo.grid(2):
+                for k in allo.grid(2):
+                    C[i, j] += A[i, k] * B[k, j]
+        return C
+
+    s = allo.customize(gemm)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        mod = s.build(target="xls", mode="sw_emu", project=tmpdir)
+
+        if xls_sw_emu_available():
+            A = np.array([[1, 2], [3, 4]], dtype=np.int32)
+            B = np.array([[5, 6], [7, 8]], dtype=np.int32)
+            expected = A @ B  # [[19, 22], [43, 50]]
+
+            print("test_sw_emu_gemm ", end="")
+            try:
+                result = mod(A, B)
+                if result is not None and np.array_equal(result, expected):
+                    print(".")
+                else:
+                    print("F")
+                    print(f"  FAIL: got {result}, expected {expected}")
+                    assert False
+            except Exception as e:
+                print("F")
+                print(f"  FAIL: {e}")
+                assert False
+        else:
+            print("test_sw_emu_gemm . (codegen only)")
 
 
 # ##############################################################
@@ -223,6 +372,10 @@ if __name__ == "__main__":
     test_sw_emu_scalar_add()
     test_sw_emu_multiply()
     test_sw_emu_subtract()
+    test_sw_emu_mac()
+    test_sw_emu_dot2()
+    test_sw_emu_vvadd()
+    test_sw_emu_gemm()
 
     print("\n" + "-" * 70)
     print("  PART 2: Code Generation Tests")
