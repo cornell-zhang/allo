@@ -1,7 +1,10 @@
+# Copyright Allo authors. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
 
 import allo
 from allo.ir.types import int32
 import numpy as np
+
 
 def mv(A: int32[4, 4], x: int32[4]) -> int32[4]:
     y: int32[4] = 0
@@ -10,6 +13,7 @@ def mv(A: int32[4, 4], x: int32[4]) -> int32[4]:
         for j in allo.grid(4):
             y[i] += A[i, j] * x[j]
     return y
+
 
 s = allo.customize(mv)
 s.pipeline("i")

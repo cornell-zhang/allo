@@ -1,12 +1,17 @@
+# Copyright Allo authors. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 import allo
 from allo.ir.types import int32
 import numpy as np
+
 
 def vvadd(a: int32[16], b: int32[16]) -> int32[16]:
     c: int32[16] = 0
     for i in allo.grid(16):
         c[i] = a[i] + b[i]
     return c
+
 
 s = allo.customize(vvadd)
 s.pipeline("i")
