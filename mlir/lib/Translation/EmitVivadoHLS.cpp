@@ -16,6 +16,7 @@
 #include "mlir/IR/IntegerSet.h"
 #include "mlir/InitAllDialects.h"
 #include "mlir/Tools/mlir-translate/Translation.h"
+#include "llvm/ADT/SmallSet.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include "allo/Dialect/AlloDialect.h"
@@ -1531,6 +1532,19 @@ void allo::hls::VhlsModuleEmitter::emitGlobal(memref::GlobalOp op) {
     indent();
     auto arrayType = llvm::dyn_cast<ShapedType>(op.getType());
     auto type = arrayType.getElementType();
+    // Check for static attribute or stateful variable naming pattern
+    bool isStatic = op->hasAttr("static");
+    if (!isStatic) {
+      // Check if symbol name contains "__stateful_" pattern (stateful
+      // variables)
+      std::string symName = op.getSymName().str();
+      if (symName.find("__stateful_") != std::string::npos) {
+        isStatic = true;
+      }
+    }
+    if (isStatic) {
+      os << "static ";
+    }
     if (op->hasAttr("constant")) {
       os << "const ";
     }
@@ -2685,6 +2699,38 @@ void allo::hls::VhlsModuleEmitter::emitFunction(func::FuncOp func) {
   if (func->hasAttr("top"))
     os << "/// This is top function.\n";
 
+  // Collect stateful globals used in this function
+  std::vector<memref::GlobalOp> statefulGlobals;
+  func.walk([&](memref::GetGlobalOp getGlobalOp) {
+    auto globalOp =
+        getGlobalOp->getParentOfType<ModuleOp>().lookupSymbol<memref::GlobalOp>(
+            getGlobalOp.getName());
+    if (globalOp) {
+      bool isStatic = globalOp->hasAttr("static");
+      if (!isStatic) {
+        // Check if symbol name contains "__stateful_" pattern (stateful
+        // variables)
+        std::string symName = globalOp.getSymName().str();
+        if (symName.find("__stateful_") != std::string::npos) {
+          isStatic = true;
+        }
+      }
+      if (isStatic) {
+        // Check if we've already added this global
+        bool found = false;
+        for (auto &g : statefulGlobals) {
+          if (g.getSymName() == globalOp.getSymName()) {
+            found = true;
+            break;
+          }
+        }
+        if (!found) {
+          statefulGlobals.push_back(globalOp);
+        }
+      }
+    }
+  });
+
   // Emit function signature.
   os << "void " << func.getName() << "(\n";
   addIndent();
@@ -2797,6 +2843,74 @@ void allo::hls::VhlsModuleEmitter::emitFunction(func::FuncOp func) {
   // Emit function body.
   addIndent();
 
+  // Emit stateful globals inside the function (as static variables)
+  for (auto &globalOp : statefulGlobals) {
+    auto init_val = globalOp.getInitialValue();
+    if (!init_val.has_value())
+      continue;
+    fixUnsignedType(globalOp, globalOp->hasAttr("unsigned"));
+    auto attr = init_val.value();
+    if (auto denseAttr = llvm::dyn_cast<DenseElementsAttr>(attr)) {
+      indent();
+      auto arrayType = llvm::cast<ShapedType>(globalOp.getType());
+      auto type = arrayType.getElementType();
+      // Stateful variables are always static when inside a function
+      os << "static ";
+      if (globalOp->hasAttr("constant")) {
+        os << "const ";
+      }
+      os << getTypeName(type);
+      os << " " << globalOp.getSymName();
+      for (auto &shape : arrayType.getShape())
+        os << "[" << shape << "]";
+      os << " = {";
+
+      unsigned elementIdx = 0;
+      for (auto element : denseAttr.getValues<Attribute>()) {
+        if (type.isF32()) {
+          auto value =
+              llvm::cast<FloatAttr>(element).getValue().convertToFloat();
+          if (std::isfinite(value))
+            os << value;
+          else if (value > 0)
+            os << "INFINITY";
+          else
+            os << "-INFINITY";
+        } else if (type.isF64()) {
+          auto value =
+              llvm::cast<FloatAttr>(element).getValue().convertToDouble();
+          if (std::isfinite(value))
+            os << value;
+          else if (value > 0)
+            os << "INFINITY";
+          else
+            os << "-INFINITY";
+        } else if (type.isInteger(1))
+          os << llvm::cast<BoolAttr>(element).getValue();
+        else if (type.isIntOrIndex())
+          if (globalOp->hasAttr("unsigned")) {
+            auto intType = llvm::dyn_cast<IntegerType>(type);
+            os << llvm::cast<IntegerAttr>(element).getValue().getZExtValue();
+            if (intType.getWidth() > 64)
+              os << "ULL";
+          } else {
+            auto intType = llvm::dyn_cast<IntegerType>(type);
+            os << llvm::cast<IntegerAttr>(element).getValue();
+            if (intType.getWidth() > 64)
+              os << "LL";
+          }
+        else
+          emitError(globalOp.getOperation(),
+                    "array has unsupported element type.");
+
+        if (elementIdx++ != denseAttr.getNumElements() - 1)
+          os << ", ";
+      }
+      os << "};";
+      emitInfoAndNewLine(globalOp.getOperation());
+    }
+  }
+
   emitFunctionDirectives(func, portList);
 
   if (func->hasAttr("systolic")) {
@@ -2892,12 +3006,35 @@ using namespace std;
     }
   } else {
     os << device_header;
+    // First pass: collect all globals and determine which are stateful
+    llvm::SmallSet<StringRef, 4> statefulGlobalNames;
+    for (auto &op : *module.getBody()) {
+      if (auto cst = dyn_cast<memref::GlobalOp>(op)) {
+        bool isStatic = cst->hasAttr("static");
+        if (!isStatic) {
+          // Check if symbol name contains "__stateful_" pattern (stateful
+          // variables)
+          std::string symName = cst.getSymName().str();
+          if (symName.find("__stateful_") != std::string::npos) {
+            isStatic = true;
+          }
+        }
+        if (isStatic) {
+          statefulGlobalNames.insert(cst.getSymName());
+        }
+      }
+    }
+    // Second pass: emit functions and non-stateful globals
     for (auto &op : *module.getBody()) {
       if (auto func = dyn_cast<func::FuncOp>(op))
         emitFunction(func);
-      else if (auto cst = dyn_cast<memref::GlobalOp>(op))
-        emitGlobal(cst);
-      else
+      else if (auto cst = dyn_cast<memref::GlobalOp>(op)) {
+        // Only emit non-stateful globals at module level
+        // Stateful globals are emitted inside functions that use them
+        if (!statefulGlobalNames.contains(cst.getSymName())) {
+          emitGlobal(cst);
+        }
+      } else
         emitError(&op, "is unsupported operation.");
     }
   }
