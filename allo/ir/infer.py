@@ -31,6 +31,7 @@ from .types import (
     float64,
     Struct,
     Stream,
+    stateful,
 )
 from .typing_rule import get_typing_rule
 from ..utils import (
@@ -116,16 +117,6 @@ class TypeInferer(ASTVisitor):
             assert dtype is not None, f"Unsupported type `{node.id}`"
             return dtype, tuple(), None
         if isinstance(node, ast.Call):
-            if isinstance(node.func, ast.Name) and node.func.id == "stateful":
-                # Process the inner type
-                inner_dtype, inner_shape, inner_layout = TypeInferer.visit_type_hint(
-                    ctx, node.args[0]
-                )
-                # Create a copy with stateful=True
-                stateful_dtype = copy.deepcopy(inner_dtype)
-                stateful_dtype.stateful = True
-                return stateful_dtype, inner_shape, inner_layout
-
             dtype = TypeInferer.visit_call_type(ctx, node)
             return dtype, tuple(), None
         if isinstance(node, ast.Constant):
@@ -139,8 +130,15 @@ class TypeInferer(ASTVisitor):
         if isinstance(node, ast.BinOp):
             # memory refinement
             # e.g., A: Ty[M] @ Layout("S0")
-            dtype, shape, _ = TypeInferer.visit_type_hint(ctx, node.left)
+            # or, stateful variable
+            # e.g., A: Ty[M] @ stateful
+            dtype, shape, node_left_layout = TypeInferer.visit_type_hint(ctx, node.left)
             spec = ASTResolver.resolve(node.right, ctx.global_vars)
+            if spec is stateful:
+                # Create a copy with stateful=True
+                stateful_dtype = copy.deepcopy(dtype)
+                stateful_dtype.stateful = True
+                return stateful_dtype, shape, node_left_layout
             return dtype, shape, spec
         raise RuntimeError("Unsupported function argument type")
 
