@@ -39,7 +39,7 @@ def test_stateful_scalar():
     """Test stateful scalar accumulator"""
 
     def acc_stateful(x: int32) -> int32:
-        acc: stateful(int32) = 0
+        acc: int32 @ stateful = 0
         acc = acc + x
         return acc
 
@@ -80,7 +80,7 @@ def test_stateful_array():
     """Test stateful array buffer"""
 
     def array_stateful(x: float32) -> float32:
-        buffer: stateful(float32[10]) = 0.0
+        buffer: float32[10] @ stateful = 0.0
         buffer[0] = buffer[0] + x
         return buffer[0]
 
@@ -101,10 +101,10 @@ def test_moving_average():
     """Test moving average with stateful circular buffer"""
 
     def moving_average(new_value: float32) -> float32:
-        window: stateful(float32[4]) = 0.0
-        i: stateful(int32) = 0
-        count: stateful(int32) = 0
-        total: stateful(float32) = 0.0
+        window: float32[4] @ stateful = 0.0
+        i: int32 @ stateful = 0
+        count: int32 @ stateful = 0
+        total: float32 @ stateful = 0.0
 
         # Subtract the old value that's being replaced
         total = total - window[i]
@@ -146,7 +146,7 @@ def test_kernel_rng():
     SEED = 12345
 
     def kernel_rng() -> int32:
-        seed: stateful(int32) = SEED
+        seed: int32 @ stateful = SEED
         seed = (1103515245 * seed + 12345) & 0x7FFFFFFF
         return seed & 0xFFFF
 
@@ -173,7 +173,7 @@ def test_update_crc32():
     """Test stateful CRC32 calculation"""
 
     def update_crc32(data: uint8) -> uint32:
-        crc: stateful(uint32) = 0xFFFFFFFF
+        crc: uint32 @ stateful = 0xFFFFFFFF
         crc = crc ^ data
         for j in range(8):
             crc = (crc >> 1) ^ (0xEDB88320 & (-(crc & 1)))
@@ -200,7 +200,7 @@ def test_update_histogram():
     """Test stateful histogram"""
 
     def update_histogram(number: int8) -> int32[256]:
-        histogram: stateful(int32[256]) = 0
+        histogram: int32[256] @ stateful = 0
         histogram[number] += 1
         return histogram
 
@@ -226,7 +226,7 @@ def test_simple_counter():
     """Test simple stateful counter"""
 
     def counter() -> int32:
-        count: stateful(int32) = 0
+        count: int32 @ stateful = 0
         count = count + 1
         return count
 
@@ -245,7 +245,7 @@ def test_stateful_reset():
     """Test stateful accumulator with reset"""
 
     def acc_with_reset(x: int32, rst: bool) -> int32:
-        _sum: stateful(int32) = 0
+        _sum: int32 @ stateful = 0
         if rst:
             _sum = 0
         else:
@@ -289,7 +289,7 @@ def test_tpu():
         return op1 * op2
 
     def test_tpu(op: uint8, inval: int32, addr: uint8) -> int32:
-        mem: stateful(int32[MEM_SIZE]) = 0
+        mem: int32[MEM_SIZE] @ stateful = 0
         retval: int32
         if op == OP_H2D:
             mem[addr] = inval
@@ -346,12 +346,12 @@ def test_nested_stateful_collision():
     """Test that stateful variables in nested functions don't collide"""
 
     def inner_func(x: int32) -> int32:
-        counter: stateful(int32) = 100
+        counter: int32 @ stateful = 100
         counter = counter + x
         return counter
 
     def outer_func(x: int32) -> int32:
-        counter: stateful(int32) = 0
+        counter: int32 @ stateful = 0
         counter = counter + x
 
         inner_result: int32 = inner_func(x)
@@ -389,17 +389,17 @@ def test_multiple_nested_same_name():
     """Test multiple nested functions with same stateful variable name"""
 
     def accumulator_a(x: int32) -> int32:
-        value: stateful(int32) = 0
+        value: int32 @ stateful = 0
         value = value + x
         return value
 
     def accumulator_b(x: int32) -> int32:
-        value: stateful(int32) = 1000
+        value: int32 @ stateful = 1000
         value = value + x * 2
         return value
 
     def caller(x: int32) -> int32:
-        value: stateful(int32) = 10000
+        value: int32 @ stateful = 10000
         value = value + x * 10
 
         result_a: int32 = accumulator_a(x)
