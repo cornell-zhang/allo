@@ -77,7 +77,7 @@ def _validate_xls_ir(mlir_text, project=None):
         if DYNAMIC_RE.search(line):
             errors.append(f"Line {i}: Dynamic shapes ('?').")
         # Unsupported pragmas
-        for pragma, msg in UNSUPPORTED_PRAGMAS.items():
+        for pragma in UNSUPPORTED_PRAGMAS:
             if pragma in line:
                 errors.append(f"Line {i}: '{pragma}' is currently not supported.")
 
