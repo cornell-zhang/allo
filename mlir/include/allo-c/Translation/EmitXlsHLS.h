@@ -12,10 +12,6 @@
 extern "C" {
 #endif
 
-/// Emit XLS HLS code from MLIR module.
-/// @param useMemory If true, emit arrays as __xls_memory<T, size> (for
-/// SRAM/BRAM).
-///                  If false, emit as plain C arrays (for registers).
 MLIR_CAPI_EXPORTED MlirLogicalResult mlirEmitXlsHls(MlirModule module,
                                                     MlirStringCallback callback,
                                                     void *userData,
