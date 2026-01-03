@@ -1,7 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 # pylint: disable=no-name-in-module,no-member
-# pylint: disable=too-many-branches,too-many-nested-blocks
 
 from __future__ import annotations
 
@@ -16,8 +15,8 @@ from ..ir.transform import find_func_in_module
 from .xlscc.xls_wrapper import wrap_xlscc, validate_xls_ir
 
 
-class XLSCCModule:  # pylint: disable=too-many-instance-attributes
-    def __init__(  # pylint: disable=too-many-arguments
+class XLSCCModule:
+    def __init__(
         self,
         mlir_text_or_module,
         top_func_name,
