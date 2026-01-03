@@ -1237,7 +1237,6 @@ class Schedule:
                 top_func_name=self.top_func_name,
                 project=project,
                 use_memory=use_memory,
-                mode=mode,
             )
         if target in {"vhls", "vivado_hls", "vitis_hls", "pynq", "tapa", "ihls"}:
             match target:
