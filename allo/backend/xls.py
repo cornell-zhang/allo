@@ -180,7 +180,7 @@ def _gen_textproto(mems):
         ""  # empty line
     ]
     for name, elem_type, size, int_dims in mems:
-        # Default to 1R1W RAM, XLS memory must use val/rdy interface hence the 4 reqs/resp channels.
+        # Default to 1R1W RAM, XLS memory uses val/rdy interface hence the4 reqs/resps channels.
         lines.append(f"""rewrites {{
   from_config {{ kind: RAM_ABSTRACT depth: {size} }}
   to_config {{ kind: RAM_1R1W depth: {size} }}
