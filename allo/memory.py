@@ -78,12 +78,11 @@ class MemLayout:
             for _, (op, dim) in enumerate(self.placement):
                 if op == "S":
                     # For sharding, use the coordinate at the specified dimension
-                    # start from right to left
-                    mesh_dim = int(dim)
-                    tensor_id_parts.append(int(pe_coord[-mesh_dim - 1]))
+                    # start from left to right
+                    tensor_id_parts.append(int(pe_coord[int(dim)]))
                 elif op == "R":
-                    # For replication, use 'R'
-                    tensor_id_parts.append("R")
+                    # For replication, use 0 as placeholder
+                    tensor_id_parts.append(0)
 
             tensor_id = tuple(tensor_id_parts)
 
@@ -97,7 +96,7 @@ class MemLayout:
         for tensor_id, coords in mapping.items():
             # Convert to tuples for final output
             result[tensor_id] = [tuple(coord) for coord in coords]
-
+        print(result)
         return result
 
     def __repr__(self):
@@ -342,7 +341,7 @@ class DTensor:
                 local_shape.append(s)
             else:
                 # count from right to left
-                local_shape.append(s // self.mapping[-dim - 1])
+                local_shape.append(s // self.mapping[dim])
         return tuple(local_shape)
 
     def set_global_info(self, global_id: int, is_input: bool):
@@ -372,9 +371,9 @@ class DTensor:
                 dim = partition_dim[0]
                 for i, key in enumerate(sorted(list(self.global_placement.keys()))):
                     self.offset_map[key] = Offset4D(0, 0, i, 0)
-                shard_size = self.shape[0] // self.mapping[-dim - 1]
+                shard_size = self.shape[0] // self.mapping[dim]
                 device_dims = [2]  # partition idx = 2
-                size = [1, 1, self.mapping[-dim - 1], shard_size]
+                size = [1, 1, self.mapping[dim], shard_size]
                 stride = [0, 0, shard_size, 1]
             elif partition_str == "R":
                 for key in self.global_placement.keys():
@@ -388,8 +387,8 @@ class DTensor:
             tensor_m, tensor_n = self.shape  # [tensor_m x tensor_n]
             if partition_str == "SS":
                 device_a, device_b = (
-                    self.mapping[-partition_dim[0] - 1],
-                    self.mapping[-partition_dim[1] - 1],
+                    self.mapping[partition_dim[0]],
+                    self.mapping[partition_dim[1]],
                 )
                 for i, key in enumerate(sorted(list(self.global_placement.keys()))):
                     self.offset_map[key] = Offset4D(i // device_b, i % device_b, 0, 0)
@@ -402,7 +401,7 @@ class DTensor:
                     1,
                 ]
             elif partition_str == "SR":  # TODO: something is wrong here
-                device_a = self.mapping[-partition_dim[0] - 1]
+                device_a = self.mapping[partition_dim[0]]
                 for i, key in enumerate(sorted(list(self.global_placement.keys()))):
                     self.offset_map[key] = Offset4D(i // device_a, i % device_a, 0, 0)
                 # First dim sharded across all devices, second replicated
@@ -410,7 +409,7 @@ class DTensor:
                 size = [1, device_a, tensor_m // device_a, tensor_n]
                 stride = [0, (tensor_m // device_a) * tensor_n, tensor_n, 1]
             elif partition_str == "RS":
-                device_b = self.mapping[-partition_dim[1] - 1]
+                device_b = self.mapping[partition_dim[1]]
                 for i, key in enumerate(sorted(list(self.global_placement.keys()))):
                     self.offset_map[key] = Offset4D(i // device_b, i % device_b, 0, 0)
                 # First dim replicated, second sharded across second dim of mesh
@@ -428,6 +427,7 @@ class DTensor:
                 raise ValueError("Unsupported access pattern for 2D tensor.")
         else:
             raise ValueError("Unsupported access pattern.")
+        print(self.offset_map)
         self.shared_dims, self.size, self.stride = device_dims, size, stride
 
     def PE_tile_id_to_tensor_tile_id(

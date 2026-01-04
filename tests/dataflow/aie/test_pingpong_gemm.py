@@ -16,9 +16,9 @@ def test_cooperative_gemm(Ty):
     Pm, Pn, Pk = 2, 2, 2
     Mt, Nt = M // Pm, N // Pn
 
-    LyA = MemLayout("S1S2")
-    LyB = MemLayout("S2S0")
-    LyC = MemLayout("S1S0")
+    LyA = MemLayout("S1S0")
+    LyB = MemLayout("S0S1")
+    LyC = MemLayout("S1S2")
 
     @df.region()
     def top(A: Ty[M, K], B: Ty[K, N], C: Ty[M, N]):
@@ -68,6 +68,6 @@ def test_cooperative_gemm(Ty):
 
 if __name__ == "__main__":
     test_cooperative_gemm(int8)
-    test_cooperative_gemm(int16)
-    test_cooperative_gemm(int32)
-    test_cooperative_gemm(float32)
+    # test_cooperative_gemm(int16)
+    # test_cooperative_gemm(int32)
+    # test_cooperative_gemm(float32)
