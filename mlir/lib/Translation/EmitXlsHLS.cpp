@@ -463,6 +463,13 @@ void allo::hls::XlsModuleEmitter::emitLoopDirectives(Operation *op) {
     return;
   }
 
+  // In memory mode, use pipelining instead of unrolling by default
+  if (USE_MEMORY_FLAG) {
+    indent();
+    os << "#pragma hls_pipeline_init_interval 1\n";
+    return;
+  }
+
   // By default, unroll all loops unless they have a pipeline pragma
   // Check if explicit unroll directive is present (with optional factor)
   if (auto factor = getLoopDirective(op, "unroll")) {
@@ -1432,7 +1439,7 @@ void allo::hls::XlsModuleEmitter::emitModule(ModuleOp module) {
 //
 //===----------------------------------------------------------------------===//
 #include <cstdint>
-#include "/xls_builtin.h"
+#include "xls_builtin.h"
 #include "xls_int.h"
 
 template <int Width, bool Signed = true>
