@@ -17,7 +17,7 @@ def test_cooperative_gemm(Ty):
     Mt, Nt = M // Pm, N // Pn
 
     LyA = MemLayout("S1S0")
-    LyB = MemLayout("S0S1")
+    LyB = MemLayout("S0S2")
     LyC = MemLayout("S1S2")
 
     @df.region()
@@ -68,6 +68,6 @@ def test_cooperative_gemm(Ty):
 
 if __name__ == "__main__":
     test_cooperative_gemm(int8)
-    # test_cooperative_gemm(int16)
-    # test_cooperative_gemm(int32)
-    # test_cooperative_gemm(float32)
+    test_cooperative_gemm(int16)
+    test_cooperative_gemm(int32)
+    test_cooperative_gemm(float32)

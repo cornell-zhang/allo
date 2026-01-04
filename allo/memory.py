@@ -96,7 +96,6 @@ class MemLayout:
         for tensor_id, coords in mapping.items():
             # Convert to tuples for final output
             result[tensor_id] = [tuple(coord) for coord in coords]
-        print(result)
         return result
 
     def __repr__(self):
@@ -427,7 +426,6 @@ class DTensor:
                 raise ValueError("Unsupported access pattern for 2D tensor.")
         else:
             raise ValueError("Unsupported access pattern.")
-        print(self.offset_map)
         self.shared_dims, self.size, self.stride = device_dims, size, stride
 
     def PE_tile_id_to_tensor_tile_id(

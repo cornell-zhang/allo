@@ -14,8 +14,8 @@ def test_summa_2x2():
     M, K, N = 8, 8, 8
     P0, P1 = 2, 2
 
-    La = MemLayout("RS1")
-    Lb = MemLayout("S1S0")
+    La = MemLayout("RS0")
+    Lb = MemLayout("S0S1")
 
     @df.region()
     def top(A: Ty[M, K], B: Ty[K, N], C: Ty[M, N]):
@@ -63,9 +63,9 @@ def test_summa():
     M, K, N = 32, 32, 32
     P0, P1 = 4, 4
 
-    La = MemLayout("RS0")
-    Lb = MemLayout("S0S1")
-    Lc = MemLayout("RS1")
+    La = MemLayout("RS1")
+    Lb = MemLayout("S1S0")
+    Lc = MemLayout("RS0")
 
     @df.region()
     def top(A: Ty[M, K], B: Ty[K, N], C: Ty[M, N]):

@@ -56,20 +56,11 @@ softmax = ExternalModule(
 )
 
 
-ATTN_P0 = N // 32
-ATTN_P1 = N // 32
-ATTN_SCORE_M_TILE = ATTN_P0 * 32
-ATTN_SCORE_N_TILE = ATTN_P1 * 32
-ATTN_SCORE_LyA = MemLayout("S0R")
-ATTN_SCORE_LyB = MemLayout("S1R")
-ATTN_SCORE_LyC = MemLayout("S0S1")
-
-
 Mt, Nt = 64, 64
 Pk, Pm, Pn = D // 64, N // 64, N // 64
-LyA = MemLayout("S1S2")
-LyB = MemLayout("S2S0")
-LyC = MemLayout("S1S0")
+LyA = MemLayout("S1S0")
+LyB = MemLayout("S0S2")
+LyC = MemLayout("S1S2")
 
 
 def gen_attn_score_primitives():
@@ -135,12 +126,14 @@ attn_score_mod = df.build(
 SCALING_P0 = N // 64
 SCALING_P1 = N // 64
 
+Ly = MemLayout("S0S1")
+
 
 @df.region()
 def scaling_kernel(C_in: Ty[N, N], C_out: Ty[N, N]):
 
     @df.kernel(mapping=[SCALING_P0, SCALING_P1], args=[C_in, C_out])
-    def core(local_C_in: Ty[N, N] @ LyC, local_C_out: Ty[N, N] @ LyC):
+    def core(local_C_in: Ty[N, N] @ Ly, local_C_out: Ty[N, N] @ Ly):
         local_C_out[:, :] = allo.mul(local_C_in, 0.125)
 
 
@@ -210,9 +203,6 @@ softmax_mod = df.build(
 
 Mt, Nt = 64, 64
 Pk, Pm, Pn = N // 64, N // 64, D // 64
-LyA = MemLayout("S1S2")
-LyB = MemLayout("S2S0")
-LyC = MemLayout("S1S0")
 
 
 @df.region()

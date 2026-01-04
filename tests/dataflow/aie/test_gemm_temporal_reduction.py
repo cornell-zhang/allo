@@ -10,9 +10,9 @@ from allo.backend.aie import is_available
 
 
 def test_gemm_temporal_reduction():
-    LyA = MemLayout("S0R")
-    LyB = MemLayout("RS1")
-    LyC = MemLayout("S0S1")
+    LyA = MemLayout("S1R")
+    LyB = MemLayout("RS0")
+    LyC = MemLayout("S1S0")
 
     TyI, TyO = float32, float32
     total_M, total_N, total_K = 64, 64, 512

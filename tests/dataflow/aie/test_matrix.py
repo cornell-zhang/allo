@@ -8,15 +8,12 @@ import numpy as np
 from allo.memory import MemLayout
 from allo.backend.aie import is_available
 
-LyA = MemLayout("S0R")
-LyB = MemLayout("RS1")
-LyC = MemLayout("S0S1")
-
 
 def test_matrix_scalar_add():
     Ty = int32
     M, N = 64, 64
     P0 = 4
+    LyA = MemLayout("S0R")
 
     @df.region()
     def top(A: Ty[M, N], B: Ty[M, N]):
@@ -47,6 +44,7 @@ def test_matrix_matrix_add():
     Ty = int32
     M, N = 64, 64
     P0 = 4
+    LyA = MemLayout("S0R")
 
     @df.region()
     def top(A: Ty[M, N], B: Ty[M, N], C: Ty[M, N]):
@@ -77,6 +75,7 @@ def test_gemm_1D():
     Ty = int16
     M, N, K = 16, 16, 16
     P0 = 2
+    LyA = MemLayout("S0R")
 
     @df.region()
     def top(A: Ty[M, K], B: Ty[K, N], C: Ty[M, N]):
@@ -101,6 +100,7 @@ def test_gemm_1D_mixed():
     TyO = int32
     M, N, K = 16, 16, 16
     P0 = 2
+    LyA = MemLayout("S0R")
 
     @df.region()
     def top(A: TyI[M, K], B: TyI[K, N], C: TyO[M, N]):
@@ -127,6 +127,9 @@ def test_gemm_2D():
     TyI, TyO = int16, int32
     M, N, K = 64, 64, 32
     P0, P1 = 4, 4
+    LyA = MemLayout("S1R")
+    LyB = MemLayout("RS0")
+    LyC = MemLayout("S1S0")
 
     @df.region()
     def top(A: TyI[M, K], B: TyI[K, N], C: TyO[M, N]):
@@ -154,6 +157,9 @@ def test_gemm_2D_mixed():
     TyO = int32
     M, N, K = 64, 64, 64
     P0, P1 = 4, 4
+    LyA = MemLayout("S1R")
+    LyB = MemLayout("RS0")
+    LyC = MemLayout("S1S0")
 
     @df.region()
     def top(A: TyI[M, K], B: TyI[K, N], C: TyO[M, N]):

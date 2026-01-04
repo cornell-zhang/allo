@@ -17,8 +17,8 @@ KERNEL_LIB_PATH = os.path.join(
     ),
     "",
 )
-Ly = MemLayout("S1S0")
-Ly_1 = MemLayout("S1")
+Ly = MemLayout("S0S1")
+Ly_1 = MemLayout("S0")
 
 # Masked Softmax dimensions
 SEQ_LEN_TILED = 64

@@ -63,9 +63,9 @@ def test_gemm_2D():
     TyO = int8
     M, N, K = 64, 64, 64
     P0, P1 = 2, 2
-    LyA = MemLayout("S0R")
-    LyB = MemLayout("RS1")
-    LyC = MemLayout("S0S1")
+    LyA = MemLayout("S1R")
+    LyB = MemLayout("RS0")
+    LyC = MemLayout("S1S0")
 
     @df.region()
     def top(A: TyI[M, K], B: TyI[K, N], C: TyO[M, N]):
@@ -129,9 +129,9 @@ def test_mixed_gemm_2D():
     Ty_l = int4
     M, N, K = 64, 64, 64
     P0, P1 = 2, 2
-    LyA = MemLayout("S0R")
-    LyB = MemLayout("RS1")
-    LyC = MemLayout("S0S1")
+    LyA = MemLayout("S1R")
+    LyB = MemLayout("RS0")
+    LyC = MemLayout("S1S0")
 
     @df.region()
     def top(A: Ty[M, K], B: Ty_l[K, N], C: Ty[M, N]):
@@ -201,9 +201,9 @@ def test_pingpong_mixed_gemm(M, N, K, Pm, Pn, Pk):
     TyO = int8
     Mt, Nt = M // Pm, N // Pn
 
-    LyA = MemLayout("S1S2")
-    LyB = MemLayout("S2S0")
-    LyC = MemLayout("S1S0")
+    LyA = MemLayout("S1S0")
+    LyB = MemLayout("S0S2")
+    LyC = MemLayout("S1S2")
 
     @df.region()
     def top(A: TyI[M, K], B: TyI_l[K, N], C: TyO[M, N]):

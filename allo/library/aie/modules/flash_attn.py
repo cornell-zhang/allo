@@ -42,9 +42,9 @@ def FA(SEQ_LEN, HEAD_DIM, Q_tile_size, q_chunk_size, kv_chunk_size):
     )
 
     Ty = bfloat16
-    Ly_outer = MemLayout("S1R")
-    Ly_inner = MemLayout("S0R")
-    Ly_K = MemLayout("RS0")
+    Ly_outer = MemLayout("S0R")
+    Ly_inner = MemLayout("S1R")
+    Ly_K = MemLayout("RS1")
 
     @df.region()
     def top(

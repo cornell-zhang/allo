@@ -210,9 +210,9 @@ def run(x_fp32: np.ndarray, params: dict):
     # Linear
     # ----------------------------------------------------------------
     LINEAR_M, LINEAR_N, LINEAR_K = 64, 64, 64
-    linear_A_layout = MemLayout("S0R")
-    linear_B_layout = MemLayout("RS1")
-    linear_C_layout = MemLayout("S0S1")
+    linear_A_layout = MemLayout("S1R")
+    linear_B_layout = MemLayout("RS0")
+    linear_C_layout = MemLayout("S1S0")
 
     @df.region()
     def linear_matmul_kernel(
@@ -251,9 +251,9 @@ def run(x_fp32: np.ndarray, params: dict):
     ATTN_P1 = 2
     ATTN_SCORE_M_TILE = ATTN_P0 * 32
     ATTN_SCORE_N_TILE = ATTN_P1 * 32
-    ATTN_SCORE_LyA = MemLayout("S0R")
-    ATTN_SCORE_LyB = MemLayout("S1R")
-    ATTN_SCORE_LyC = MemLayout("S0S1")
+    ATTN_SCORE_LyA = MemLayout("S1R")
+    ATTN_SCORE_LyB = MemLayout("S0R")
+    ATTN_SCORE_LyC = MemLayout("S1S0")
 
     @df.region()
     def attn_score_kernel(
@@ -283,8 +283,8 @@ def run(x_fp32: np.ndarray, params: dict):
     SOFTMAX_P1 = 3
     SOFTMAX_HEAD_TILE = SOFTMAX_P1
     SOFTMAX_SEQ_TILE = SEQ // SOFTMAX_P0
-    SOFTMAX_Ly = MemLayout("S1S0")
-    SOFTMAX_ROW_Ly = MemLayout("S1")
+    SOFTMAX_Ly = MemLayout("S0S1")
+    SOFTMAX_ROW_Ly = MemLayout("S0")
 
     @df.region()
     def masked_softmax_kernel(

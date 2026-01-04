@@ -68,9 +68,9 @@ def test_batched_gemm(M, N, K, Pm, Pn, Pk, TyI, TyO):
     assert TyI == TyO
     Mt, Nt = M // Pm, N // Pn
 
-    LyA = MemLayout("S1S2")
-    LyB = MemLayout("S2S0")
-    LyC = MemLayout("S1S0")
+    LyA = MemLayout("S1S0")
+    LyB = MemLayout("S0S2")
+    LyC = MemLayout("S1S2")
 
     @df.region()
     def top(

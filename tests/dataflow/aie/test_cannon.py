@@ -8,9 +8,9 @@ from allo.memory import MemLayout
 import numpy as np
 from allo.backend.aie import is_available
 
-LyA = MemLayout("S0S1")
-LyB = MemLayout("S0S1")
-LyC = MemLayout("S0S1")
+LyA = MemLayout("S1S0")
+LyB = MemLayout("S1S0")
+LyC = MemLayout("S1S0")
 
 
 def test_cannon():
