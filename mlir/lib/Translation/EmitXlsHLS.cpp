@@ -864,9 +864,6 @@ void allo::hls::XlsModuleEmitter::emitFunction(func::FuncOp func) {
   if (func.getBlocks().size() > 1)
     emitError(func, "has more than one basic blocks.");
 
-  if (func->hasAttr("top"))
-    os << "/// This is top function.\n";
-
   // Check for return value first to determine function return type
   auto args = func.getArguments();
   Value returnValue = nullptr;
