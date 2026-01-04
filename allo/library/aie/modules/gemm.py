@@ -4,7 +4,7 @@
 import allo
 from allo.ir.types import Stream
 import allo.dataflow as df
-from allo.memory import Layout
+from allo.memory import MemLayout
 
 
 def gen_gemm_mapping_primitive(Pm, Pn, Pk, col_num=4, row_num=4):
@@ -79,9 +79,9 @@ def gen_gemm_mapping_primitive_v2(Pm, Pn, Pk, col_num=4, row_num=4):
 def GEMM(M, N, K, Pm, Pn, Pk, TyI, TyO, col_num=4, row_num=4):
     Mt, Nt = M // Pm, N // Pn
 
-    LyA = Layout("S1S2")
-    LyB = Layout("S2S0")
-    LyC = Layout("S1S0")
+    LyA = MemLayout("S1S2")
+    LyB = MemLayout("S2S0")
+    LyC = MemLayout("S1S0")
 
     @df.region()
     def top(A: TyI[M, K], B: TyI[K, N], C: TyO[M, N]):

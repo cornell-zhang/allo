@@ -5,12 +5,12 @@ import allo
 from allo.ir.types import int16, int32
 import allo.dataflow as df
 import numpy as np
-from allo.memory import Layout
+from allo.memory import MemLayout
 from allo.backend.aie import is_available
 
-LyA = Layout("S0R")
-LyB = Layout("RS1")
-LyC = Layout("S0S1")
+LyA = MemLayout("S0R")
+LyB = MemLayout("RS1")
+LyC = MemLayout("S0S1")
 
 
 def test_matrix_scalar_add():

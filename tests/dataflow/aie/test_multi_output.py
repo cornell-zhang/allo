@@ -4,13 +4,13 @@
 import allo
 import allo.dataflow as df
 from allo.ir.types import int16
-from allo.memory import Layout
+from allo.memory import MemLayout
 import numpy as np
 from allo.backend.aie import is_available
 
 
 def test_increase_decrease():
-    LyA = Layout("S0R")
+    LyA = MemLayout("S0R")
 
     Ty = int16
     M, N = 64, 64
@@ -41,7 +41,7 @@ def test_increase_decrease():
 
 # [NOTE] export ENABLE_AGGRESSIVE_PORT_UTILIZATION_PATCH=0
 def test_increase_decrease_more_arg():
-    LyA = Layout("S0R")
+    LyA = MemLayout("S0R")
 
     Ty = int16
     M, N = 64, 64

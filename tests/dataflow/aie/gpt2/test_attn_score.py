@@ -7,7 +7,7 @@ import torch.nn as nn
 from allo.ir.types import float32
 import allo.dataflow as df
 import numpy as np
-from allo.memory import Layout
+from allo.memory import MemLayout
 from allo.backend.aie.external_kernel import ExternalModule
 from allo.ir.types import float32
 
@@ -17,9 +17,9 @@ KERNEL_LIB_PATH = os.path.join(
     ),
     "",
 )
-LyA = Layout("S0R")
-LyB = Layout("S1R")
-LyC = Layout("S0S1")
+LyA = MemLayout("S0R")
+LyB = MemLayout("S1R")
+LyC = MemLayout("S0S1")
 
 head_dim = 64
 seq_len = 32 * 4

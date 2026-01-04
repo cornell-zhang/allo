@@ -6,7 +6,7 @@ import pytest
 from allo.ir.types import int16, int32, float32, int8, Stream
 import allo.dataflow as df
 import numpy as np
-from allo.memory import Layout
+from allo.memory import MemLayout
 from allo.backend.aie import is_available
 
 
@@ -16,9 +16,9 @@ def test_cooperative_gemm(Ty):
     Pm, Pn, Pk = 2, 2, 2
     Mt, Nt = M // Pm, N // Pn
 
-    LyA = Layout("S1S2")
-    LyB = Layout("S2S0")
-    LyC = Layout("S1S0")
+    LyA = MemLayout("S1S2")
+    LyB = MemLayout("S2S0")
+    LyC = MemLayout("S1S0")
 
     @df.region()
     def top(A: Ty[M, K], B: Ty[K, N], C: Ty[M, N]):

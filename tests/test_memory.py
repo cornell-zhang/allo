@@ -5,7 +5,7 @@ import pytest
 import numpy as np
 import allo
 from allo.ir.types import int32, float32
-from allo.memory import Memory, Layout, DTensor
+from allo.memory import Memory, MemLayout, DTensor
 
 
 class TestMemoryClass:
@@ -112,7 +112,7 @@ class TestMemoryWithDTensor:
 
     def test_dtensor_with_layout(self):
         """Test creating DTensor with Layout spec (backward compatibility)."""
-        layout = Layout("S0R")
+        layout = MemLayout("S0R")
         dtensor = DTensor(
             rank=None,
             mapping=None,

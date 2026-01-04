@@ -6,7 +6,7 @@ import allo
 from allo.ir.types import int16, int32, Stream
 import allo.dataflow as df
 import numpy as np
-from allo.memory import Layout
+from allo.memory import MemLayout
 from allo.backend.aie import is_available
 
 
@@ -39,8 +39,8 @@ def test_gather():
     M, N, K = 32, 32, 64
     Pk = 2
 
-    LyA = Layout("RS0")
-    LyB = Layout("S0R")
+    LyA = MemLayout("RS0")
+    LyB = MemLayout("S0R")
 
     @df.region()
     def top(A: Ty[M, K], B: Ty[K, N], C: Ty[M, N]):
@@ -91,7 +91,7 @@ def test_scatter():
     Ty = int32
     M = 1024
     P = 4
-    Ly = Layout("S0")
+    Ly = MemLayout("S0")
 
     @df.region()
     def top(A: Ty[M], B: Ty[M]):
@@ -149,7 +149,7 @@ def test_scatter2():
     Ty = int32
     M = 1024
     P = 4
-    Ly = Layout("S0")
+    Ly = MemLayout("S0")
 
     @df.region()
     def top(Inc: Ty[M // P], A: Ty[M], B: Ty[M]):

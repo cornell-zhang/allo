@@ -4,13 +4,13 @@
 import allo
 import allo.dataflow as df
 from allo.ir.types import int32, Stream
-from allo.memory import Layout
+from allo.memory import MemLayout
 import numpy as np
 from allo.backend.aie import is_available
 
-LyA = Layout("S0S1")
-LyB = Layout("S0S1")
-LyC = Layout("S0S1")
+LyA = MemLayout("S0S1")
+LyB = MemLayout("S0S1")
+LyC = MemLayout("S0S1")
 
 
 def test_cannon():

@@ -8,7 +8,7 @@ import pytest
 import allo
 from allo.ir.types import int4, int8, Stream
 import allo.dataflow as df
-from allo.memory import Layout
+from allo.memory import MemLayout
 from allo.backend.aie import is_available
 
 
@@ -32,7 +32,7 @@ def test_gemm_1D():
     M, N, K = 64, 64, 64
     P0 = 2
 
-    LyA = Layout("S0R")
+    LyA = MemLayout("S0R")
 
     @df.region()
     def top(A: TyI[M, K], B: TyI[K, N], C: TyO[M, N]):
@@ -63,9 +63,9 @@ def test_gemm_2D():
     TyO = int8
     M, N, K = 64, 64, 64
     P0, P1 = 2, 2
-    LyA = Layout("S0R")
-    LyB = Layout("RS1")
-    LyC = Layout("S0S1")
+    LyA = MemLayout("S0R")
+    LyB = MemLayout("RS1")
+    LyC = MemLayout("S0S1")
 
     @df.region()
     def top(A: TyI[M, K], B: TyI[K, N], C: TyO[M, N]):
@@ -98,7 +98,7 @@ def test_mixed_gemm_1D():
     M, N, K = 64, 64, 64
     P0 = 2
 
-    LyA = Layout("S0R")
+    LyA = MemLayout("S0R")
 
     @df.region()
     def top(A: Ty_l[M, K], B: Ty_l[K, N], C: Ty[M, N]):
@@ -129,9 +129,9 @@ def test_mixed_gemm_2D():
     Ty_l = int4
     M, N, K = 64, 64, 64
     P0, P1 = 2, 2
-    LyA = Layout("S0R")
-    LyB = Layout("RS1")
-    LyC = Layout("S0S1")
+    LyA = MemLayout("S0R")
+    LyB = MemLayout("RS1")
+    LyC = MemLayout("S0S1")
 
     @df.region()
     def top(A: Ty[M, K], B: Ty_l[K, N], C: Ty[M, N]):
@@ -201,9 +201,9 @@ def test_pingpong_mixed_gemm(M, N, K, Pm, Pn, Pk):
     TyO = int8
     Mt, Nt = M // Pm, N // Pn
 
-    LyA = Layout("S1S2")
-    LyB = Layout("S2S0")
-    LyC = Layout("S1S0")
+    LyA = MemLayout("S1S2")
+    LyB = MemLayout("S2S0")
+    LyC = MemLayout("S1S0")
 
     @df.region()
     def top(A: TyI[M, K], B: TyI_l[K, N], C: TyO[M, N]):

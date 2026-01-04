@@ -10,4 +10,4 @@ from .backend.ip import IPModule
 from .dsl import *
 from .template import *
 from .verify import verify
-from .memory import Memory, Layout
+from .memory import Memory, MemLayout

@@ -4,14 +4,14 @@
 import allo
 import allo.dataflow as df
 from allo.ir.types import int32, Stream
-from allo.memory import Layout
+from allo.memory import MemLayout
 import numpy as np
 from allo.backend.aie import is_available
 
 # RRxRS->RS
 # RSxSR->RR
-LyW1 = Layout("RS0")
-LyW2 = Layout("S0R")
+LyW1 = MemLayout("RS0")
+LyW2 = MemLayout("S0R")
 
 
 def test_tensor_parallelism():

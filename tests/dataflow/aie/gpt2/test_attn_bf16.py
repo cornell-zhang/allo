@@ -10,7 +10,7 @@ from allo.ir.types import bfloat16, Stream
 import allo.dataflow as df
 import numpy as np
 from ml_dtypes import bfloat16 as np_bfloat16
-from allo.memory import Layout
+from allo.memory import MemLayout
 from allo.backend.aie.external_kernel import ExternalModule
 
 np.random.seed(42)
@@ -60,16 +60,16 @@ ATTN_P0 = N // 32
 ATTN_P1 = N // 32
 ATTN_SCORE_M_TILE = ATTN_P0 * 32
 ATTN_SCORE_N_TILE = ATTN_P1 * 32
-ATTN_SCORE_LyA = Layout("S0R")
-ATTN_SCORE_LyB = Layout("S1R")
-ATTN_SCORE_LyC = Layout("S0S1")
+ATTN_SCORE_LyA = MemLayout("S0R")
+ATTN_SCORE_LyB = MemLayout("S1R")
+ATTN_SCORE_LyC = MemLayout("S0S1")
 
 
 Mt, Nt = 64, 64
 Pk, Pm, Pn = D // 64, N // 64, N // 64
-LyA = Layout("S1S2")
-LyB = Layout("S2S0")
-LyC = Layout("S1S0")
+LyA = MemLayout("S1S2")
+LyB = MemLayout("S2S0")
+LyC = MemLayout("S1S0")
 
 
 def gen_attn_score_primitives():
@@ -168,7 +168,7 @@ scaling_mod = df.build(
 )
 
 SOFTMAX_P0 = N // 4
-SOFTMAX_Ly = Layout("S0R")
+SOFTMAX_Ly = MemLayout("S0R")
 
 
 def gen_softmax_primitives():
@@ -210,9 +210,9 @@ softmax_mod = df.build(
 
 Mt, Nt = 64, 64
 Pk, Pm, Pn = N // 64, N // 64, D // 64
-LyA = Layout("S1S2")
-LyB = Layout("S2S0")
-LyC = Layout("S1S0")
+LyA = MemLayout("S1S2")
+LyB = MemLayout("S2S0")
+LyC = MemLayout("S1S0")
 
 
 @df.region()

@@ -8,6 +8,19 @@ from dataclasses import dataclass
 
 
 class Layout:
+    @dataclass(frozen=True)
+    class Shard:
+        axis: int
+
+    @dataclass(frozen=True)
+    class Replicate:
+        pass
+
+    def __init__(self, partitions):
+        self.partitions = partitions
+
+
+class MemLayout:
     """
       Example:
 
@@ -45,51 +58,6 @@ class Layout:
         self.placement = result
 
     def get_placement(self, mesh_dims):
-        """
-        Calculate mapping from tensor tile IDs to PE tile IDs based on the placement scheme.
-        ! Unsafe!! (12,1) is same as (1,21)
-        Args:
-            mesh_dims (list): Dimensions of the device mesh (e.g., [4] for 1D, [2,2] for 2D)
-
-        Returns:
-            dict: A mapping from tensor tile IDs to corresponding PE tile coordinates
-        """
-        # Generate all possible PE coordinates
-        pe_coords = list(product(*[range(dim) for dim in mesh_dims]))
-
-        # Initialize mapping
-        mapping = {}
-
-        # For each PE coordinate, determine its tensor tile ID
-        for pe_coord in pe_coords:
-            tensor_id_parts = []
-
-            for _, (op, dim) in enumerate(self.placement):
-                if op == "S":
-                    # For sharding, use the coordinate at the specified dimension
-                    # start from right to left
-                    mesh_dim = int(dim)
-                    tensor_id_parts.append(str(pe_coord[-mesh_dim - 1]))
-                elif op == "R":
-                    # For replication, use 'R'
-                    tensor_id_parts.append("R")
-
-            tensor_id = "".join(tensor_id_parts)
-
-            # Add this PE coordinate to the mapping for this tensor ID
-            if tensor_id not in mapping:
-                mapping[tensor_id] = []
-            mapping[tensor_id].append(pe_coord)
-
-        # Post-process the mapping to combine PE coordinates for replicated dimensions
-        result = {}
-        for tensor_id, coords in mapping.items():
-            # Convert to tuples for final output
-            result[tensor_id] = [tuple(coord) for coord in coords]
-
-        return result
-
-    def get_placement_exp(self, mesh_dims):
         """
         Calculate mapping from tensor tile IDs to PE tile IDs based on the placement scheme.
 
@@ -337,10 +305,10 @@ class DTensor:
         self.top_name = top_name
 
         # Handle spec: can be Layout, Memory, or None
-        self.layout: Layout = None
+        self.layout: MemLayout = None
         self.memory: Memory = None
 
-        if isinstance(spec, Layout):
+        if isinstance(spec, MemLayout):
             self.layout = spec
         elif isinstance(spec, Memory):
             self.memory = spec
@@ -355,7 +323,7 @@ class DTensor:
             # tensor tile ID -> PE tile IDs
             self.global_placement: dict[
                 tuple[int | str, ...], list[tuple[int, ...]]
-            ] = self.layout.get_placement_exp(mapping)
+            ] = self.layout.get_placement(mapping)
         self.access_pattern_set = False
         self.global_id: int = None
         self.is_input: bool = None

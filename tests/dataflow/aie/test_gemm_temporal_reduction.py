@@ -5,14 +5,14 @@ import allo
 from allo.ir.types import float32
 import allo.dataflow as df
 import numpy as np
-from allo.memory import Layout
+from allo.memory import MemLayout
 from allo.backend.aie import is_available
 
 
 def test_gemm_temporal_reduction():
-    LyA = Layout("S0R")
-    LyB = Layout("RS1")
-    LyC = Layout("S0S1")
+    LyA = MemLayout("S0R")
+    LyB = MemLayout("RS1")
+    LyC = MemLayout("S0S1")
 
     TyI, TyO = float32, float32
     total_M, total_N, total_K = 64, 64, 512

@@ -6,7 +6,7 @@ import allo
 from allo.ir.types import int16, int32, Stream
 import allo.dataflow as df
 import numpy as np
-from allo.memory import Layout
+from allo.memory import MemLayout
 from allo.backend.aie import is_available
 
 
@@ -137,8 +137,8 @@ def test_split_k_explicit_gather_gemm_1x1x4():
     M, N, K = 16, 16, 64
     Pk = 4
 
-    LyA = Layout("RS0")
-    LyB = Layout("S0R")
+    LyA = MemLayout("RS0")
+    LyB = MemLayout("S0R")
 
     @df.region()
     def top_v1(A: Ty[M, K], B: Ty[K, N], C: Ty[M, N]):

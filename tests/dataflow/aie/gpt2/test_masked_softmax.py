@@ -8,7 +8,7 @@ from typing import Annotated
 from allo.ir.types import float32, int32
 import allo.dataflow as df
 import numpy as np
-from allo.memory import Layout
+from allo.memory import MemLayout
 from allo.backend.aie.external_kernel import ExternalModule
 
 KERNEL_LIB_PATH = os.path.join(
@@ -17,8 +17,8 @@ KERNEL_LIB_PATH = os.path.join(
     ),
     "",
 )
-Ly = Layout("S1S0")
-Ly_1 = Layout("S1")
+Ly = MemLayout("S1S0")
+Ly_1 = MemLayout("S1")
 
 # Masked Softmax dimensions
 SEQ_LEN_TILED = 64

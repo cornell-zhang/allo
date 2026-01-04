@@ -50,7 +50,7 @@ import numpy as np
 import allo
 import allo.dataflow as df
 from allo.ir.types import float32, int32, Stream
-from allo.memory import Layout
+from allo.memory import MemLayout
 from allo.backend.aie import ExternalModule
 
 torch.manual_seed(0)
@@ -175,8 +175,8 @@ def run(x_fp32: np.ndarray, params: dict):
     NORM_P0 = 4
     NORM_SEQ_TILE = 16
     NORM_TILE = NORM_SEQ_TILE // NORM_P0
-    norm_io_layout = Layout("S0R")
-    norm_arg_layout = Layout("R")
+    norm_io_layout = MemLayout("S0R")
+    norm_arg_layout = MemLayout("R")
 
     @df.region()
     def layer_norm_kernel(
@@ -210,9 +210,9 @@ def run(x_fp32: np.ndarray, params: dict):
     # Linear
     # ----------------------------------------------------------------
     LINEAR_M, LINEAR_N, LINEAR_K = 64, 64, 64
-    linear_A_layout = Layout("S0R")
-    linear_B_layout = Layout("RS1")
-    linear_C_layout = Layout("S0S1")
+    linear_A_layout = MemLayout("S0R")
+    linear_B_layout = MemLayout("RS1")
+    linear_C_layout = MemLayout("S0S1")
 
     @df.region()
     def linear_matmul_kernel(
@@ -251,9 +251,9 @@ def run(x_fp32: np.ndarray, params: dict):
     ATTN_P1 = 2
     ATTN_SCORE_M_TILE = ATTN_P0 * 32
     ATTN_SCORE_N_TILE = ATTN_P1 * 32
-    ATTN_SCORE_LyA = Layout("S0R")
-    ATTN_SCORE_LyB = Layout("S1R")
-    ATTN_SCORE_LyC = Layout("S0S1")
+    ATTN_SCORE_LyA = MemLayout("S0R")
+    ATTN_SCORE_LyB = MemLayout("S1R")
+    ATTN_SCORE_LyC = MemLayout("S0S1")
 
     @df.region()
     def attn_score_kernel(
@@ -283,8 +283,8 @@ def run(x_fp32: np.ndarray, params: dict):
     SOFTMAX_P1 = 3
     SOFTMAX_HEAD_TILE = SOFTMAX_P1
     SOFTMAX_SEQ_TILE = SEQ // SOFTMAX_P0
-    SOFTMAX_Ly = Layout("S1S0")
-    SOFTMAX_ROW_Ly = Layout("S1")
+    SOFTMAX_Ly = MemLayout("S1S0")
+    SOFTMAX_ROW_Ly = MemLayout("S1")
 
     @df.region()
     def masked_softmax_kernel(
@@ -312,7 +312,7 @@ def run(x_fp32: np.ndarray, params: dict):
     GELU_P0 = 4
     GELU_P1 = 4
     GELU_SEQ_TILE = 16
-    GELU_Ly = Layout("S0S1")
+    GELU_Ly = MemLayout("S0S1")
 
     @df.region()
     def gelu_kernel(

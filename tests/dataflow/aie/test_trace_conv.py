@@ -9,11 +9,11 @@ from typing import Annotated
 from allo.ir.types import int32
 import allo.dataflow as df
 import numpy as np
-from allo.memory import Layout
+from allo.memory import MemLayout
 from allo.backend.aie.external_kernel import ExternalModule
 from allo.backend.aie import is_available
 
-Ly = Layout("RR")
+Ly = MemLayout("RR")
 
 # Convolution dimensions
 IN_H = 3  # Input height (smaller for int32)
