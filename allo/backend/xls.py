@@ -11,13 +11,13 @@ from .._mlir.ir import Context, Location, Module, UnitAttr
 from .._mlir.passmanager import PassManager
 from ..ir.transform import find_func_in_module
 
-# Regex patterns for floats, dynamic shapes, and fixed-point types.
+# Regex patterns for floats, dynamic shapes, and fixed-point types
 FLOAT_RE = re.compile(r"\b(f16|f32|f64|bf16)\b")
 DYNAMIC_RE = re.compile(r"\b(memref|tensor)<[^>]*\?>")
 FIXED_TYPE_RE = re.compile(r"!allo\.(Fixed|UFixed)<\d+,\s*\d+>")
 
-# Manually designed Fixed Point Struct modeled via Fixed Integer type.
-# Emitted with rest of code when fixed-point types are used in the MLIR.
+# Manually designed Fixed Point Struct modeled via Fixed Integer type
+# Emitted with rest of code when fixed-point types are used in the MLIR
 FIXED_POINT_STRUCT = """
 // XLS-compatible Fixed-Point Template
 template <int WIDTH, int FRAC, bool SIGNED = true>
@@ -155,6 +155,7 @@ def _parse_memory_comments(body):
                 size_m = re.match(r"(\d+)", size_str)
                 if size_m:
                     size = int(size_m.group(1))
+                    # Size of array dims, e.g. [100, 100]
                     int_dims = [int(re.match(r"(\d+)", d).group(1))
                                 for d in dims if re.match(r"(\d+)", d)]
                     mems.append((name, elem_type, size, int_dims or [size]))
@@ -179,8 +180,8 @@ def _gen_textproto(mems):
         "# proto-message: Ram Configuration Files",
         ""  # empty line
     ]
-    for name, elem_type, size, int_dims in mems:
-        # Default to 1R1W RAM, XLS memory uses val/rdy interface hence the4 reqs/resps channels.
+    for name, _, size, _ in mems:
+        # Default to 1R1W RAM, XLS memory uses val/rdy interface hence the4 reqs/resps channels
         lines.append(f"""rewrites {{
   from_config {{ kind: RAM_ABSTRACT depth: {size} }}
   to_config {{ kind: RAM_1R1W depth: {size} }}
@@ -197,10 +198,10 @@ def _gen_textproto(mems):
 def _render_testblock(in_chans, out_chans, body, top_name, mem_decls=None, state_decls=None):
     """Render TestBlock class with channels and optional memory/state declarations."""
 
-    # Templated channels for inputs and outputs.
+    # Templated channels for inputs and outputs
     in_decl = "\n  ".join(f"__xls_channel<int, __xls_channel_dir_In> {c};" for c in in_chans)
     out_decl = "\n  ".join(f"__xls_channel<int, __xls_channel_dir_Out> {c};" for c in out_chans)
-    indented = _reindent(body) # reindent body to match TestBlock class indentation.
+    indented = _reindent(body) # reindent body to match TestBlock class indentation
 
     mem_section = ""
     if mem_decls:
@@ -224,7 +225,7 @@ public:
 
 
 def _wrap_xlscc(core_code, top_name, func_name, inputs, use_memory):
-    # No array inputs -> combinational, return without channels, memory, TestBlock class.
+    # No array inputs -> combinational, return without channels, memory, TestBlock class
     if not inputs:
         return core_code, ""
 
@@ -271,7 +272,7 @@ class XLSCCModule:  # pylint: disable=too-many-instance-attributes
 
         self.mlir_text = str(self.module)
 
-        # validate XLS IR does not contain unsupported features.
+        # validate XLS IR does not contain unsupported features
         _validate_xls_ir(self.mlir_text, project)
 
         # Emit Core XLS C++ from MLIR
@@ -292,13 +293,13 @@ class XLSCCModule:  # pylint: disable=too-many-instance-attributes
         fixed_header = FIXED_POINT_STRUCT if FIXED_TYPE_RE.search(self.mlir_text) else ""
 
         # Use _wrap_xlscc to handle C++ templated memory/channels, headers, top pragma, etc. as well
-        # as RAM Configuration File (rewrites.textproto) which are not handled by emit_xls.
+        # as RAM Configuration File (rewrites.textproto) which are not handled by emit_xls
         cpp, self.rewrites_textproto = _wrap_xlscc(
             self.core_code, top_func_name, top_func_name, param_names, use_memory
         )
         self.final_cpp = fixed_header + cpp
 
-        # Write output (C++ and RAM Configuration File) files if project is provided.
+        # Write output (C++ and RAM Configuration File) files if project is provided
         if project:
             os.makedirs(project, exist_ok=True)
             with open(f"{project}/test_block.cpp", "w", encoding="utf-8") as f:
