@@ -257,7 +257,7 @@ def _wrap_xlscc(core_code, top_name, func_name, inputs, use_memory):
     headers = core_code[: match.start()] if match else ""
 
     # Parse memory declarations from body
-    mem_decls, state_decls, clean_body, mems = _parse_memory_comments(body)
+    mem_decls, state_decls, result, mems = _parse_memory_comments(body)
 
     # Generate channel names
     in_chans = [f"v{i}_in" for i in range(len(inputs))]
@@ -266,7 +266,7 @@ def _wrap_xlscc(core_code, top_name, func_name, inputs, use_memory):
     # Render testblock
     if use_memory:
         testblock = _render_testblock(
-            in_chans, out_chans, clean_body, top_name, mem_decls, state_decls
+            in_chans, out_chans, result, top_name, mem_decls, state_decls
         )
         textproto = _gen_textproto(mems)
     else:
