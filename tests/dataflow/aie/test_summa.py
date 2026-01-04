@@ -4,9 +4,12 @@
 import allo
 import allo.dataflow as df
 from allo.ir.types import int32, Stream
-from allo.memory import MemLayout
+from allo.memory import Layout
 import numpy as np
 from allo.backend.aie import is_available
+
+S = Layout.Shard
+R = Layout.Replicate
 
 
 def test_summa_2x2():
@@ -14,8 +17,8 @@ def test_summa_2x2():
     M, K, N = 8, 8, 8
     P0, P1 = 2, 2
 
-    La = MemLayout("RS0")
-    Lb = MemLayout("S0S1")
+    La = [R, S(0)]
+    Lb = [S(0), S(1)]
 
     @df.region()
     def top(A: Ty[M, K], B: Ty[K, N], C: Ty[M, N]):
@@ -63,9 +66,9 @@ def test_summa():
     M, K, N = 32, 32, 32
     P0, P1 = 4, 4
 
-    La = MemLayout("RS1")
-    Lb = MemLayout("S1S0")
-    Lc = MemLayout("RS0")
+    La = [R, S(1)]
+    Lb = [S(1), S(0)]
+    Lc = [R, S(0)]
 
     @df.region()
     def top(A: Ty[M, K], B: Ty[K, N], C: Ty[M, N]):

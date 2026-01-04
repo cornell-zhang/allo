@@ -5,12 +5,15 @@ import allo
 from allo.ir.types import Stream, int32
 import allo.dataflow as df
 import numpy as np
-from allo.memory import MemLayout
+from allo.memory import Layout
 from allo.backend.aie import is_available
+
+S = Layout.Shard
+R = Layout.Replicate
 
 
 def test_vector_scalar_add_v1():
-    Ly = MemLayout("S0")
+    Ly = [S(0)]
     # https://github.com/Xilinx/mlir-aie/tree/main/programming_examples/basic/vector_scalar_add
     Ty = int32
     M = 1024
@@ -37,7 +40,7 @@ def test_vector_scalar_add_v1():
 
 
 def test_vector_scalar_add_v2():
-    Ly = MemLayout("S0")
+    Ly = [S(0)]
     # https://github.com/Xilinx/mlir-aie/tree/main/programming_examples/basic/vector_scalar_add
     Ty = int32
     M = 1024
@@ -67,7 +70,7 @@ def test_vector_scalar_add_v2():
 
 
 def test_vector_scalar_add_v3():
-    Ly = MemLayout("S0")
+    Ly = [S(0)]
     # https://github.com/Xilinx/mlir-aie/tree/main/programming_examples/basic/vector_scalar_add
     Ty = int32
     M = 1024

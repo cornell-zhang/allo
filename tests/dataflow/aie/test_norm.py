@@ -8,12 +8,14 @@ import torch.nn as nn
 from allo.ir.types import float32
 import allo.dataflow as df
 import numpy as np
-from allo.memory import MemLayout
+from allo.memory import Layout
 from allo.backend.aie.external_kernel import ExternalModule
 from allo.backend.aie import is_available
 
-Ly = MemLayout("R")
-LyA = MemLayout("S0R")
+S = Layout.Shard
+R = Layout.Replicate
+Ly = [R]
+LyA = [S(0), R]
 
 seq_len = 16
 hidden_size = 512

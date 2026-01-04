@@ -8,17 +8,19 @@ from typing import Annotated
 from allo.ir.types import float32, int32
 import allo.dataflow as df
 import numpy as np
-from allo.memory import MemLayout
+from allo.memory import Layout
 from allo.backend.aie.external_kernel import ExternalModule
 
+S = Layout.Shard
+R = Layout.Replicate
 KERNEL_LIB_PATH = os.path.join(
     os.path.abspath(
         os.path.join(os.path.dirname(__file__), "../../../../allo/library/aie/kernels")
     ),
     "",
 )
-Ly = MemLayout("S0S1")
-Ly_1 = MemLayout("S0")
+Ly = [S(0), S(1)]
+Ly_1 = [S(0)]
 
 # Masked Softmax dimensions
 SEQ_LEN_TILED = 64

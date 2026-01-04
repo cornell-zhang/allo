@@ -9,11 +9,9 @@ from typing import Annotated
 from allo.ir.types import int32
 import allo.dataflow as df
 import numpy as np
-from allo.memory import MemLayout
 from allo.backend.aie.external_kernel import ExternalModule
 from allo.backend.aie import is_available
 
-Ly = MemLayout("RR")
 
 # Convolution dimensions
 IN_H = 3  # Input height (smaller for int32)
@@ -78,9 +76,9 @@ def test_trace_conv2d(kernel_path: str):
     def top(Input: Ty[IN_H, IN_W], Kernel: Ty[K_H, K_W], Output: Ty[OUT_H, OUT_W]):
         @df.kernel(mapping=[1], args=[Input, Kernel, Output])
         def core(
-            local_Input: Ty[IN_H, IN_W] @ Ly,
-            local_Kernel: Ty[K_H, K_W] @ Ly,
-            local_Output: Ty[OUT_H, OUT_W] @ Ly,
+            local_Input: Ty[IN_H, IN_W],
+            local_Kernel: Ty[K_H, K_W],
+            local_Output: Ty[OUT_H, OUT_W],
         ):
             conv(local_Input, local_Kernel, local_Output)
 

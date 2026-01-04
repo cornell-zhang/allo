@@ -4,13 +4,15 @@
 import allo
 import allo.dataflow as df
 from allo.ir.types import int32, Stream
-from allo.memory import MemLayout
+from allo.memory import Layout
 import numpy as np
 from allo.backend.aie import is_available
 
-LyA = MemLayout("S1S0")
-LyB = MemLayout("S1S0")
-LyC = MemLayout("S1S0")
+S = Layout.Shard
+R = Layout.Replicate
+LyA = [S(1), S(0)]
+LyB = [S(1), S(0)]
+LyC = [S(1), S(0)]
 
 
 def test_cannon():

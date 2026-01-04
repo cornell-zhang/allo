@@ -7,9 +7,12 @@ import allo
 from allo.ir.types import int8, int16, bfloat16, Stream
 import allo.dataflow as df
 import numpy as np
-from allo.memory import MemLayout
+from allo.memory import Layout
 from ml_dtypes import bfloat16 as np_bfloat16
 from allo.backend.aie import is_available
+
+S = Layout.Shard
+R = Layout.Replicate
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -68,9 +71,9 @@ def test_batched_gemm(M, N, K, Pm, Pn, Pk, TyI, TyO):
     assert TyI == TyO
     Mt, Nt = M // Pm, N // Pn
 
-    LyA = MemLayout("S1S0")
-    LyB = MemLayout("S0S2")
-    LyC = MemLayout("S1S2")
+    LyA = [S(1), S(0)]
+    LyB = [S(0), S(2)]
+    LyC = [S(1), S(2)]
 
     @df.region()
     def top(

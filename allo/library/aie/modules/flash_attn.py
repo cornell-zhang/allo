@@ -5,8 +5,11 @@ import os
 import allo
 from allo.ir.types import bfloat16, Stream
 import allo.dataflow as df
-from allo.memory import MemLayout
+from allo.memory import Layout
 from allo.backend.aie.external_kernel import ExternalModule
+
+S = Layout.Shard
+R = Layout.Replicate
 
 
 def FA(SEQ_LEN, HEAD_DIM, Q_tile_size, q_chunk_size, kv_chunk_size):
@@ -42,9 +45,9 @@ def FA(SEQ_LEN, HEAD_DIM, Q_tile_size, q_chunk_size, kv_chunk_size):
     )
 
     Ty = bfloat16
-    Ly_outer = MemLayout("S0R")
-    Ly_inner = MemLayout("S1R")
-    Ly_K = MemLayout("RS1")
+    Ly_outer = [S(0), R]
+    Ly_inner = [S(1), R]
+    Ly_K = [R, S(1)]
 
     @df.region()
     def top(

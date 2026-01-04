@@ -6,10 +6,12 @@ import allo
 from allo.ir.types import int32, float32, bfloat16
 import allo.dataflow as df
 import numpy as np
-from allo.memory import MemLayout
+from allo.memory import Layout
 from allo.backend.aie import is_available
 
-Ly = MemLayout("S0")
+S = Layout.Shard
+R = Layout.Replicate
+Ly = [S(0)]
 
 
 def test_vector_scalar_add():

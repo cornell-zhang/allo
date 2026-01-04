@@ -3,23 +3,24 @@
 
 import os
 import torch
-import torch.nn as nn
 from allo.ir.types import float32
 import allo.dataflow as df
 import numpy as np
-from allo.memory import MemLayout
+from allo.memory import Layout
 from allo.backend.aie.external_kernel import ExternalModule
 from allo.ir.types import float32
 
+S = Layout.Shard
+R = Layout.Replicate
 KERNEL_LIB_PATH = os.path.join(
     os.path.abspath(
         os.path.join(os.path.dirname(__file__), "../../../../allo/library/aie/kernels")
     ),
     "",
 )
-LyA = MemLayout("S0R")
-LyB = MemLayout("S1R")
-LyC = MemLayout("S0S1")
+LyA = [S(0), R]
+LyB = [S(1), R]
+LyC = [S(0), S(1)]
 
 head_dim = 64
 seq_len = 32 * 4

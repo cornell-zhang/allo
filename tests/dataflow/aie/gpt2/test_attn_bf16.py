@@ -10,9 +10,11 @@ from allo.ir.types import bfloat16, Stream
 import allo.dataflow as df
 import numpy as np
 from ml_dtypes import bfloat16 as np_bfloat16
-from allo.memory import MemLayout
+from allo.memory import Layout
 from allo.backend.aie.external_kernel import ExternalModule
 
+S = Layout.Shard
+R = Layout.Replicate
 np.random.seed(42)
 os.environ["ENABLE_AGGRESSIVE_PORT_UTILIZATION_PATCH"] = "1"
 
@@ -58,9 +60,9 @@ softmax = ExternalModule(
 
 Mt, Nt = 64, 64
 Pk, Pm, Pn = D // 64, N // 64, N // 64
-LyA = MemLayout("S1S0")
-LyB = MemLayout("S0S2")
-LyC = MemLayout("S1S2")
+LyA = [S(1), S(0)]
+LyB = [S(0), S(2)]
+LyC = [S(1), S(2)]
 
 
 def gen_attn_score_primitives():
@@ -126,7 +128,7 @@ attn_score_mod = df.build(
 SCALING_P0 = N // 64
 SCALING_P1 = N // 64
 
-Ly = MemLayout("S0S1")
+Ly = [S(0), S(1)]
 
 
 @df.region()
@@ -161,7 +163,7 @@ scaling_mod = df.build(
 )
 
 SOFTMAX_P0 = N // 4
-SOFTMAX_Ly = MemLayout("S0R")
+SOFTMAX_Ly = [S(0), R]
 
 
 def gen_softmax_primitives():

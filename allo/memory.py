@@ -2,8 +2,8 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-import re
 from itertools import product
+from collections import defaultdict
 from dataclasses import dataclass
 
 
@@ -16,50 +16,12 @@ class Layout:
     class Replicate:
         pass
 
-    def __init__(self, partitions):
+    def __init__(self, partitions: list[Replicate | Shard]):
         self.partitions = partitions
 
-
-class MemLayout:
-    """
-      Example:
-
-      mesh_dim = [2, 2, 2]
-        +-----+
-     2 /|    /|
-      +-+---+ +
-    1 |/    |/
-      +-----+
-         0
-      2D tensor: [32, 32]
-      +-----------+
-      | 0,0 | 0,1 |
-      +-----------+
-      | 1,0 | 1,1 |
-      +-----------+
-
-      placement = "S2S0" ->   (tensor_dim[-1], shard on mesh_dim[2]),
-                              (tensor_dim[-2], shard on mesh_dim[0])
-
-      PE tile (a, ?, b) gets tensor tile (a, b)
-    """
-
-    def __init__(self, placement):
-        # R: replicated, S: shared
-        # e.g., S0S1R, S0R, RS0
-        pattern = r"([A-Z])(\d)?"
-        matches = re.findall(pattern, placement)
-        result = []
-        for letter, number in matches:
-            if number:
-                result.append((letter, int(number)))
-            else:
-                result.append((letter, None))
-        self.placement = result
-
-    def get_placement(self, mesh_dims):
+    def get_placement(self, mesh_dims: list[int]):
         """
-        Calculate mapping from tensor tile IDs to PE tile IDs based on the placement scheme.
+        Calculate mapping from tensor tile IDs to PE tile IDs based on the partition scheme.
 
         Args:
             mesh_dims (list): Dimensions of the device mesh (e.g., [4] for 1D, [2,2] for 2D)
@@ -69,26 +31,21 @@ class MemLayout:
         """
         # Generate all possible PE coordinates
         pe_coords = list(product(*[range(dim) for dim in mesh_dims]))
-        # Initialize mapping
-        mapping = {}
+        mapping = defaultdict(list)
         # For each PE coordinate, determine its tensor tile ID
         for pe_coord in pe_coords:
             tensor_id_parts = []
-
-            for _, (op, dim) in enumerate(self.placement):
-                if op == "S":
+            for patition in self.partitions:
+                if isinstance(patition, Layout.Shard):
                     # For sharding, use the coordinate at the specified dimension
                     # start from left to right
-                    tensor_id_parts.append(int(pe_coord[int(dim)]))
-                elif op == "R":
+                    tensor_id_parts.append(int(pe_coord[patition.axis]))
+                else:
                     # For replication, use 0 as placeholder
                     tensor_id_parts.append(0)
 
             tensor_id = tuple(tensor_id_parts)
-
             # Add this PE coordinate to the mapping for this tensor ID
-            if tensor_id not in mapping:
-                mapping[tensor_id] = []
             mapping[tensor_id].append(pe_coord)
 
         # Post-process the mapping to combine PE coordinates for replicated dimensions
@@ -97,14 +54,6 @@ class MemLayout:
             # Convert to tuples for final output
             result[tensor_id] = [tuple(coord) for coord in coords]
         return result
-
-    def __repr__(self):
-        result = ""
-        for letter, number in self.placement:
-            result += letter
-            if number is not None:
-                result += str(number)
-        return f"Layout({result})"
 
 
 class Memory:
@@ -303,10 +252,10 @@ class DTensor:
         self.top_name = top_name
 
         # Handle spec: can be Layout, Memory, or None
-        self.layout: MemLayout = None
+        self.layout: Layout = None
         self.memory: Memory = None
 
-        if isinstance(spec, MemLayout):
+        if isinstance(spec, Layout):
             self.layout = spec
         elif isinstance(spec, Memory):
             self.memory = spec
@@ -334,13 +283,11 @@ class DTensor:
         if self.layout is None:
             return self.shape
         local_shape = []
-        for i, s in enumerate(self.shape):
-            shard, dim = self.layout.placement[i]
-            if shard == "R":
-                local_shape.append(s)
+        for shape, partiotion in zip(self.shape, self.layout.partitions):
+            if isinstance(partiotion, Layout.Shard):
+                local_shape.append(shape // self.mapping[partiotion.axis])
             else:
-                # count from right to left
-                local_shape.append(s // self.mapping[dim])
+                local_shape.append(shape)
         return tuple(local_shape)
 
     def set_global_info(self, global_id: int, is_input: bool):
@@ -363,8 +310,16 @@ class DTensor:
         self.access_pattern_set = True
         # tensor tile ID -> address offset
         self.offset_map: dict[tuple[int | str, ...], Offset4D] = {}
-        partition_str = "".join([p[0] for p in self.layout.placement])
-        partition_dim = [p[1] for p in self.layout.placement]
+        partition_str = "".join(
+            [
+                "S" if isinstance(p, Layout.Shard) else "R"
+                for p in self.layout.partitions
+            ]
+        )
+        partition_dim = [
+            p.axis if isinstance(p, Layout.Shard) else None
+            for p in self.layout.partitions
+        ]
         if len(self.shape) == 1:
             if partition_str == "S":
                 dim = partition_dim[0]
@@ -399,7 +354,7 @@ class DTensor:
                     tensor_n,
                     1,
                 ]
-            elif partition_str == "SR":  # TODO: something is wrong here
+            elif partition_str == "SR":
                 device_a = self.mapping[partition_dim[0]]
                 for i, key in enumerate(sorted(list(self.global_placement.keys()))):
                     self.offset_map[key] = Offset4D(i // device_a, i % device_a, 0, 0)
