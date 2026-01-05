@@ -8,14 +8,6 @@ from dataclasses import dataclass
 
 
 class Layout:
-    @dataclass(frozen=True)
-    class Shard:
-        axis: int
-
-    @dataclass(frozen=True)
-    class Replicate:
-        pass
-
     """
       Example:
 
@@ -38,6 +30,14 @@ class Layout:
 
       PE tile (a, ?, b) gets tensor tile (a, b)
     """
+
+    @dataclass(frozen=True)
+    class Shard:
+        axis: int
+
+    @dataclass(frozen=True)
+    class Replicate:
+        pass
 
     def __init__(self, partitions: list[Replicate | Shard]):
         self.partitions = partitions
