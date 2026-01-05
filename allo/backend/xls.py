@@ -55,9 +55,8 @@ struct Fixed {
 template <int WIDTH, int FRAC> using UFixed = Fixed<WIDTH, FRAC, false>;
 """
 
-
+#  Check if g++ is available for sw_emu compilation
 def is_available():
-    """Check if g++ is available for sw_emu compilation."""
     try:
         result = subprocess.run(["g++", "--version"], capture_output=True, check=False)
         return result.returncode == 0
@@ -185,7 +184,6 @@ def _parse_memory_comments(body):
 
 # Generates the RAM configuration required by XLS for the memory interface
 def _gen_textproto(mems):
-    """Generate RAM rewrites textproto for memories."""
     if not mems:
         return ""
     lines = [
@@ -210,11 +208,10 @@ def _gen_textproto(mems):
         )
     return "\n".join(lines)
 
-
+# Render TestBlock class with channels and optional memory/state declarations.
 def _render_testblock(
     in_chans, out_chans, body, top_name, mem_decls=None, state_decls=None
 ):
-    """Render TestBlock class with channels and optional memory/state declarations."""
 
     # Templated channels for inputs and outputs
     in_decl = "\n  ".join(
@@ -390,8 +387,8 @@ class XLSCCModule:  # pylint: disable=too-many-instance-attributes
         # Extract output info from function return type
         self._extract_output_info()
 
+    # Extract output shape and dtype from function return type.
     def _extract_output_info(self):
-        """Extract output shape and dtype from function return type."""
         if not self.func:
             return
         result_types = list(self.func.type.results)
@@ -629,8 +626,8 @@ int main(int argc, char** argv) {{
     def __repr__(self):
         return self.final_cpp
 
+    # Print RAM rewrites textproto if available 
     def print_textproto(self):
-        """Print RAM rewrites textproto if available."""
         if self.rewrites_textproto:
             print("=" * 60)
             print("RAM REWRITES TEXTPROTO:")
