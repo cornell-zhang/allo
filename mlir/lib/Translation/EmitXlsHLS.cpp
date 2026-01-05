@@ -38,7 +38,7 @@ static bool BIT_FLAG = false;
 static bool USE_MEMORY_FLAG = false;
 
 static SmallString<16> getXLSTypeName(Type valType) {
-  // Extract element type if valType is a ShapedType (array, tensor, memref, etc.)
+  // Extract element type if valType is a ShapedType
   if (auto arrayType = llvm::dyn_cast<ShapedType>(valType))
     valType = arrayType.getElementType();
 
