@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef ALLO_C_TRANSLATION_EMITXlsHLS_H
-#define ALLO_C_TRANSLATION_EMITXlsHLS_H
+#ifndef ALLO_C_TRANSLATION_EMITXLSHLS_H
+#define ALLO_C_TRANSLATION_EMITXLSHLS_H
 
 #include "mlir-c/IR.h"
 
@@ -21,4 +21,4 @@ MLIR_CAPI_EXPORTED MlirLogicalResult mlirEmitXlsHls(MlirModule module,
 }
 #endif
 
-#endif // ALLO_C_TRANSLATION_EMITXlsHLS_H
+#endif // ALLO_C_TRANSLATION_EMITXLSHLS_H

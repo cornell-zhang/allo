@@ -10,6 +10,7 @@ from .._mlir.dialects import allo as allo_d
 from .._mlir.ir import Context, Location, Module, UnitAttr
 from .._mlir.passmanager import PassManager
 from ..ir.transform import find_func_in_module
+from ..passes import decompose_library_function, _mlir_lower_pipeline
 
 # Regex patterns for floats, dynamic shapes, and fixed-point types
 FLOAT_RE = re.compile(r"\b(f16|f32|f64|bf16)\b")
@@ -49,24 +50,6 @@ struct Fixed {
 template <int WIDTH, int FRAC> using UFixed = Fixed<WIDTH, FRAC, false>;
 """
 
-UNSUPPORTED_PRAGMAS = {
-    "allo.partition",
-    "allo.parallel",
-    "allo.bind",
-    "allo.dataflow",
-    "allo.buffer_at",
-    "allo.reuse_at",
-    "allo.reshape",
-    "allo.compute_at",
-    "allo.unfold",
-    "allo.fuse",
-    "allo.tile",
-    "allo.split",
-    "allo.reorder",
-    "allo.inter_kernel_to",
-}
-
-
 def _validate_xls_ir(mlir_text, project=None):
     errors = []
     for i, line in enumerate(mlir_text.splitlines(), 1):
@@ -77,10 +60,6 @@ def _validate_xls_ir(mlir_text, project=None):
         # Dynamic shapes (memref with ? dimension)
         if DYNAMIC_RE.search(line):
             errors.append(f"Line {i}: Dynamic shapes ('?').")
-        # Unsupported pragmas
-        for pragma in UNSUPPORTED_PRAGMAS:
-            if pragma in line:
-                errors.append(f"Line {i}: '{pragma}' is currently not supported.")
 
     if errors:
         err_msg = f"XLS [CC] validation failed ({len(errors)} errors):\n" + "\n".join(
@@ -131,9 +110,9 @@ def _reindent(body, indent="    "):
     result = []
     for ln in lines:
         if not ln.strip():
-            result.append("\n")
+            result.append("")
         else:
-            result.append(indent + ln[min_indent:] + "\n")
+            result.append(indent + ln[min_indent:])
 
     return "\n".join(result)
 
@@ -288,10 +267,18 @@ class XLSCCModule:
         with Context() as ctx, Location.unknown():
             allo_d.register_dialect(ctx)
             self.module = Module.parse(str(mlir_text_or_module), ctx)
-            PassManager.parse(
-                "builtin.module(empty-tensor-to-alloc-tensor,"
-                "func.func(convert-linalg-to-affine-loops))"
-            ).run(self.module.operation)
+
+            self.module = decompose_library_function(self.module)
+            _mlir_lower_pipeline(self.module, lower_linalg=True)
+            # Run through lowering passes
+            pm = PassManager.parse(
+                "builtin.module("
+                "empty-tensor-to-alloc-tensor,"
+                "func.func(convert-linalg-to-affine-loops)"
+                ")"
+            )
+            pm.run(self.module.operation)
+
             self.func = find_func_in_module(self.module, top_func_name)
             if self.func:
                 self.func.attributes["top"] = UnitAttr.get()
