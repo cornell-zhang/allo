@@ -59,7 +59,10 @@ def _validate_xls_ir(mlir_text, project=None):
             errors.append(f"Line {i}: Float type '{m.group()}'.")
         # Dynamic shapes (memref with ? dimension)
         if DYNAMIC_RE.search(line):
-            errors.append(f"Line {i}: Dynamic shapes ('?').")
+            errors.append(
+                f"Line {i}: Dynamic shapes (with '?' dimension) are not supported by the XLS [CC] backend. "
+                "All array dimensions must be statically known."
+            )
 
     if errors:
         err_msg = f"XLS [CC] validation failed ({len(errors)} errors):\n" + "\n".join(
