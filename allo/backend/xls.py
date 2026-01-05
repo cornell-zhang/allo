@@ -57,7 +57,10 @@ def _validate_xls_ir(mlir_text, project=None):
         # Float types
         m = FLOAT_RE.search(line)
         if m:
-            errors.append(f"Line {i}: Float type '{m.group()}'.")
+            errors.append(
+                f"Line {i}: Floating-point type '{m.group()}' is not supported by XLS [CC] backend. "
+                "Please use integer or fixed-point types instead."
+            )
         # Dynamic shapes (memref with ? dimension)
         if DYNAMIC_RE.search(line):
             errors.append(
