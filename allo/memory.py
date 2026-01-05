@@ -283,9 +283,9 @@ class DTensor:
         if self.layout is None:
             return self.shape
         local_shape = []
-        for shape, partiotion in zip(self.shape, self.layout.partitions):
-            if isinstance(partiotion, Layout.Shard):
-                local_shape.append(shape // self.mapping[partiotion.axis])
+        for shape, partition in zip(self.shape, self.layout.partitions):
+            if isinstance(partition, Layout.Shard):
+                local_shape.append(shape // self.mapping[partition.axis])
             else:
                 local_shape.append(shape)
         return tuple(local_shape)
