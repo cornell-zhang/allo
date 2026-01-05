@@ -47,16 +47,16 @@ Vector addition
    import allo.dataflow as df
    import numpy as np
 
-   def _test_vector_scalar_add():
+   def test_vector_scalar_add():
        # https://github.com/Xilinx/mlir-aie/tree/main/programming_examples/basic/vector_scalar_add
        Ty = int32
        M = 1024
 
        @df.region()
-       def top():
-           @df.kernel(mapping=[1])
-           def core(A: Ty[M], B: Ty[M]):
-               B[:] = allo.add(A, 1)
+       def top(A: Ty[M], B: Ty[M]):
+            @df.kernel(mapping=[1], args=[A, B])
+            def core(local_A: Ty[M], local_B: Ty[M]):
+                local_B[:] = allo.add(local_A, 1)
 
        A = np.random.randint(0, 100, M).astype(np.int32)
        if "MLIR_AIE_INSTALL_DIR" in os.environ:
@@ -80,21 +80,20 @@ Matrix multiplication
    import numpy as np
    from allo.memory import Layout
 
-   LyA = Layout("S0R")
-   LyB = Layout("RS1")
-   LyC = Layout("S0S1")
-
+    S = Layout.Shard
+    R = Layout.Replicate
 
    def _test_gemm_1D():
        Ty = int32
        M, N, K = 16, 16, 16
        P0 = 2
+       LyA = [S(0), R]
 
        @df.region()
-       def top():
-           @df.kernel(mapping=[P0])
-           def gemm(A: Ty[M, K] @ LyA, B: Ty[K, N], C: Ty[M, N] @ LyA):
-               C[:, :] = allo.matmul(A, B)
+       def top(A: Ty[M, K], B: Ty[K, N], C: Ty[M, N]):
+            @df.kernel(mapping=[P0], args=[A, B, C])
+            def gemm(local_A: Ty[M, K] @ LyA, local_B: Ty[K, N], local_C: Ty[M, N] @ LyA):
+                local_C[:, :] = allo.matmul(local_A, local_B)
 
        mod = df.build(top, target="aie")
        A = np.random.randint(0, 64, (M, K)).astype(np.int32)
@@ -121,24 +120,24 @@ Producer-consumer
 
 
    @df.region()
-   def top():
+   def top(A: Ty[M, N], B: Ty[M, N]):
        pipe: Stream[Ty, 4]
 
-       @df.kernel(mapping=[1])
-       def producer(A: Ty[M, N]):
-           for i, j in allo.grid(M, N):
-               # load data
-               out: Ty = A[i, j]
-               # send data
-               pipe.put(out)
+        @df.kernel(mapping=[1], args=[A])
+        def producer(local_A: Ty[M, N]):
+            for i, j in allo.grid(M, N):
+                # load data
+                out: Ty = local_A[i, j]
+                # send data
+                pipe.put(out)
 
-       @df.kernel(mapping=[1])
-       def consumer(B: Ty[M, N]):
-           for i, j in allo.grid(M, N):
-               # receive data
-               data = pipe.get()
-               # computation
-               B[i, j] = data + 1
+        @df.kernel(mapping=[1], args=[B])
+        def consumer(local_B: Ty[M, N]):
+            for i, j in allo.grid(M, N):
+                # receive data
+                data = pipe.get()
+                # computation
+                local_B[i, j] = data + 1
 
 
    def test_producer_consumer():

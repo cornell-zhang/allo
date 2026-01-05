@@ -13,14 +13,14 @@ Mt, Nt = M // P0, N // P1
 
 
 @df.region()
-def top():
-    @df.kernel(mapping=[P0, P1])
-    def gemm(A: float32[M, K], B: float32[K, N], C: float32[M, N]):
+def top(A: float32[M, K], B: float32[K, N], C: float32[M, N]):
+    @df.kernel(mapping=[P0, P1], args=[A, B, C])
+    def gemm(local_A: float32[M, K], local_B: float32[K, N], local_C: float32[M, N]):
         pi, pj = df.get_pid()
         for i in range(pi * Mt, (pi + 1) * Mt):
             for j in range(pj * Nt, (pj + 1) * Nt):
                 for k in range(K):
-                    C[i, j] += A[i, k] * B[k, j]
+                    local_C[i, j] += local_A[i, k] * local_B[k, j]
 
 
 def test_wrap_void():

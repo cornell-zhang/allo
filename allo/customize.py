@@ -1,6 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=no-name-in-module, too-many-nested-blocks
+# pylint: disable=no-name-in-module, too-many-nested-blocks, too-many-instance-attributes
 
 import re
 import inspect
@@ -1162,6 +1162,49 @@ class Schedule:
                 sch = KERNEL2SCHEDULE[sch](schedule)
             if not isinstance(sch, Schedule):
                 raise TypeError("The first argument must be a Schedule object")
+
+            if hasattr(sch, "stateful_var_map") and sch.stateful_var_map:
+                stateful_seen = getattr(self, "_stateful_seen", {})
+                self._stateful_seen = stateful_seen
+
+                func_name = f"{sch.top_func_name}_{id}" if id else sch.top_func_name
+                func = self._find_function(func_name)
+
+                for _, (global_name, _) in sch.stateful_var_map.items():
+                    seen = stateful_seen.setdefault(global_name, [])
+
+                    suffix = id if id else f"inst{len(seen)}"
+                    new_name = f"{global_name}_{suffix}"
+
+                    original_global = next(
+                        (
+                            op
+                            for op in self.module.body.operations
+                            if isinstance(op, memref_d.GlobalOp)
+                            and op.attributes["sym_name"].value == global_name
+                        ),
+                        None,
+                    )
+                    if original_global is None:
+                        raise RuntimeError(f"Stateful global {global_name} not found")
+
+                    target = (
+                        original_global
+                        if not seen
+                        else original_global.operation.clone(
+                            InsertionPoint(original_global)
+                        )
+                    )
+                    target.attributes["sym_name"] = StringAttr.get(new_name)
+                    seen.append(new_name)
+
+                    for op in func.entry_block.operations:
+                        if isinstance(op, memref_d.GetGlobalOp) and (
+                            FlatSymbolRefAttr(op.attributes["name"]).value
+                            == global_name
+                        ):
+                            op.attributes["name"] = FlatSymbolRefAttr.get(new_name)
+
             for primitive in sch.primitive_sequences:
                 args, kwargs = primitive[1:]
                 # Avoid changing the original schedule
@@ -1342,6 +1385,7 @@ def customize(
         inst_list=instantiate,
         func_instances=func_instances,
     )
+    sch.stateful_var_map = getattr(ctx, "stateful_var_map", {})
     # Attach buffers to schedule:
     # The reason why we do not attach buffers to function is that
     # we may have multiple schedules referring to the same function,

@@ -21,12 +21,12 @@ P0, P1 = Mt + 2, Nt + 2
 
 
 @df.region()
-def top():
+def top(A: int32[M, K], B: int32[K, N], C: int32[M, N]):
     fifo_A: Stream[int32, 4][P0, P1]
     fifo_B: Stream[int32, 4][P0, P1]
 
-    @df.kernel(mapping=[P0, P1])
-    def gemm(A: int32[M, K], B: int32[K, N], C: int32[M, N]):
+    @df.kernel(mapping=[P0, P1], args=[A, B, C])
+    def gemm(local_A: int32[M, K], local_B: int32[K, N], local_C: int32[M, N]):
         # A[Mt, K] * B[K, Nt] = C[Mt, Nt]
         i, j = df.get_pid()
         for m in range(M // Mt):
@@ -37,11 +37,11 @@ def top():
                 with allo.meta_elif(j == 0):
                     # i > 0
                     for k in range(K):
-                        fifo_A[i, j + 1].put(A[m * Mt + i - 1, k])
+                        fifo_A[i, j + 1].put(local_A[m * Mt + i - 1, k])
                 with allo.meta_elif(i == 0):
                     # j > 0
                     for k in range(K):
-                        fifo_B[i + 1, j].put(B[k, n * Nt + j - 1])
+                        fifo_B[i + 1, j].put(local_B[k, n * Nt + j - 1])
                 # drain
                 with allo.meta_elif(i == Mt + 1):
                     for k in range(K):
@@ -58,7 +58,7 @@ def top():
                         c += a * b
                         fifo_A[i, j + 1].put(a)
                         fifo_B[i + 1, j].put(b)
-                    C[m * Mt + i - 1, n * Nt + j - 1] = c
+                    local_C[m * Mt + i - 1, n * Nt + j - 1] = c
 
 
 def check_function_arguments(code, kernel_name, arg_count):

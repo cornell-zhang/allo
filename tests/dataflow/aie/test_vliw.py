@@ -26,14 +26,10 @@ def test_simple_add():
 
     # Use in actual AIE dataflow:
     @df.region()
-    def my_aie_design():
-        @df.kernel(mapping=[1])
-        def core(
-            A: float32[16],
-            B: float32[16],
-            C: float32[16],
-        ):
-            simple_add_ext(A, B, C)
+    def my_aie_design(A: float32[16], B: float32[16], C: float32[16]):
+        @df.kernel(mapping=[1], args=[A, B, C])
+        def core(local_A: float32[16], local_B: float32[16], local_C: float32[16]):
+            simple_add_ext(local_A, local_B, local_C)
 
     if is_available():
         aie_module = df.build(my_aie_design, target="aie")
@@ -66,14 +62,12 @@ def test_matrix_multiply():
 
     # Use matrix multiply in AIE dataflow:
     @df.region()
-    def matmul_aie_design():
-        @df.kernel(mapping=[1])
+    def matmul_aie_design(A: float32[4, 4], B: float32[4, 4], C: float32[4, 4]):
+        @df.kernel(mapping=[1], args=[A, B, C])
         def core(
-            A: float32[4, 4],
-            B: float32[4, 4],
-            C: float32[4, 4],
+            local_A: float32[4, 4], local_B: float32[4, 4], local_C: float32[4, 4]
         ):
-            matmul_ext(A, B, C)
+            matmul_ext(local_A, local_B, local_C)
 
     if is_available():
         matmul_aie_module = df.build(matmul_aie_design, target="aie")
@@ -114,14 +108,16 @@ def test_conv2d():
 
     # Use conv2d in AIE dataflow:
     @df.region()
-    def conv2d_aie_design():
-        @df.kernel(mapping=[1])
+    def conv2d_aie_design(
+        Input: float32[4, 4], Kernel: float32[3, 3], Output: float32[2, 2]
+    ):
+        @df.kernel(mapping=[1], args=[Input, Kernel, Output])
         def core(
-            Input: float32[4, 4],
-            Kernel: float32[3, 3],
-            Output: float32[2, 2],
+            local_Input: float32[4, 4],
+            local_Kernel: float32[3, 3],
+            local_Output: float32[2, 2],
         ):
-            conv2d_ext(Input, Kernel, Output)
+            conv2d_ext(local_Input, local_Kernel, local_Output)
 
     if is_available():
         conv2d_aie_module = df.build(conv2d_aie_design, target="aie")
@@ -158,14 +154,10 @@ def test_simple_add_with_decorator():
 
     # Use directly in AIE dataflow - no need for create_vliw_module or get_external_module
     @df.region()
-    def my_aie_design():
-        @df.kernel(mapping=[1])
-        def core(
-            A: float32[16],
-            B: float32[16],
-            C: float32[16],
-        ):
-            simple_add(A, B, C)  # Direct call!
+    def my_aie_design(A: float32[16], B: float32[16], C: float32[16]):
+        @df.kernel(mapping=[1], args=[A, B, C])
+        def core(local_A: float32[16], local_B: float32[16], local_C: float32[16]):
+            simple_add(local_A, local_B, local_C)  # Direct call!
 
     if is_available():
         aie_module = df.build(my_aie_design, target="aie")
@@ -195,14 +187,12 @@ def test_vliw_decorator_matrix_multiply():
 
     # Use directly in AIE dataflow
     @df.region()
-    def matmul_aie_design():
-        @df.kernel(mapping=[1])
+    def matmul_aie_design(A: float32[4, 4], B: float32[4, 4], C: float32[4, 4]):
+        @df.kernel(mapping=[1], args=[A, B, C])
         def core(
-            A: float32[4, 4],
-            B: float32[4, 4],
-            C: float32[4, 4],
+            local_A: float32[4, 4], local_B: float32[4, 4], local_C: float32[4, 4]
         ):
-            matrix_multiply(A, B, C)
+            matrix_multiply(local_A, local_B, local_C)
 
     if is_available():
         matmul_aie_module = df.build(matmul_aie_design, target="aie")
@@ -239,14 +229,16 @@ def test_vliw_decorator_conv2d():
 
     # Use directly in AIE dataflow
     @df.region()
-    def conv2d_aie_design():
-        @df.kernel(mapping=[1])
+    def conv2d_aie_design(
+        Input: float32[4, 4], Kernel: float32[3, 3], Output: float32[2, 2]
+    ):
+        @df.kernel(mapping=[1], args=[Input, Kernel, Output])
         def core(
-            Input: float32[4, 4],
-            Kernel: float32[3, 3],
-            Output: float32[2, 2],
+            local_Input: float32[4, 4],
+            local_Kernel: float32[3, 3],
+            local_Output: float32[2, 2],
         ):
-            conv2d(Input, Kernel, Output)
+            conv2d(local_Input, local_Kernel, local_Output)
 
     if is_available():
         conv2d_aie_module = df.build(conv2d_aie_design, target="aie")

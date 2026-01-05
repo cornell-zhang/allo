@@ -12,7 +12,7 @@ P0, P1 = M + 2, N + 2
 
 
 @df.region()
-def top():
+def top(A: int16[M, K], B: int16[K, N], C: int16[M, N]):
     L2_A: Stream[UInt(M * 16), 4][P0 - 1]
     L2_B: Stream[UInt(N * 16), 4][P1 - 1]
 
@@ -22,8 +22,8 @@ def top():
     fifo_A: Stream[int16, 4][M, N]
     fifo_B: Stream[int16, 4][M, N]
 
-    @df.kernel(mapping=[P0, P1])
-    def gemm(A: int16[M, K], B: int16[K, N], C: int16[M, N]):
+    @df.kernel(mapping=[P0, P1], args=[A, B, C])
+    def gemm(local_A: int16[M, K], local_B: int16[K, N], local_C: int16[M, N]):
         i, j = df.get_pid()
         # peripheral kernels
         with allo.meta_if(i == 0 and j == 0):
@@ -31,19 +31,19 @@ def top():
                 # pack data A
                 packed_A: UInt(M * 16) = 0
                 for m in range(M):
-                    packed_A[m * 16 : (m + 1) * 16] = A[m, k]
+                    packed_A[m * 16 : (m + 1) * 16] = local_A[m, k]
                 L2_A[1].put(packed_A)
                 # pack data B
                 packed_B: UInt(N * 16) = 0
                 for n in range(N):
-                    packed_B[n * 16 : (n + 1) * 16] = B[k, n]
+                    packed_B[n * 16 : (n + 1) * 16] = local_B[k, n]
                 L2_B[1].put(packed_B)
 
         with allo.meta_elif(i == P0 - 1 and j == P1 - 1):
             for n in range(N):
                 packed_C = L2_C[N - 1].get()
                 for m in range(M):
-                    C[m, n] = packed_C[m * 16 : (m + 1) * 16]
+                    local_C[m, n] = packed_C[m * 16 : (m + 1) * 16]
 
         with allo.meta_elif(i in {0, P0 - 1} and j in {0, P1 - 1}):
             pass

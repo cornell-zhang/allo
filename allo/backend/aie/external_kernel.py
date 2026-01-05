@@ -3,7 +3,7 @@
 
 import re
 import os
-from pyparsing import Keyword, Literal, nestedExpr, originalTextFor
+from pyparsing import Keyword, Literal, nested_expr, original_text_for
 from ..ip import parse_cpp_function
 
 
@@ -45,12 +45,12 @@ def extract_extern_C_blocks(code: str) -> list[str]:
 
     extern_kw = Keyword("extern")
     c_literal = Literal('"C"')
-    brace_group = nestedExpr("{", "}")
-    extern_block = originalTextFor(extern_kw + c_literal + brace_group)
+    brace_group = nested_expr("{", "}")
+    extern_block = original_text_for(extern_kw + c_literal + brace_group)
 
     blocks = []
     # scanString yields every non-overlapping match
-    for tokens, _, _ in extern_block.scanString(code):
+    for tokens, _, _ in extern_block.scan_string(code):
         # tokens[0] is the full matched text
         blocks.append(tokens[0])
     return blocks

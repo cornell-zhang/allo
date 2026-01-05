@@ -157,24 +157,22 @@ import allo
 from allo.ir.types import int32
 import allo.dataflow as df
 import numpy as np
-from allo.memory import Layout
-
-Ly = Layout("S0")
+from allo.backend.aie import is_available
 
 
-def _test_vector_scalar_add():
+def test_vector_scalar_add():
     # https://github.com/Xilinx/mlir-aie/tree/main/programming_examples/basic/vector_scalar_add
     Ty = int32
     M = 1024
 
     @df.region()
-    def top():
-        @df.kernel(mapping=[1])
-        def core(A: Ty[M], B: Ty[M]):
-            B[:] = allo.add(A, 1)
+    def top(A: Ty[M], B: Ty[M]):
+        @df.kernel(mapping=[1], args=[A, B])
+        def core(local_A: Ty[M], local_B: Ty[M]):
+            local_B[:] = allo.add(local_A, 1)
 
     A = np.random.randint(0, 100, M).astype(np.int32)
-    if "MLIR_AIE_INSTALL_DIR" in os.environ:
+    if is_available():
         mod = df.build(top, target="aie")
         B = np.zeros(M).astype(np.int32)
         mod(A, B)
@@ -192,21 +190,20 @@ import allo.dataflow as df
 import numpy as np
 from allo.memory import Layout
 
-LyA = Layout("S0R")
-LyB = Layout("RS1")
-LyC = Layout("S0S1")
+S = Layout.Shard
+R = Layout.Replicate
 
-
-def _test_gemm_1D():
+def test_gemm_1D():
     Ty = int32
     M, N, K = 16, 16, 16
     P0 = 2
+    LyA = [S(0), R]
 
     @df.region()
-    def top():
-        @df.kernel(mapping=[P0])
-        def gemm(A: Ty[M, K] @ LyA, B: Ty[K, N], C: Ty[M, N] @ LyA):
-            C[:, :] = allo.matmul(A, B)
+    def top(A: Ty[M, K], B: Ty[K, N], C: Ty[M, N]):
+        @df.kernel(mapping=[P0], args=[A, B, C])
+        def gemm(local_A: Ty[M, K] @ LyA, local_B: Ty[K, N], local_C: Ty[M, N] @ LyA):
+            local_C[:, :] = allo.matmul(local_A, local_B)
 
     mod = df.build(top, target="aie")
     A = np.random.randint(0, 64, (M, K)).astype(np.int32)
@@ -219,42 +216,47 @@ def _test_gemm_1D():
 
 producer consumer
 ```python
-import os
 import allo
 from allo.ir.types import int32, Stream
 import allo.dataflow as df
 import numpy as np
+from allo.backend.aie import is_available
 
 Ty = int32
 M, N, K = 16, 16, 16
 
 
 @df.region()
-def top():
+def top(A: Ty[M, N], B: Ty[M, N]):
     pipe: Stream[Ty, 4]
 
-    @df.kernel(mapping=[1])
-    def producer(A: Ty[M, N]):
+    @df.kernel(mapping=[1], args=[A])
+    def producer(local_A: Ty[M, N]):
         for i, j in allo.grid(M, N):
             # load data
-            out: Ty = A[i, j]
+            out: Ty = local_A[i, j]
             # send data
             pipe.put(out)
 
-    @df.kernel(mapping=[1])
-    def consumer(B: Ty[M, N]):
+    @df.kernel(mapping=[1], args=[B])
+    def consumer(local_B: Ty[M, N]):
         for i, j in allo.grid(M, N):
             # receive data
             data = pipe.get()
             # computation
-            B[i, j] = data + 1
+            local_B[i, j] = data + 1
 
 
 def test_producer_consumer():
     A = np.random.randint(0, 64, (M, K)).astype(np.int32)
     B = np.zeros((M, N), dtype=np.int32)
 
-    if "MLIR_AIE_INSTALL_DIR" in os.environ:
+    sim_mod = df.build(top, target="simulator")
+    sim_mod(A, B)
+    np.testing.assert_allclose(B, A + 1)
+    print("Dataflow Simulator Passed!")
+
+    if is_available():
         mod = df.build(top, target="aie")
         mod(A, B)
         np.testing.assert_allclose(A + 1, B, atol=1e-5)
@@ -272,46 +274,53 @@ import allo.dataflow as df
 import numpy as np
 from allo.memory import Layout
 
-LyA = Layout("S0R")
-LyB = Layout("RS1")
-LyC = Layout("S0S1")
+S = Layout.Shard
+R = Layout.Replicate
 
+LyA = [S(1), R]
+LyB = [R, S(0)]
+LyC = [S(1), S(0)]
 
-TyI, TyO = int16, int32
-total_M, total_N, total_K = 128, 128, 512
-M, N, K = 128, 128, 32
-
-
-@df.region()
-def top1():
-    @df.kernel(mapping=[4, 4])
-    def gemm(A: TyI[M, K] @ LyA, B: TyI[K, N] @ LyB, C: TyO[M, N] @ LyC):
-        C[:, :] = allo.matmul(A, B)
-
+TyI, TyO = float32, float32
+total_M, total_N, total_K = 64, 64, 512
+M, N, K = 64, 64, 64
 
 @df.region()
-def top2():
-    @df.kernel(mapping=[2, 4])
-    def core(A: TyO[M, N] @ LyC, B: TyO[M, N] @ LyC, C: TyO[M, N] @ LyC):
-        C[:, :] = allo.add(A, B)
+def top1(A: TyI[M, K], B: TyI[K, N], C: TyO[M, N]):
+    @df.kernel(mapping=[4, 4], args=[A, B, C])
+    def gemm(
+        local_A: TyI[M, K] @ LyA, local_B: TyI[K, N] @ LyB, local_C: TyO[M, N] @ LyC
+    ):
+        local_C[:, :] = allo.matmul(local_A, local_B)
 
+@df.region()
+def top2(A: TyO[M, N], B: TyO[M, N], C: TyO[M, N]):
+    @df.kernel(mapping=[2, 4], args=[A, B, C])
+    def core(
+        local_A: TyO[M, N] @ LyC, local_B: TyO[M, N] @ LyC, local_C: TyO[M, N] @ LyC
+    ):
+        local_C[:, :] = allo.add(local_A, local_B)
 
-mod1 = df.build(top1, target="aie", project="top1.prj")
-mod2 = df.build(top2, target="aie", project="top2.prj")
+if is_available():
+    print("Building AIE modules...")
+    mod1 = df.build(top1, target="aie", project="top1.prj")
+    mod2 = df.build(top2, target="aie", project="top2.prj")
 
-A = np.random.randint(0, 8, (total_M, total_K)).astype(np.int16)
-B = np.random.randint(0, 8, (total_K, total_N)).astype(np.int16)
-C_tmp = np.zeros((M, N)).astype(np.int32)
-C = np.zeros((M, N)).astype(np.int32)
+    A = np.random.randint(0, 8, (total_M, total_K)).astype(np.float32)
+    B = np.random.randint(0, 8, (total_K, total_N)).astype(np.float32)
+    C_tmp = np.zeros((M, N)).astype(np.float32)
+    C = np.zeros((M, N)).astype(np.float32)
 
-for i in range(total_K // K):
-    tile_A = A[:, i * K : (i + 1) * K]
-    tile_B = B[i * K : (i + 1) * K, :]
-    mod1(tile_A, tile_B, C_tmp)
-    mod2(C, C_tmp, C)
+    for k in range(total_K // K):
+        tile_A = A[:, k * K : (k + 1) * K]
+        tile_B = B[k * K : (k + 1) * K, :]
+        mod1(tile_A, tile_B, C_tmp)
+        mod2(C, C_tmp, C)
 
-np.testing.assert_allclose(C, A @ B, atol=1e-5)
-print("PASSED!")
+    np.testing.assert_allclose(C, A @ B, atol=1e-2)
+    print("PASSED!")
+else:
+    print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 ```
 
 ### Environment Variables for Controlling Compiler Behavior
@@ -382,17 +391,17 @@ For programs that use virtual mapping primitives, two visualization results are 
 #### `ALLO_EXTERNAL_KERNEL_DIR`
 
 This variable specifies the path to the Allo external kernel library.
-You can find this library under [`allo/library/aie`](../../library/aie/).
+You can find this library under [`allo/library/aie/kernels`](../../library/aie/kernels/).
 
 Allo has modified and extended the [`mm.cc` kernel](https://github.com/Xilinx/mlir-aie/blob/v1.0/aie_kernels/aie2/mm.cc) in the `mlir-aie` kernel library.
 The changes include:
 * Adding support for `int4`.
 * Avoiding certain function name conflicts.
 
-If you want to use [Allo’s customized `mm.cc`](../../library/aie/mm.cc) or other external kernels in Allo external kernel library, you can set:
+If you want to use [Allo’s customized `mm.cc`](../../library/aie/kernels/mm.cc) or other external kernels in Allo external kernel library, you can set:
 
 ```
-ALLO_EXTERNAL_KERNEL_DIR=/path/to/allo/root/allo/library/aie
+ALLO_EXTERNAL_KERNEL_DIR=/path/to/allo/root/allo/library/aie/kernels
 ```
 
 #### `COALESCE_MORE`
@@ -440,33 +449,42 @@ import allo.dataflow as df
 import numpy as np
 from allo.memory import Layout
 
-Ty = int16
-M, N, K = 128, 128, 32
-Pm, Pn, Pk = 4, 4, 1
-Mt, Nt, Kt = M // Pm, N // Pn, K // Pk
+S = Layout.Shard
+R = Layout.Replicate
 
-LyA = Layout("S1S2")
-LyB = Layout("S2S0")
-LyC = Layout("S1S0")
+TyI, TyO = int16, int32
+M, N, K = 64, 64, 32
+P0, P1 = 4, 4
+LyA = [S(1), R]
+LyB = [R, S(0)]
+LyC = [S(1), S(0)]
 
 @df.region()
-def top1():
-    @df.kernel(mapping=[Pk, Pm, Pn])
-    def gemm(A: Ty[M, K] @ LyA, B: Ty[K, N] @ LyB, C: int32[M, N] @ LyC):
-        C[:, :] = allo.matmul(A, B)
+def top(A: TyI[M, K], B: TyI[K, N], C: TyO[M, N]):
+    @df.kernel(mapping=[P0, P1], args=[A, B, C])
+    def gemm(
+        local_A: TyI[M, K] @ LyA, local_B: TyI[K, N] @ LyB, local_C: TyO[M, N] @ LyC
+    ):
+        local_C[:, :] = allo.matmul(local_A, local_B)
 
-mod = df.build(
-    top1,
-    target="aie",
-    profile=True,
-    warmup=200,
-    num_iters=1000,
-)
-A = np.random.randint(0, 32, (M, K)).astype(np.int16)
-B = np.random.randint(0, 32, (K, N)).astype(np.int16)
-C = np.zeros((M, N)).astype(np.int32)
-tmp_C = np.zeros((M, N)).astype(np.int32)
-mod(A, B, C)
+if is_available():
+    mod = df.build(
+        top,
+        target="aie",
+        profile=True,
+        warmup=200,
+        num_iters=1000,
+    )
+    A = np.random.randint(0, 64, (M, K)).astype(np.int16)
+    B = np.random.randint(0, 64, (K, N)).astype(np.int16)
+    C = np.zeros((M, N)).astype(np.int32)
+    mod(A, B, C)
+    np_C = A.astype(np.int32) @ B.astype(np.int32)
+    np.testing.assert_allclose(C, np_C, atol=1e-5)
+    print("PASSED!")
+else:
+    print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
+
 ```
 #### Profiling with Trace
 AIEs are equipped with tracing hardware that provides a cycle accurate view of hardware events. 
@@ -522,11 +540,15 @@ TyI, TyO = int16, int32
 M, N, K = 32, 32, 32
 P0, P1 = 2, 4
 
+LyA = [S(1), R]
+LyB = [R, S(0)]
+LyC = [S(1), S(0)]
+
 @df.region()
-def top():
-    @df.kernel(mapping=[P0, P1])
-    def gemm(A: TyI[M, K] @ LyA, B: TyI[K, N] @ LyB, C: TyO[M, N] @ LyC):
-        C[:, :] = allo.matmul(A, B)
+def top(A: TyI[M, K], B: TyI[K, N], C: TyO[M, N]):
+    @df.kernel(mapping=[P0, P1], args=[A, B, C])
+    def gemm(local_A: TyI[M, K] @ LyA, local_B: TyI[K, N] @ LyB, local_C: TyO[M, N] @ LyC):
+        local_C[:, :] = allo.matmul(local_A, local_B)
 
 # trace tile (0, 0) of gemm df.kernel
 mod = df.build(
@@ -547,9 +569,9 @@ print("PASSED!")
 ```
 ##### Using Trace to Measure the Performance of External Kernels
 Trace is useful for evaluating the performance of an external kernel running on a single compute tile. 
-This is especially important when profiling for optimizations such as vectorization of external kernels. The following example demonstrates how to use trace profiling on some [convolution kernels](../../library/aie/).
+This is especially important when profiling for optimizations such as vectorization of external kernels. The following example demonstrates how to use trace profiling on some [convolution kernels](../../library/aie/kernels/).
 
-In this case, due to the relatively small computation scale, the difference between the [vectorized](../../library/aie/conv_small_vector.cc) and [scalar](../../library/aie/conv_small_scalar.cc) versions of the kernel is not clearly observable using timing-based profiling to measure NPU time. 
+In this case, due to the relatively small computation scale, the difference between the [vectorized](../../library/aie/kernels/conv_small_vector.cc) and [scalar](../../library/aie/kernels/conv_small_scalar.cc) versions of the kernel is not clearly observable using timing-based profiling to measure NPU time. 
 Instead, one can insert event markers, such as `event0();` and `event1();`, directly into the external C++ code and run the trace on the compute tile executing the external kernel. Sample code can be found in [`test_trace_conv.py`](../../../tests/dataflow/aie/test_trace_conv.py).
 
 Process the generated trace (in `top.prj/trace.txt`) with [`parse_trace.py`](https://github.com/Xilinx/mlir-aie/blob/v1.0/programming_examples/utils/parse_trace.py).
@@ -661,5 +683,5 @@ And the external module can then be used in an Allo kernel.
 An example can be found in [`tests/dataflow/aie/test_norm.py`](../../../tests/dataflow/aie/test_norm.py).
 
 ##### Allo External Kernel Library 
-The [`kernels`](../../library/aie/) directory contains several external kernels used in the GPT-2 block.
+The [`kernels`](../../library/aie/kernels/) directory contains several external kernels used in the GPT-2 block.
 Corresponding tests can be found in [`tests/dataflow/aie/gpt2`](../../../tests/dataflow/aie/gpt2/).

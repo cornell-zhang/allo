@@ -8,10 +8,12 @@ from allo.memory import Layout
 import numpy as np
 from allo.backend.aie import is_available
 
+S = Layout.Shard
+R = Layout.Replicate
 # RRxRS->RS
 # RSxSR->RR
-LyW1 = Layout("RS0")
-LyW2 = Layout("S0R")
+LyW1 = [R, S(0)]
+LyW2 = [S(0), R]
 
 
 def test_tensor_parallelism():
@@ -21,26 +23,26 @@ def test_tensor_parallelism():
     Nt = N // P0
 
     @df.region()
-    def top():
+    def top(X: Ty[M, K], W1: Ty[K, N], W2: Ty[N, L], Z: Ty[M, L]):
         Y: Stream[Ty[M, Nt], 2][P0]
         part_Z: Stream[Ty[M, L], 2][P0]
 
-        @df.kernel(mapping=[P0])
-        def gemm0(X: Ty[M, K], W1: Ty[K, N] @ LyW1):
+        @df.kernel(mapping=[P0], args=[X, W1])
+        def gemm0(local_X: Ty[M, K], local_W1: Ty[K, N] @ LyW1):
             pn = df.get_pid()
-            Y[pn].put(allo.matmul(X, W1))
+            Y[pn].put(allo.matmul(local_X, local_W1))
 
-        @df.kernel(mapping=[P0])
-        def gemm1(W2: Ty[N, L] @ LyW2):
+        @df.kernel(mapping=[P0], args=[W2])
+        def gemm1(local_W2: Ty[N, L] @ LyW2):
             pn = df.get_pid()
-            part_Z[pn].put(allo.matmul(Y[pn].get(), W2))
+            part_Z[pn].put(allo.matmul(Y[pn].get(), local_W2))
 
-        @df.kernel(mapping=[1])
-        def acc(Z: Ty[M, L]):
+        @df.kernel(mapping=[1], args=[Z])
+        def acc(local_Z: Ty[M, L]):
             Z_out: Ty[M, L] = 0
             with allo.meta_for(P0) as i:
                 Z_out[:, :] += part_Z[i].get()
-            Z[:, :] = Z_out
+            local_Z[:, :] = Z_out
 
     X = np.random.randint(0, 64, (M, K)).astype(np.int32)
     W1 = np.random.randint(0, 64, (K, N)).astype(np.int32)

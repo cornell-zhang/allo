@@ -3,7 +3,6 @@
 
 import os
 import torch
-import torch.nn as nn
 from allo.ir.types import float32
 import allo.dataflow as df
 import numpy as np
@@ -11,15 +10,17 @@ from allo.memory import Layout
 from allo.backend.aie.external_kernel import ExternalModule
 from allo.ir.types import float32
 
+S = Layout.Shard
+R = Layout.Replicate
 KERNEL_LIB_PATH = os.path.join(
     os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "../../../../allo/library/aie")
+        os.path.join(os.path.dirname(__file__), "../../../../allo/library/aie/kernels")
     ),
     "",
 )
-LyA = Layout("S0R")
-LyB = Layout("S1R")
-LyC = Layout("S0S1")
+LyA = [S(0), R]
+LyB = [S(1), R]
+LyC = [S(0), S(1)]
 
 head_dim = 64
 seq_len = 32 * 4
@@ -46,14 +47,16 @@ def _test_attn_score():
     Ty = float32
 
     @df.region()
-    def top():
-        @df.kernel(mapping=[4, 4])
+    def top(
+        A: Ty[seq_len, head_dim], B: Ty[seq_len, head_dim], C: Ty[seq_len, seq_len]
+    ):
+        @df.kernel(mapping=[4, 4], args=[A, B, C])
         def core(
-            A: Ty[seq_len, head_dim] @ LyA,
-            B: Ty[seq_len, head_dim] @ LyB,
-            C: Ty[seq_len, seq_len] @ LyC,
+            local_A: Ty[seq_len, head_dim] @ LyA,
+            local_B: Ty[seq_len, head_dim] @ LyB,
+            local_C: Ty[seq_len, seq_len] @ LyC,
         ):
-            attn_score(A, B, C)
+            attn_score(local_A, local_B, local_C)
 
     input_tensor_a = torch.randn(seq_len, head_dim, dtype=torch.float32)
     input_tensor_b = torch.randn(seq_len, head_dim, dtype=torch.float32)

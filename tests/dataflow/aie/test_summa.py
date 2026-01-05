@@ -8,25 +8,28 @@ from allo.memory import Layout
 import numpy as np
 from allo.backend.aie import is_available
 
+S = Layout.Shard
+R = Layout.Replicate
+
 
 def test_summa_2x2():
     Ty = int32
     M, K, N = 8, 8, 8
     P0, P1 = 2, 2
 
-    La = Layout("RS1")
-    Lb = Layout("S1S0")
+    La = [R, S(0)]
+    Lb = [S(0), S(1)]
 
     @df.region()
-    def top():
+    def top(A: Ty[M, K], B: Ty[K, N], C: Ty[M, N]):
         row_fifo: Stream[Ty[M, N // 2], 1][P0]
         final_fifo: Stream[Ty[M, N], P0][P0]
 
-        @df.kernel(mapping=[P0, P1])
-        def summa(A: Ty[M, K] @ La, B: Ty[K, N] @ Lb):
+        @df.kernel(mapping=[P0, P1], args=[A, B])
+        def summa(local_A: Ty[M, K] @ La, local_B: Ty[K, N] @ Lb):
             i, j = df.get_pid()
 
-            P_tile: Ty[M, N // 2] = allo.matmul(A, B)
+            P_tile: Ty[M, N // 2] = allo.matmul(local_A, local_B)
 
             with allo.meta_if(j == 1):
                 row_fifo[i].put(P_tile)
@@ -39,12 +42,12 @@ def test_summa_2x2():
                         F_tile[m, n + N // 2] = right_half[m, n]
                 final_fifo[i].put(F_tile)
 
-        @df.kernel(mapping=[1])
-        def write_c(C: Ty[M, N]):
+        @df.kernel(mapping=[1], args=[C])
+        def write_c(local_C: Ty[M, N]):
             agg: Ty[M, N] = 0
             with allo.meta_for(P0) as i:
                 agg[:, :] += final_fifo[i].get()
-            C[:, :] = agg
+            local_C[:, :] = agg
 
     A = np.random.randint(0, 64, (M, K)).astype(np.int32)
     B = np.random.randint(0, 64, (K, N)).astype(np.int32)
@@ -63,23 +66,25 @@ def test_summa():
     M, K, N = 32, 32, 32
     P0, P1 = 4, 4
 
-    La = Layout("RS0")
-    Lb = Layout("S0S1")
-    Lc = Layout("RS1")
+    La = [R, S(1)]
+    Lb = [S(1), S(0)]
+    Lc = [R, S(0)]
 
     @df.region()
-    def top():
+    def top(A: Ty[M, K], B: Ty[K, N], C: Ty[M, N]):
         column_fifo: Stream[Ty[M, N // P0], 1][P0, P1 - 1]
 
-        @df.kernel(mapping=[P0, P1])
-        def summa(B: Ty[K, N] @ Lb, A: Ty[M, K] @ La, C: Ty[M, N] @ Lc):
+        @df.kernel(mapping=[P0, P1], args=[B, A, C])
+        def summa(
+            local_B: Ty[K, N] @ Lb, local_A: Ty[M, K] @ La, local_C: Ty[M, N] @ Lc
+        ):
             i, j = df.get_pid()
 
-            P_tile: Ty[M, N // P0] = allo.matmul(A, B)
+            P_tile: Ty[M, N // P0] = allo.matmul(local_A, local_B)
 
             with allo.meta_if(j == 0):
                 P_tile[:, :] += column_fifo[i, j].get()
-                C[:, :] = P_tile
+                local_C[:, :] = P_tile
             with allo.meta_elif(j == P1 - 1):
                 column_fifo[i, j - 1].put(P_tile)
             with allo.meta_else():
@@ -91,7 +96,7 @@ def test_summa():
     C = np.zeros((M, N), dtype=np.int32)
     if is_available():
         mod = df.build(top, target="aie")
-        mod(B, A, C)
+        mod(A, B, C)
         np.testing.assert_allclose(C, A @ B, atol=1e-5)
         print("PASSED!")
     else:

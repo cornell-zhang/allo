@@ -15,13 +15,18 @@ NZ = int(K // 2)
 
 
 @df.region()
-def top():
+def top(A_nz: int32[M, NZ], A_in: int32[M, NZ], B: int32[K, N], C: int32[M, N]):
     fifo_A: Stream[int32, 4][P0, P1]
     fifo_idx: Stream[int32, 4][P0, P1]
     fifo_B: Stream[int128, 4][P0, P1]
 
-    @df.kernel(mapping=[P0, P1])
-    def semm(A_nz: int32[M, NZ], A_in: int32[M, NZ], B: int32[K, N], C: int32[M, N]):
+    @df.kernel(mapping=[P0, P1], args=[A_nz, A_in, B, C])
+    def semm(
+        local_A_nz: int32[M, NZ],
+        local_A_in: int32[M, NZ],
+        local_B: int32[K, N],
+        local_C: int32[M, N],
+    ):
         """
         This kernel `semm` takes in the original sparse matrix A in a compressed format, with
         `A_nz` being only the nonzero values, and `A_in` being the column indices of the nonzero values.
@@ -36,15 +41,15 @@ def top():
         with allo.meta_elif(j == 0):
             # i > 0
             for knz in range(NZ):
-                fifo_A[i, j + 1].put(A_nz[i - 1, knz])
-                fifo_idx[i, j + 1].put(A_in[i - 1, knz])
+                fifo_A[i, j + 1].put(local_A_nz[i - 1, knz])
+                fifo_idx[i, j + 1].put(local_A_in[i - 1, knz])
         with allo.meta_elif(i == 0):
             # pack the columns of B
             pack: int128 = 0
             for k in range(K):
                 msb: index = (k + 1) * 32 - 1
                 lsb: index = k * 32
-                b: int32 = B[k, j - 1]
+                b: int32 = local_B[k, j - 1]
                 pack[lsb:msb] = b
             fifo_B[i + 1, j].put(pack)
         # drain
@@ -75,7 +80,7 @@ def top():
                 fifo_idx[i, j + 1].put(idx)
             # forward column B data once row A is processed
             fifo_B[i + 1, j].put(b_packed)
-            C[i - 1, j - 1] = c
+            local_C[i - 1, j - 1] = c
 
 
 def create_sparse_matrix(m, k, sparsity_ratio):

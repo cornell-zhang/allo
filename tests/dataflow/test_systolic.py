@@ -14,12 +14,12 @@ P0, P1 = M + 2, N + 2
 
 
 @df.region()
-def top():
+def top(A: float32[M, K], B: float32[K, N], C: float32[M, N]):
     fifo_A: Stream[float32, 4][P0, P1]
     fifo_B: Stream[float32, 4][P0, P1]
 
-    @df.kernel(mapping=[P0, P1])
-    def gemm(A: float32[M, K], B: float32[K, N], C: float32[M, N]):
+    @df.kernel(mapping=[P0, P1], args=[A, B, C])
+    def gemm(local_A: float32[M, K], local_B: float32[K, N], local_C: float32[M, N]):
         i, j = df.get_pid()
         # periperals kernels
         with allo.meta_if(i in {0, M + 1} and j in {0, N + 1}):
@@ -27,11 +27,11 @@ def top():
         with allo.meta_elif(j == 0):
             # i > 0
             for k in range(K):
-                fifo_A[i, j + 1].put(A[i - 1, k])
+                fifo_A[i, j + 1].put(local_A[i - 1, k])
         with allo.meta_elif(i == 0):
             # j > 0
             for k in range(K):
-                fifo_B[i + 1, j].put(B[k, j - 1])
+                fifo_B[i + 1, j].put(local_B[k, j - 1])
         # drain
         with allo.meta_elif(i == M + 1 and j > 0):
             for k in range(K):
@@ -48,13 +48,15 @@ def top():
                 c += a * b
                 fifo_A[i, j + 1].put(a)
                 fifo_B[i + 1, j].put(b)
-            C[i - 1, j - 1] = c
+            local_C[i - 1, j - 1] = c
 
 
 def test_systolic():
     A = np.random.rand(M, K).astype(np.float32)
     B = np.random.rand(K, N).astype(np.float32)
     C = np.zeros((M, N), dtype=np.float32)
+    mod = df.build(top)
+    print(mod.module)
 
     sim_mod = df.build(top, target="simulator")
     sim_mod(A, B, C)

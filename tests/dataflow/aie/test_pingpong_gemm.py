@@ -9,6 +9,9 @@ import numpy as np
 from allo.memory import Layout
 from allo.backend.aie import is_available
 
+S = Layout.Shard
+R = Layout.Replicate
+
 
 @pytest.mark.parametrize("Ty", [int8, int16, int32, float32])
 def test_cooperative_gemm(Ty):
@@ -16,27 +19,29 @@ def test_cooperative_gemm(Ty):
     Pm, Pn, Pk = 2, 2, 2
     Mt, Nt = M // Pm, N // Pn
 
-    LyA = Layout("S1S2")
-    LyB = Layout("S2S0")
-    LyC = Layout("S1S0")
+    LyA = [S(1), S(0)]
+    LyB = [S(0), S(2)]
+    LyC = [S(1), S(2)]
 
     @df.region()
-    def top():
+    def top(A: Ty[M, K], B: Ty[K, N], C: Ty[M, N]):
         pipe: Stream[Ty[Mt, Nt], 2][Pk - 1, Pm, Pn]
 
-        @df.kernel(mapping=[Pk, Pm, Pn])
-        def gemm(A: Ty[M, K] @ LyA, B: Ty[K, N] @ LyB, C: Ty[M, N] @ LyC):
+        @df.kernel(mapping=[Pk, Pm, Pn], args=[A, B, C])
+        def gemm(
+            local_A: Ty[M, K] @ LyA, local_B: Ty[K, N] @ LyB, local_C: Ty[M, N] @ LyC
+        ):
             pk, pm, pn = df.get_pid()
             C_in: Ty[Mt, Nt]
             with allo.meta_if(pk > 0):
                 C_in[:, :] = pipe[pk - 1, pm, pn].get()
             with allo.meta_else():
                 C_in[:, :] = 0
-            C_out: Ty[Mt, Nt] = allo.add(allo.matmul(A, B), C_in)
+            C_out: Ty[Mt, Nt] = allo.add(allo.matmul(local_A, local_B), C_in)
             with allo.meta_if(pk < Pk - 1):
                 pipe[pk, pm, pn].put(C_out)
             with allo.meta_elif(pk == Pk - 1):
-                C[:, :] = C_out
+                local_C[:, :] = C_out
 
     if is_available():
         mod = df.build(top, target="aie")

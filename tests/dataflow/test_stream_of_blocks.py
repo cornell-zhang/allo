@@ -15,26 +15,26 @@ NUM_BLOCKS = 2
 
 
 @df.region()
-def top_stream_2d_blocks():
+def top_stream_2d_blocks(A: int16[M * NUM_BLOCKS, N], B: int16[M * NUM_BLOCKS, N]):
     # Stream where each element is a 4x4 block of int16
     pipe: Stream[int16[M, N], 4]
 
-    @df.kernel(mapping=[1])
-    def producer(A: int16[M * NUM_BLOCKS, N]):
+    @df.kernel(mapping=[1], args=[A])
+    def producer(local_A: int16[M * NUM_BLOCKS, N]):
         for i in range(NUM_BLOCKS):
             block: int16[M, N] = 0
             for m in range(M):
                 for n in range(N):
-                    block[m, n] = A[i * M + m, n]
+                    block[m, n] = local_A[i * M + m, n]
             pipe.put(block)
 
-    @df.kernel(mapping=[1])
-    def consumer(B: int16[M * NUM_BLOCKS, N]):
+    @df.kernel(mapping=[1], args=[B])
+    def consumer(local_B: int16[M * NUM_BLOCKS, N]):
         for i in range(NUM_BLOCKS):
             block: int16[M, N] = pipe.get()
             for m in range(M):
                 for n in range(N):
-                    B[i * M + m, n] = block[m, n]
+                    local_B[i * M + m, n] = block[m, n]
 
 
 def test_2d_blocks():
@@ -76,27 +76,27 @@ def test_2d_blocks():
 
 # Test 2: Stream of blocks with computation
 @df.region()
-def top_stream_block_compute():
+def top_stream_block_compute(A: float32[M * 2], B: float32[M * 2]):
     # Stream where each element is a 1D block of float32
     pipe: Stream[float32[M], 4]
 
-    @df.kernel(mapping=[1])
-    def producer(A: float32[M * 2]):
+    @df.kernel(mapping=[1], args=[A])
+    def producer(local_A: float32[M * 2]):
         for i in range(2):
             block: float32[M] = 0
             for m in range(M):
-                block[m] = A[i * M + m]
+                block[m] = local_A[i * M + m]
             pipe.put(block)
 
-    @df.kernel(mapping=[1])
-    def consumer(B: float32[M * 2]):
+    @df.kernel(mapping=[1], args=[B])
+    def consumer(local_B: float32[M * 2]):
         for i in range(2):
             block: float32[M] = pipe.get()
             # Apply some computation
             for m in range(M):
                 block[m] = block[m] * 2.0 + 1.0
             for m in range(M):
-                B[i * M + m] = block[m]
+                local_B[i * M + m] = block[m]
 
 
 def test_blocks_compute():
@@ -138,22 +138,22 @@ def test_blocks_compute():
 
 # Test 3: Multiple streams of blocks
 @df.region()
-def top_multiple_stream_blocks():
+def top_multiple_stream_blocks(A: int16[M, N], B: int16[M, N], C: int16[M, N]):
     pipe_A: Stream[int16[M, N], 4]
     pipe_B: Stream[int16[M, N], 4]
 
-    @df.kernel(mapping=[1])
-    def producer(A: int16[M, N], B: int16[M, N]):
-        pipe_A.put(A)
-        pipe_B.put(B)
+    @df.kernel(mapping=[1], args=[A, B])
+    def producer(local_A: int16[M, N], local_B: int16[M, N]):
+        pipe_A.put(local_A)
+        pipe_B.put(local_B)
 
-    @df.kernel(mapping=[1])
-    def consumer(C: int16[M, N]):
+    @df.kernel(mapping=[1], args=[C])
+    def consumer(local_C: int16[M, N]):
         block_A: int16[M, N] = pipe_A.get()
         block_B: int16[M, N] = pipe_B.get()
         for m in range(M):
             for n in range(N):
-                C[m, n] = block_A[m, n] + block_B[m, n]
+                local_C[m, n] = block_A[m, n] + block_B[m, n]
 
 
 def test_multiple_blocks():

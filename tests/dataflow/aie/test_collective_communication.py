@@ -9,6 +9,9 @@ import numpy as np
 from allo.memory import Layout
 from allo.backend.aie import is_available
 
+S = Layout.Shard
+R = Layout.Replicate
+
 
 def test_gather():
 
@@ -17,18 +20,18 @@ def test_gather():
     Pk = 4
 
     @df.region()
-    def top_v1():
+    def top_v1(A: Ty[N], B: Ty[Pk, N]):
         pipe: Stream[Ty[N], 2][Pk]
 
-        @df.kernel(mapping=[Pk])
-        def src(A: Ty[N]):
+        @df.kernel(mapping=[Pk], args=[A])
+        def src(local_A: Ty[N]):
             pk = df.get_pid()
-            pipe[pk].put(A)
+            pipe[pk].put(local_A)
 
-        @df.kernel(mapping=[1])
-        def dst(B: Ty[Pk, N]):
+        @df.kernel(mapping=[1], args=[B])
+        def dst(local_B: Ty[Pk, N]):
             # gather a list of pipes
-            B[:, :] = df.gather([pipe[0], pipe[1], pipe[2], pipe[3]])
+            local_B[:, :] = df.gather([pipe[0], pipe[1], pipe[2], pipe[3]])
 
     A = np.random.randint(0, 64, (N)).astype(np.int16)
     B = np.zeros((Pk, N)).astype(np.int16)
@@ -57,18 +60,18 @@ def test_gather():
         print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 
     @df.region()
-    def top_v2():
+    def top_v2(A: Ty[N], B: Ty[Pk, N]):
         pipe: Stream[Ty[N], 2][Pk]
 
-        @df.kernel(mapping=[Pk])
-        def src(A: Ty[N]):
+        @df.kernel(mapping=[Pk], args=[A])
+        def src(local_A: Ty[N]):
             pk = df.get_pid()
-            pipe[pk].put(A)
+            pipe[pk].put(local_A)
 
-        @df.kernel(mapping=[1])
-        def dst(B: Ty[Pk, N]):
+        @df.kernel(mapping=[1], args=[B])
+        def dst(local_B: Ty[Pk, N]):
             # gather slice
-            B[:, :] = df.gather(pipe[:])
+            local_B[:, :] = df.gather(pipe[:])
 
     A = np.random.randint(0, 64, (N)).astype(np.int16)
     B = np.zeros((Pk, N)).astype(np.int16)
@@ -103,20 +106,20 @@ def test_gather_matmul():
     Pk = 2
 
     @df.region()
-    def top():
+    def top(A: TyI[M, K], B: TyI[K, N], C: TyO[M, N]):
         pipe: Stream[TyI[M, K], 2][Pk]
 
-        @df.kernel(mapping=[Pk])
-        def src(A: TyI[M, K]):
+        @df.kernel(mapping=[Pk], args=[A])
+        def src(local_A: TyI[M, K]):
             pk = df.get_pid()
-            pipe[pk].put(A)
+            pipe[pk].put(local_A)
 
-        @df.kernel(mapping=[1])
-        def dst(B: TyI[K, N], C: TyO[M, N]):
+        @df.kernel(mapping=[1], args=[B, C])
+        def dst(local_B: TyI[K, N], local_C: TyO[M, N]):
             tmp_A: TyI[Pk, M, K] = df.gather(pipe[:])
             # [NOTE]: test using buffer slice as mixed precision matmul input
-            C_: TyO[M, N] = allo.matmul(tmp_A[0], B)
-            C[:, :] = C_
+            C_: TyO[M, N] = allo.matmul(tmp_A[0], local_B)
+            local_C[:, :] = C_
 
     A = np.random.randint(0, 64, (M, K)).astype(np.int16)
     B = np.random.randint(0, 64, (K, N)).astype(np.int16)
@@ -137,27 +140,27 @@ def test_split_k_explicit_gather_gemm_1x1x4():
     M, N, K = 16, 16, 64
     Pk = 4
 
-    LyA = Layout("RS0")
-    LyB = Layout("S0R")
+    LyA = [R, S(0)]
+    LyB = [S(0), R]
 
     @df.region()
-    def top_v1():
+    def top_v1(A: Ty[M, K], B: Ty[K, N], C: Ty[M, N]):
         pipe: Stream[Ty[M, N], 2][Pk]
 
-        @df.kernel(mapping=[Pk])
-        def partial_gemm(A: Ty[M, K] @ LyA, B: Ty[K, N] @ LyB):
+        @df.kernel(mapping=[Pk], args=[A, B])
+        def partial_gemm(local_A: Ty[M, K] @ LyA, local_B: Ty[K, N] @ LyB):
             pk = df.get_pid()
-            pipe[pk].put(allo.matmul(A, B))
+            pipe[pk].put(allo.matmul(local_A, local_B))
 
-        @df.kernel(mapping=[1])
-        def acc(C: Ty[M, N]):
+        @df.kernel(mapping=[1], args=[C])
+        def acc(local_C: Ty[M, N]):
             C_: Ty[M, N] = 0
             # gather
             buffer: Ty[Pk, M, N] = df.gather([pipe[0], pipe[1], pipe[2], pipe[3]])
             # accumulate
             for i in range(Pk):
                 C_[:, :] += buffer[i]
-            C[:, :] = C_
+            local_C[:, :] = C_
 
     if is_available():
         mod = df.build(
@@ -185,16 +188,16 @@ def test_split_k_explicit_gather_gemm_1x1x4():
         print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 
     @df.region()
-    def top_v2():
+    def top_v2(A: Ty[M, K], B: Ty[K, N], C: Ty[M, N]):
         pipe: Stream[Ty[M, N], 2][Pk]
 
-        @df.kernel(mapping=[Pk])
-        def partial_gemm(A: Ty[M, K] @ LyA, B: Ty[K, N] @ LyB):
+        @df.kernel(mapping=[Pk], args=[A, B])
+        def partial_gemm(local_A: Ty[M, K] @ LyA, local_B: Ty[K, N] @ LyB):
             pk = df.get_pid()
-            pipe[pk].put(allo.matmul(A, B))
+            pipe[pk].put(allo.matmul(local_A, local_B))
 
-        @df.kernel(mapping=[1])
-        def acc(C: Ty[M, N]):
+        @df.kernel(mapping=[1], args=[C])
+        def acc(local_C: Ty[M, N]):
             C_: Ty[M, N] = 0
             # gather
             buffer: Ty[Pk, M, N] = df.gather(pipe[:])
@@ -202,7 +205,7 @@ def test_split_k_explicit_gather_gemm_1x1x4():
             for i in range(Pk):
                 # [NOTE]: test using buffer slice in builtin external kernel
                 C_[:, :] += buffer[i]
-            C[:, :] = C_
+            local_C[:, :] = C_
 
     if is_available():
         mod = df.build(
@@ -237,22 +240,22 @@ def test_scatter():
     Pk = 2
 
     @df.region()
-    def top_v1():
+    def top_v1(A: Ty[Pk, N], B: Ty[Pk, N]):
         pipe_1: Stream[Ty[N], 2][Pk]
         pipe_2: Stream[Ty[N], 2][Pk]
 
-        @df.kernel(mapping=[1])
-        def src(A: Ty[Pk, N]):
-            df.scatter(A, [pipe_1[0], pipe_1[1]])
+        @df.kernel(mapping=[1], args=[A])
+        def src(local_A: Ty[Pk, N]):
+            df.scatter(local_A, [pipe_1[0], pipe_1[1]])
 
         @df.kernel(mapping=[Pk])
         def inter():
             pk = df.get_pid()
             pipe_2[pk].put(allo.add(pipe_1[pk].get(), 1))
 
-        @df.kernel(mapping=[1])
-        def dst(B: Ty[Pk, N]):
-            B[:, :] = df.gather(pipe_2[:])
+        @df.kernel(mapping=[1], args=[B])
+        def dst(local_B: Ty[Pk, N]):
+            local_B[:, :] = df.gather(pipe_2[:])
 
     A = np.random.randint(0, 64, (Pk, N)).astype(np.int16)
     B = np.zeros((Pk, N)).astype(np.int16)
@@ -275,22 +278,22 @@ def test_scatter():
         print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 
     @df.region()
-    def top_v2():
+    def top_v2(A: Ty[Pk, N], B: Ty[Pk, N]):
         pipe_1: Stream[Ty[N], 2][Pk]
         pipe_2: Stream[Ty[N], 2][Pk]
 
-        @df.kernel(mapping=[1])
-        def src(A: Ty[Pk, N]):
-            df.scatter(A, pipe_1[:])
+        @df.kernel(mapping=[1], args=[A])
+        def src(local_A: Ty[Pk, N]):
+            df.scatter(local_A, pipe_1[:])
 
         @df.kernel(mapping=[Pk])
         def inter():
             pk = df.get_pid()
             pipe_2[pk].put(allo.add(pipe_1[pk].get(), 1))
 
-        @df.kernel(mapping=[1])
-        def dst(B: Ty[Pk, N]):
-            B[:, :] = df.gather(pipe_2[:])
+        @df.kernel(mapping=[1], args=[B])
+        def dst(local_B: Ty[Pk, N]):
+            local_B[:, :] = df.gather(pipe_2[:])
 
     A = np.random.randint(0, 64, (Pk, N)).astype(np.int16)
     B = np.zeros((Pk, N)).astype(np.int16)

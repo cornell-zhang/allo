@@ -13,31 +13,31 @@ Mt, Nt = M // P0, N // P1
 
 
 @df.region()
-def top():
+def top(A: Ty[M, K], B: Ty[K, N], C: Ty[M, N]):
     pipe: Stream[Ty[Mt, Nt], 2][P0, P1]
 
-    @df.kernel(mapping=[P0, P1])
-    def gemm0(A: Ty[M, K], B: Ty[K, N]):
+    @df.kernel(mapping=[P0, P1], args=[A, B])
+    def gemm0(local_A: Ty[M, K], local_B: Ty[K, N]):
         pi, pj = df.get_pid()
         C_out: Ty[Mt, Nt] = 0
         for i in range(pi * Mt, (pi + 1) * Mt):
             for j in range(pj * Nt, (pj + 1) * Nt):
                 c: Ty = 0
                 for k in range(K // 2):
-                    c += A[i, k] * B[k, j]
+                    c += local_A[i, k] * local_B[k, j]
                 C_out[i - pi * Mt, j - pj * Nt] = c
         pipe[pi, pj].put(C_out)
 
-    @df.kernel(mapping=[P0, P1])
-    def gemm1(A: Ty[M, K], B: Ty[K, N], C: Ty[M, N]):
+    @df.kernel(mapping=[P0, P1], args=[A, B, C])
+    def gemm1(local_A: Ty[M, K], local_B: Ty[K, N], local_C: Ty[M, N]):
         pi, pj = df.get_pid()
         C_out: Ty[Mt, Nt] = pipe[pi, pj].get()
         for i in range(pi * Mt, (pi + 1) * Mt):
             for j in range(pj * Nt, (pj + 1) * Nt):
                 c: Ty = 0
                 for k in range(K // 2, K):
-                    c += A[i, k] * B[k, j]
-                C[i, j] = C_out[i - pi * Mt, j - pj * Nt] + c
+                    c += local_A[i, k] * local_B[k, j]
+                local_C[i, j] = C_out[i - pi * Mt, j - pj * Nt] + c
 
 
 def test_cooperative_gemm():

@@ -7,6 +7,9 @@ import allo
 from allo.ir.types import int32, float32
 from allo.memory import Memory, Layout, DTensor
 
+S = Layout.Shard
+R = Layout.Replicate
+
 
 class TestMemoryClass:
     """Test the Memory class for interface customization."""
@@ -112,7 +115,7 @@ class TestMemoryWithDTensor:
 
     def test_dtensor_with_layout(self):
         """Test creating DTensor with Layout spec (backward compatibility)."""
-        layout = Layout("S0R")
+        layout = Layout([S(0), R])
         dtensor = DTensor(
             rank=None,
             mapping=None,

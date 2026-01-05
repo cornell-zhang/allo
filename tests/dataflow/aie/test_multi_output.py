@@ -8,23 +8,26 @@ from allo.memory import Layout
 import numpy as np
 from allo.backend.aie import is_available
 
+S = Layout.Shard
+R = Layout.Replicate
+
 
 def test_increase_decrease():
-    LyA = Layout("S0R")
+    LyA = [S(0), R]
 
     Ty = int16
     M, N = 64, 64
     P0 = 4
 
     @df.region()
-    def top():
-        @df.kernel(mapping=[P0])
-        def inc(A: Ty[M, N] @ LyA, C: Ty[M, N] @ LyA):
-            C[:, :] = allo.add(A, 1)
+    def top(A: Ty[M, N], C: Ty[M, N], D: Ty[M, N], F: Ty[M, N]):
+        @df.kernel(mapping=[P0], args=[A, C])
+        def inc(local_A: Ty[M, N] @ LyA, local_C: Ty[M, N] @ LyA):
+            local_C[:, :] = allo.add(local_A, 1)
 
-        @df.kernel(mapping=[P0])
-        def dec(D: Ty[M, N] @ LyA, F: Ty[M, N] @ LyA):
-            F[:, :] = allo.add(D, -1)
+        @df.kernel(mapping=[P0], args=[D, F])
+        def dec(local_D: Ty[M, N] @ LyA, local_F: Ty[M, N] @ LyA):
+            local_F[:, :] = allo.add(local_D, -1)
 
     if is_available():
         mod = df.build(top, target="aie")
@@ -41,29 +44,38 @@ def test_increase_decrease():
 
 # [NOTE] export ENABLE_AGGRESSIVE_PORT_UTILIZATION_PATCH=0
 def test_increase_decrease_more_arg():
-    LyA = Layout("S0R")
+    LyA = [S(0), R]
 
     Ty = int16
     M, N = 64, 64
     P0 = 4
 
     @df.region()
-    def top():
-        @df.kernel(mapping=[P0])
-        def inc(A: Ty[M, N] @ LyA, B: Ty[M, N] @ LyA):
-            B[:, :] = allo.add(A, 1)
+    def top(
+        A: Ty[M, N],
+        B: Ty[M, N],
+        C: Ty[M, N],
+        D: Ty[M, N],
+        E: Ty[M, N],
+        F: Ty[M, N],
+        G: Ty[M, N],
+        H: Ty[M, N],
+    ):
+        @df.kernel(mapping=[P0], args=[A, B])
+        def inc(local_A: Ty[M, N] @ LyA, local_B: Ty[M, N] @ LyA):
+            local_B[:, :] = allo.add(local_A, 1)
 
-        @df.kernel(mapping=[P0])
-        def incinc(C: Ty[M, N] @ LyA, D: Ty[M, N] @ LyA):
-            D[:, :] = allo.add(C, 2)
+        @df.kernel(mapping=[P0], args=[C, D])
+        def incinc(local_C: Ty[M, N] @ LyA, local_D: Ty[M, N] @ LyA):
+            local_D[:, :] = allo.add(local_C, 2)
 
-        @df.kernel(mapping=[P0])
-        def dec(E: Ty[M, N] @ LyA, F: Ty[M, N] @ LyA):
-            F[:, :] = allo.add(E, -1)
+        @df.kernel(mapping=[P0], args=[E, F])
+        def dec(local_E: Ty[M, N] @ LyA, local_F: Ty[M, N] @ LyA):
+            local_F[:, :] = allo.add(local_E, -1)
 
-        @df.kernel(mapping=[P0])
-        def decdec(G: Ty[M, N] @ LyA, H: Ty[M, N] @ LyA):
-            H[:, :] = allo.add(G, -2)
+        @df.kernel(mapping=[P0], args=[G, H])
+        def decdec(local_G: Ty[M, N] @ LyA, local_H: Ty[M, N] @ LyA):
+            local_H[:, :] = allo.add(local_G, -2)
 
     if is_available():
         mod = df.build(top, target="aie")

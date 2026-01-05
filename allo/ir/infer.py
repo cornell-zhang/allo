@@ -31,6 +31,7 @@ from .types import (
     float64,
     Struct,
     Stream,
+    stateful,
 )
 from .typing_rule import get_typing_rule
 from ..utils import (
@@ -110,7 +111,11 @@ class TypeInferer(ASTVisitor):
             size = node.slice.value if isinstance(node.slice, ast.Index) else node.slice
             elts = size.elts if isinstance(size, ast.Tuple) else [size]
             shape = tuple(ASTResolver.resolve_constant(x, ctx) for x in elts)
-            return dtype, shape, Layout("R" * len(shape))  # default layout
+            return (
+                dtype,
+                shape,
+                Layout([Layout.Replicate] * len(shape)),
+            )  # default layout
         if isinstance(node, ast.Name):
             dtype = ASTResolver.resolve(node, ctx.global_vars)
             assert dtype is not None, f"Unsupported type `{node.id}`"
@@ -128,9 +133,17 @@ class TypeInferer(ASTVisitor):
             return dtype, tuple(), None
         if isinstance(node, ast.BinOp):
             # memory refinement
-            # e.g., A: Ty[M] @ Layout("S0")
-            dtype, shape, _ = TypeInferer.visit_type_hint(ctx, node.left)
+            # or, stateful variable
+            # e.g., A: Ty[M] @ stateful
+            dtype, shape, node_left_layout = TypeInferer.visit_type_hint(ctx, node.left)
             spec = ASTResolver.resolve(node.right, ctx.global_vars)
+            if isinstance(spec, list):
+                spec = Layout(spec)
+            if spec is stateful:
+                # Create a copy with stateful=True
+                stateful_dtype = copy.deepcopy(dtype)
+                stateful_dtype.stateful = True
+                return stateful_dtype, shape, node_left_layout
             return dtype, shape, spec
         raise RuntimeError("Unsupported function argument type")
 
@@ -683,12 +696,32 @@ class TypeInferer(ASTVisitor):
                 if isinstance(decorator, ast.Call):
                     if isinstance(decorator.func, ast.Attribute):
                         if decorator.func.attr == "kernel":
-                            assert len(decorator.keywords) > 0, "Missing kernel mapping"
-                            mapping = eval(
-                                ast.unparse(decorator.keywords[0].value),
-                                ctx.global_vars,
-                            )
+                            mapping, kernel_args = None, []
+                            for kw in decorator.keywords:
+                                if kw.arg == "mapping":
+                                    mapping = eval(
+                                        ast.unparse(kw.value),
+                                        ctx.global_vars,
+                                    )
+                                elif kw.arg == "args":
+                                    assert isinstance(kw.value, ast.List)
+                                    kernel_args = kw.value.elts
+                            assert (
+                                mapping is not None
+                            ), f"Invalid @df.kernel decorator on function '{node.name}': missing required 'mapping' parameter."
                             old_ctx.mapping = mapping
+                            assert len(kernel_args) == len(
+                                node.args.args
+                            ), f"Invalid @df.kernel decorator on function '{node.name}': 'args' length mismatch (expected {len(node.args.args)}, got {len(kernel_args)})."
+                            for top_arg_name, arg in zip(kernel_args, node.args.args):
+                                top_arg = ctx.get_symbol(name=top_arg_name.id)
+                                dtype, shape, _ = TypeInferer.visit_type_hint(
+                                    ctx, arg.annotation
+                                )
+                                assert (
+                                    top_arg.dtype == dtype and top_arg.shape == shape
+                                ), f"df.kernel argument {arg.arg} do not match {top_arg_name.id}."
+                                arg.top_arg = top_arg_name.id
                             orig_name = node.name
                             old_ctx.func_predicate_tags[orig_name] = {}
                             if ctx.unroll:
@@ -776,8 +809,19 @@ class TypeInferer(ASTVisitor):
                 arg.dtype, arg.shape, arg.spec = TypeInferer.visit_type_hint(
                     ctx, arg.annotation
                 )
+                if hasattr(arg.dtype, "stateful") and arg.dtype.stateful:
+                    raise RuntimeError(
+                        f"Function parameter '{arg.arg}' cannot be Stateful. "
+                        "Stateful variables can only be declared locally within a kernel."
+                    )
                 arg.dtensor = DTensor(
-                    ctx.rank, ctx.mapping, arg.shape, arg.dtype, arg.spec, name=arg.arg
+                    ctx.rank,
+                    ctx.mapping,
+                    arg.shape,
+                    arg.dtype,
+                    arg.spec,
+                    name=arg.arg,
+                    top_name=arg.arg if not hasattr(arg, "top_arg") else arg.top_arg,
                 )
                 # update shape
                 arg.shape = arg.dtensor.get_local_shape()
