@@ -30,7 +30,7 @@ using namespace allo;
 // Utils
 //===----------------------------------------------------------------------===//
 
-// used for determine whether to generate C++ default types or ac_(u)int
+// used to determine whether to generate C++ default types or ac_(u)int
 static bool BIT_FLAG = false;
 
 // Flag to control whether arrays are emitted as __xls_memory<T, size> (true)
