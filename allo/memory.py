@@ -16,6 +16,29 @@ class Layout:
     class Replicate:
         pass
 
+    """
+      Example:
+
+      mesh_dim = [2, 2, 2]
+        +-----+
+     2 /|    /|
+      +-+---+ +
+    1 |/    |/
+      +-----+
+         0
+      2D tensor: tensor_dim = [32, 32]
+      +-----------+
+      | 0,0 | 0,1 |
+      +-----------+
+      | 1,0 | 1,1 |
+      +-----------+
+
+      partitions = [Shard(0), Shard(2)] ->  (tensor_dim[0], shard on mesh_dim[0]),
+                                            (tensor_dim[1], shard on mesh_dim[2])
+
+      PE tile (a, ?, b) gets tensor tile (a, b)
+    """
+
     def __init__(self, partitions: list[Replicate | Shard]):
         self.partitions = partitions
 
@@ -35,11 +58,11 @@ class Layout:
         # For each PE coordinate, determine its tensor tile ID
         for pe_coord in pe_coords:
             tensor_id_parts = []
-            for patition in self.partitions:
-                if isinstance(patition, Layout.Shard):
+            for partition in self.partitions:
+                if isinstance(partition, Layout.Shard):
                     # For sharding, use the coordinate at the specified dimension
                     # start from left to right
-                    tensor_id_parts.append(int(pe_coord[patition.axis]))
+                    tensor_id_parts.append(int(pe_coord[partition.axis]))
                 else:
                     # For replication, use 0 as placeholder
                     tensor_id_parts.append(0)
