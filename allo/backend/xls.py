@@ -276,9 +276,14 @@ def _wrap_xlscc(core_code, top_name, func_name, inputs, use_memory):
     return headers + testblock, textproto
 
 
-class XLSCCModule:
+class XLSCCModule:  # pylint: disable=too-many-instance-attributes
     def __init__(
-        self, mlir_text_or_module, top_func_name, project=None, use_memory=False, mode=None
+        self,
+        mlir_text_or_module,
+        top_func_name,
+        project=None,
+        use_memory=False,
+        mode=None,
     ):
         self.top_func_name = top_func_name
         self.project = project
@@ -383,31 +388,55 @@ class XLSCCModule:
             self._arg_info.append(info)
 
         # Extract output info from function return type
-        if self.func:
-            result_types = list(self.func.type.results)
-            if result_types:
-                ret_t = str(result_types[0])
-                if "memref" in ret_t or "tensor" in ret_t:
-                    match = re.search(r"<([^>]+)>", ret_t)
-                    if match:
-                        parts = match.group(1).split("x")
-                        if len(parts) >= 2:
-                            self._output_info = {
-                                "shape": [int(p) for p in parts[:-1]],
-                                "dtype": parts[-1],
-                            }
-                            self._output_info["size"] = 1
-                            for dim in self._output_info["shape"]:
-                                self._output_info["size"] *= dim
+        self._extract_output_info()
+
+    def _extract_output_info(self):
+        """Extract output shape and dtype from function return type."""
+        if not self.func:
+            return
+        result_types = list(self.func.type.results)
+        if not result_types:
+            return
+        ret_t = str(result_types[0])
+        if "memref" not in ret_t and "tensor" not in ret_t:
+            return
+        match = re.search(r"<([^>]+)>", ret_t)
+        if not match:
+            return
+        parts = match.group(1).split("x")
+        if len(parts) < 2:
+            return
+        self._output_info = {
+            "shape": [int(p) for p in parts[:-1]],
+            "dtype": parts[-1],
+        }
+        self._output_info["size"] = 1
+        for dim in self._output_info["shape"]:
+            self._output_info["size"] *= dim
 
     def _get_harness_path(self):
         return Path(__file__).parent.parent / "harness" / "xlscc"
 
     def _preprocess_cpp(self, code):
         lines = []
-        for line in code.split("\n"):
-            if "#include" in line and ("xls" in line.lower() or "ac_int" in line or "ac_channel" in line):
+        all_lines = code.split("\n")
+        skip_next = False
+        for i, line in enumerate(all_lines):
+            if skip_next:
+                skip_next = False
                 continue
+            # Skip XLS-specific includes
+            if "#include" in line and (
+                "xls" in line.lower() or "ac_int" in line or "ac_channel" in line
+            ):
+                continue
+            # Skip template line if next line is using ac_int (they come as a pair)
+            if line.strip().startswith("template") and i + 1 < len(all_lines):
+                next_line = all_lines[i + 1]
+                if "using ac_int" in next_line or "using ac_uint" in next_line:
+                    skip_next = True
+                    continue
+            # Skip using ac_int/ac_uint lines
             if "using ac_int" in line or "using ac_uint" in line:
                 continue
             lines.append(line)
@@ -512,7 +541,11 @@ int main(int argc, char** argv) {{
         self._project_dir = project_dir
         os.makedirs(project_dir, exist_ok=True)
 
-        harness = self._generate_harness_array() if self._has_arrays else self._generate_harness_scalar()
+        harness = (
+            self._generate_harness_array()
+            if self._has_arrays
+            else self._generate_harness_scalar()
+        )
         harness_path = os.path.join(project_dir, "test_harness.cpp")
         binary_path = os.path.join(project_dir, "test_binary")
 
@@ -521,11 +554,15 @@ int main(int argc, char** argv) {{
 
         result = subprocess.run(
             ["g++", "-std=c++17", "-O2", "-o", binary_path, harness_path],
-            capture_output=True, text=True, check=False,
+            capture_output=True,
+            text=True,
+            check=False,
         )
 
         if result.returncode != 0:
-            raise RuntimeError(f"sw_emu compilation failed:\n{result.stderr}\n{result.stdout}")
+            raise RuntimeError(
+                f"sw_emu compilation failed:\n{result.stderr}\n{result.stdout}"
+            )
 
         self._binary_path = binary_path
 
@@ -541,7 +578,9 @@ int main(int argc, char** argv) {{
 
     def _call_scalar(self, *args):
         str_args = [str(a) for a in args]
-        result = subprocess.run([self._binary_path] + str_args, capture_output=True, text=True, check=False)
+        result = subprocess.run(
+            [self._binary_path] + str_args, capture_output=True, text=True, check=False
+        )
 
         if result.returncode != 0:
             raise RuntimeError(f"sw_emu execution failed:\n{result.stderr}")
@@ -564,7 +603,12 @@ int main(int argc, char** argv) {{
                 with open(f"{self._project_dir}/input{i}.data", "wb") as f:
                     f.write(arr.tobytes())
 
-        result = subprocess.run([self._binary_path, self._project_dir], capture_output=True, text=True, check=False)
+        result = subprocess.run(
+            [self._binary_path, self._project_dir],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
 
         if result.returncode != 0:
             raise RuntimeError(f"sw_emu execution failed:\n{result.stderr}")
@@ -576,7 +620,9 @@ int main(int argc, char** argv) {{
                     return None
                 vals = [int(v) for v in val.split(",")]
                 if self._output_info:
-                    return np.array(vals, dtype=np.int32).reshape(self._output_info["shape"])
+                    return np.array(vals, dtype=np.int32).reshape(
+                        self._output_info["shape"]
+                    )
                 return np.array(vals, dtype=np.int32)
         return None
 
