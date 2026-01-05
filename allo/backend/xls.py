@@ -50,6 +50,7 @@ struct Fixed {
 template <int WIDTH, int FRAC> using UFixed = Fixed<WIDTH, FRAC, false>;
 """
 
+
 def _validate_xls_ir(mlir_text, project=None):
     errors = []
     for i, line in enumerate(mlir_text.splitlines(), 1):
