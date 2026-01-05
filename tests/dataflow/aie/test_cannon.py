@@ -8,9 +8,11 @@ from allo.memory import Layout
 import numpy as np
 from allo.backend.aie import is_available
 
-LyA = Layout("S0S1")
-LyB = Layout("S0S1")
-LyC = Layout("S0S1")
+S = Layout.Shard
+R = Layout.Replicate
+LyA = [S(1), S(0)]
+LyB = [S(1), S(0)]
+LyC = [S(1), S(0)]
 
 
 def test_cannon():

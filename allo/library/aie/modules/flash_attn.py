@@ -8,6 +8,9 @@ import allo.dataflow as df
 from allo.memory import Layout
 from allo.backend.aie.external_kernel import ExternalModule
 
+S = Layout.Shard
+R = Layout.Replicate
+
 
 def FA(SEQ_LEN, HEAD_DIM, Q_tile_size, q_chunk_size, kv_chunk_size):
     KERNEL_LIB_PATH = os.getenv("ALLO_EXTERNAL_KERNEL_DIR")
@@ -42,9 +45,9 @@ def FA(SEQ_LEN, HEAD_DIM, Q_tile_size, q_chunk_size, kv_chunk_size):
     )
 
     Ty = bfloat16
-    Ly_outer = Layout("S1R")
-    Ly_inner = Layout("S0R")
-    Ly_K = Layout("RS0")
+    Ly_outer = [S(0), R]
+    Ly_inner = [S(1), R]
+    Ly_K = [R, S(1)]
 
     @df.region()
     def top(

@@ -6,6 +6,9 @@ from allo.ir.types import Stream
 import allo.dataflow as df
 from allo.memory import Layout
 
+S = Layout.Shard
+R = Layout.Replicate
+
 
 def gen_gemm_mapping_primitive(Pm, Pn, Pk, col_num=4, row_num=4):
     # chain on k dimension
@@ -79,9 +82,9 @@ def gen_gemm_mapping_primitive_v2(Pm, Pn, Pk, col_num=4, row_num=4):
 def GEMM(M, N, K, Pm, Pn, Pk, TyI, TyO, col_num=4, row_num=4):
     Mt, Nt = M // Pm, N // Pn
 
-    LyA = Layout("S1S2")
-    LyB = Layout("S2S0")
-    LyC = Layout("S1S0")
+    LyA = [S(1), S(0)]
+    LyB = [S(0), S(2)]
+    LyC = [S(1), S(2)]
 
     @df.region()
     def top(A: TyI[M, K], B: TyI[K, N], C: TyO[M, N]):

@@ -8,14 +8,17 @@ from allo.memory import Layout
 import numpy as np
 from allo.backend.aie import is_available
 
+S = Layout.Shard
+R = Layout.Replicate
+
 
 def test_summa_2x2():
     Ty = int32
     M, K, N = 8, 8, 8
     P0, P1 = 2, 2
 
-    La = Layout("RS1")
-    Lb = Layout("S1S0")
+    La = [R, S(0)]
+    Lb = [S(0), S(1)]
 
     @df.region()
     def top(A: Ty[M, K], B: Ty[K, N], C: Ty[M, N]):
@@ -63,9 +66,9 @@ def test_summa():
     M, K, N = 32, 32, 32
     P0, P1 = 4, 4
 
-    La = Layout("RS0")
-    Lb = Layout("S0S1")
-    Lc = Layout("RS1")
+    La = [R, S(1)]
+    Lb = [S(1), S(0)]
+    Lc = [R, S(0)]
 
     @df.region()
     def top(A: Ty[M, K], B: Ty[K, N], C: Ty[M, N]):

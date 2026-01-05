@@ -13,6 +13,8 @@ from ml_dtypes import bfloat16 as np_bfloat16
 from allo.memory import Layout
 from allo.backend.aie.external_kernel import ExternalModule
 
+S = Layout.Shard
+R = Layout.Replicate
 np.random.seed(42)
 os.environ["ENABLE_AGGRESSIVE_PORT_UTILIZATION_PATCH"] = "1"
 
@@ -56,20 +58,11 @@ softmax = ExternalModule(
 )
 
 
-ATTN_P0 = N // 32
-ATTN_P1 = N // 32
-ATTN_SCORE_M_TILE = ATTN_P0 * 32
-ATTN_SCORE_N_TILE = ATTN_P1 * 32
-ATTN_SCORE_LyA = Layout("S0R")
-ATTN_SCORE_LyB = Layout("S1R")
-ATTN_SCORE_LyC = Layout("S0S1")
-
-
 Mt, Nt = 64, 64
 Pk, Pm, Pn = D // 64, N // 64, N // 64
-LyA = Layout("S1S2")
-LyB = Layout("S2S0")
-LyC = Layout("S1S0")
+LyA = [S(1), S(0)]
+LyB = [S(0), S(2)]
+LyC = [S(1), S(2)]
 
 
 def gen_attn_score_primitives():
@@ -135,12 +128,14 @@ attn_score_mod = df.build(
 SCALING_P0 = N // 64
 SCALING_P1 = N // 64
 
+Ly = [S(0), S(1)]
+
 
 @df.region()
 def scaling_kernel(C_in: Ty[N, N], C_out: Ty[N, N]):
 
     @df.kernel(mapping=[SCALING_P0, SCALING_P1], args=[C_in, C_out])
-    def core(local_C_in: Ty[N, N] @ LyC, local_C_out: Ty[N, N] @ LyC):
+    def core(local_C_in: Ty[N, N] @ Ly, local_C_out: Ty[N, N] @ Ly):
         local_C_out[:, :] = allo.mul(local_C_in, 0.125)
 
 
@@ -168,7 +163,7 @@ scaling_mod = df.build(
 )
 
 SOFTMAX_P0 = N // 4
-SOFTMAX_Ly = Layout("S0R")
+SOFTMAX_Ly = [S(0), R]
 
 
 def gen_softmax_primitives():
@@ -210,9 +205,6 @@ softmax_mod = df.build(
 
 Mt, Nt = 64, 64
 Pk, Pm, Pn = N // 64, N // 64, D // 64
-LyA = Layout("S1S2")
-LyB = Layout("S2S0")
-LyC = Layout("S1S0")
 
 
 @df.region()

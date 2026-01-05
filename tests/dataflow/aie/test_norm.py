@@ -12,8 +12,10 @@ from allo.memory import Layout
 from allo.backend.aie.external_kernel import ExternalModule
 from allo.backend.aie import is_available
 
-Ly = Layout("R")
-LyA = Layout("S0R")
+S = Layout.Shard
+R = Layout.Replicate
+Ly = [R]
+LyA = [S(0), R]
 
 seq_len = 16
 hidden_size = 512

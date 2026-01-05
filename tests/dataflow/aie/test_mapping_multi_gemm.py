@@ -11,6 +11,9 @@ from allo.memory import Layout
 from ml_dtypes import bfloat16 as np_bfloat16
 from allo.backend.aie import is_available
 
+S = Layout.Shard
+R = Layout.Replicate
+
 
 @pytest.fixture(scope="module", autouse=True)
 def setup_env():
@@ -68,9 +71,9 @@ def test_batched_gemm(M, N, K, Pm, Pn, Pk, TyI, TyO):
     assert TyI == TyO
     Mt, Nt = M // Pm, N // Pn
 
-    LyA = Layout("S1S2")
-    LyB = Layout("S2S0")
-    LyC = Layout("S1S0")
+    LyA = [S(1), S(0)]
+    LyB = [S(0), S(2)]
+    LyC = [S(1), S(2)]
 
     @df.region()
     def top(

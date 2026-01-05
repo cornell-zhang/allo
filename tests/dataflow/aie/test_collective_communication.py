@@ -9,6 +9,9 @@ import numpy as np
 from allo.memory import Layout
 from allo.backend.aie import is_available
 
+S = Layout.Shard
+R = Layout.Replicate
+
 
 def test_gather():
 
@@ -137,8 +140,8 @@ def test_split_k_explicit_gather_gemm_1x1x4():
     M, N, K = 16, 16, 64
     Pk = 4
 
-    LyA = Layout("RS0")
-    LyB = Layout("S0R")
+    LyA = [R, S(0)]
+    LyB = [S(0), R]
 
     @df.region()
     def top_v1(A: Ty[M, K], B: Ty[K, N], C: Ty[M, N]):

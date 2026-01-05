@@ -8,10 +8,12 @@ from allo.memory import Layout
 import numpy as np
 from allo.backend.aie import is_available
 
+S = Layout.Shard
+R = Layout.Replicate
 # RRxRS->RS
 # RSxSR->RR
-LyW1 = Layout("RS0")
-LyW2 = Layout("S0R")
+LyW1 = [R, S(0)]
+LyW2 = [S(0), R]
 
 
 def test_tensor_parallelism():

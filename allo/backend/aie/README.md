@@ -157,9 +157,7 @@ import allo
 from allo.ir.types import int32
 import allo.dataflow as df
 import numpy as np
-from allo.memory import Layout
-
-Ly = Layout("S0")
+from allo.backend.aie import is_available
 
 
 def test_vector_scalar_add():
@@ -174,7 +172,7 @@ def test_vector_scalar_add():
             local_B[:] = allo.add(local_A, 1)
 
     A = np.random.randint(0, 100, M).astype(np.int32)
-    if "MLIR_AIE_INSTALL_DIR" in os.environ:
+    if is_available():
         mod = df.build(top, target="aie")
         B = np.zeros(M).astype(np.int32)
         mod(A, B)
@@ -192,15 +190,14 @@ import allo.dataflow as df
 import numpy as np
 from allo.memory import Layout
 
-LyA = Layout("S0R")
-LyB = Layout("RS1")
-LyC = Layout("S0S1")
-
+S = Layout.Shard
+R = Layout.Replicate
 
 def test_gemm_1D():
     Ty = int32
     M, N, K = 16, 16, 16
     P0 = 2
+    LyA = [S(0), R]
 
     @df.region()
     def top(A: Ty[M, K], B: Ty[K, N], C: Ty[M, N]):
@@ -219,11 +216,11 @@ def test_gemm_1D():
 
 producer consumer
 ```python
-import os
 import allo
 from allo.ir.types import int32, Stream
 import allo.dataflow as df
 import numpy as np
+from allo.backend.aie import is_available
 
 Ty = int32
 M, N, K = 16, 16, 16
@@ -254,7 +251,12 @@ def test_producer_consumer():
     A = np.random.randint(0, 64, (M, K)).astype(np.int32)
     B = np.zeros((M, N), dtype=np.int32)
 
-    if "MLIR_AIE_INSTALL_DIR" in os.environ:
+    sim_mod = df.build(top, target="simulator")
+    sim_mod(A, B)
+    np.testing.assert_allclose(B, A + 1)
+    print("Dataflow Simulator Passed!")
+
+    if is_available():
         mod = df.build(top, target="aie")
         mod(A, B)
         np.testing.assert_allclose(A + 1, B, atol=1e-5)
@@ -272,15 +274,16 @@ import allo.dataflow as df
 import numpy as np
 from allo.memory import Layout
 
-LyA = Layout("S0R")
-LyB = Layout("RS1")
-LyC = Layout("S0S1")
+S = Layout.Shard
+R = Layout.Replicate
 
+LyA = [S(1), R]
+LyB = [R, S(0)]
+LyC = [S(1), S(0)]
 
-TyI, TyO = int16, int32
-total_M, total_N, total_K = 128, 128, 512
-M, N, K = 128, 128, 32
-
+TyI, TyO = float32, float32
+total_M, total_N, total_K = 64, 64, 512
+M, N, K = 64, 64, 64
 
 @df.region()
 def top1(A: TyI[M, K], B: TyI[K, N], C: TyO[M, N]):
@@ -290,7 +293,6 @@ def top1(A: TyI[M, K], B: TyI[K, N], C: TyO[M, N]):
     ):
         local_C[:, :] = allo.matmul(local_A, local_B)
 
-
 @df.region()
 def top2(A: TyO[M, N], B: TyO[M, N], C: TyO[M, N]):
     @df.kernel(mapping=[2, 4], args=[A, B, C])
@@ -299,23 +301,26 @@ def top2(A: TyO[M, N], B: TyO[M, N], C: TyO[M, N]):
     ):
         local_C[:, :] = allo.add(local_A, local_B)
 
+if is_available():
+    print("Building AIE modules...")
+    mod1 = df.build(top1, target="aie", project="top1.prj")
+    mod2 = df.build(top2, target="aie", project="top2.prj")
 
-mod1 = df.build(top1, target="aie", project="top1.prj")
-mod2 = df.build(top2, target="aie", project="top2.prj")
+    A = np.random.randint(0, 8, (total_M, total_K)).astype(np.float32)
+    B = np.random.randint(0, 8, (total_K, total_N)).astype(np.float32)
+    C_tmp = np.zeros((M, N)).astype(np.float32)
+    C = np.zeros((M, N)).astype(np.float32)
 
-A = np.random.randint(0, 8, (total_M, total_K)).astype(np.int16)
-B = np.random.randint(0, 8, (total_K, total_N)).astype(np.int16)
-C_tmp = np.zeros((M, N)).astype(np.int32)
-C = np.zeros((M, N)).astype(np.int32)
+    for k in range(total_K // K):
+        tile_A = A[:, k * K : (k + 1) * K]
+        tile_B = B[k * K : (k + 1) * K, :]
+        mod1(tile_A, tile_B, C_tmp)
+        mod2(C, C_tmp, C)
 
-for i in range(total_K // K):
-    tile_A = A[:, i * K : (i + 1) * K]
-    tile_B = B[i * K : (i + 1) * K, :]
-    mod1(tile_A, tile_B, C_tmp)
-    mod2(C, C_tmp, C)
-
-np.testing.assert_allclose(C, A @ B, atol=1e-5)
-print("PASSED!")
+    np.testing.assert_allclose(C, A @ B, atol=1e-2)
+    print("PASSED!")
+else:
+    print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 ```
 
 ### Environment Variables for Controlling Compiler Behavior
@@ -444,33 +449,42 @@ import allo.dataflow as df
 import numpy as np
 from allo.memory import Layout
 
-Ty = int16
-M, N, K = 128, 128, 32
-Pm, Pn, Pk = 4, 4, 1
-Mt, Nt, Kt = M // Pm, N // Pn, K // Pk
+S = Layout.Shard
+R = Layout.Replicate
 
-LyA = Layout("S1S2")
-LyB = Layout("S2S0")
-LyC = Layout("S1S0")
+TyI, TyO = int16, int32
+M, N, K = 64, 64, 32
+P0, P1 = 4, 4
+LyA = [S(1), R]
+LyB = [R, S(0)]
+LyC = [S(1), S(0)]
 
 @df.region()
-def top1(A: Ty[M, K], B: Ty[K, N], C: int32[M, N]):
-    @df.kernel(mapping=[Pk, Pm, Pn], args=[A, B, C])
-    def gemm(local_A: Ty[M, K] @ LyA, local_B: Ty[K, N] @ LyB, local_C: int32[M, N] @ LyC):
+def top(A: TyI[M, K], B: TyI[K, N], C: TyO[M, N]):
+    @df.kernel(mapping=[P0, P1], args=[A, B, C])
+    def gemm(
+        local_A: TyI[M, K] @ LyA, local_B: TyI[K, N] @ LyB, local_C: TyO[M, N] @ LyC
+    ):
         local_C[:, :] = allo.matmul(local_A, local_B)
 
-mod = df.build(
-    top1,
-    target="aie",
-    profile=True,
-    warmup=200,
-    num_iters=1000,
-)
-A = np.random.randint(0, 32, (M, K)).astype(np.int16)
-B = np.random.randint(0, 32, (K, N)).astype(np.int16)
-C = np.zeros((M, N)).astype(np.int32)
-tmp_C = np.zeros((M, N)).astype(np.int32)
-mod(A, B, C)
+if is_available():
+    mod = df.build(
+        top,
+        target="aie",
+        profile=True,
+        warmup=200,
+        num_iters=1000,
+    )
+    A = np.random.randint(0, 64, (M, K)).astype(np.int16)
+    B = np.random.randint(0, 64, (K, N)).astype(np.int16)
+    C = np.zeros((M, N)).astype(np.int32)
+    mod(A, B, C)
+    np_C = A.astype(np.int32) @ B.astype(np.int32)
+    np.testing.assert_allclose(C, np_C, atol=1e-5)
+    print("PASSED!")
+else:
+    print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
+
 ```
 #### Profiling with Trace
 AIEs are equipped with tracing hardware that provides a cycle accurate view of hardware events. 
@@ -525,6 +539,10 @@ Tracing tile `(0, 0)` of the `allo.dataflow.kernel` named `gemm`.
 TyI, TyO = int16, int32
 M, N, K = 32, 32, 32
 P0, P1 = 2, 4
+
+LyA = [S(1), R]
+LyB = [R, S(0)]
+LyC = [S(1), S(0)]
 
 @df.region()
 def top(A: TyI[M, K], B: TyI[K, N], C: TyO[M, N]):

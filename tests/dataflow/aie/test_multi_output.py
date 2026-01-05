@@ -8,9 +8,12 @@ from allo.memory import Layout
 import numpy as np
 from allo.backend.aie import is_available
 
+S = Layout.Shard
+R = Layout.Replicate
+
 
 def test_increase_decrease():
-    LyA = Layout("S0R")
+    LyA = [S(0), R]
 
     Ty = int16
     M, N = 64, 64
@@ -41,7 +44,7 @@ def test_increase_decrease():
 
 # [NOTE] export ENABLE_AGGRESSIVE_PORT_UTILIZATION_PATCH=0
 def test_increase_decrease_more_arg():
-    LyA = Layout("S0R")
+    LyA = [S(0), R]
 
     Ty = int16
     M, N = 64, 64

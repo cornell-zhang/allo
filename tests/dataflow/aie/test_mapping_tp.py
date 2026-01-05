@@ -10,10 +10,11 @@ from allo.memory import Layout
 import numpy as np
 from allo.backend.aie import is_available
 
-# RRxRS->RS
-# RSxSR->RR
-LyW1 = Layout("RS0")
-LyW2 = Layout("S0R")
+S = Layout.Shard
+R = Layout.Replicate
+
+LyW1 = [R, S(0)]
+LyW2 = [S(0), R]
 
 
 def test_tp_v1():

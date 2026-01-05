@@ -8,11 +8,14 @@ import numpy as np
 from allo.memory import Layout
 from allo.backend.aie import is_available
 
+S = Layout.Shard
+R = Layout.Replicate
+
 
 def test_gemm_2D_v1():
-    LyA = Layout("S0R")
-    LyB = Layout("RS1")
-    LyC = Layout("S0S1")
+    LyA = [S(1), R]
+    LyB = [R, S(0)]
+    LyC = [S(1), S(0)]
 
     TyI, TyO = int32, int32
     M, N, K = 64, 64, 64
@@ -58,9 +61,9 @@ def test_gemm_2D_v1():
 
 
 def test_gemm_2D_v2():
-    LyA = Layout("S0R")
-    LyB = Layout("RS1")
-    LyC = Layout("S0S1")
+    LyA = [S(1), R]
+    LyB = [R, S(0)]
+    LyC = [S(1), S(0)]
 
     TyI, TyO = int32, int32
     M, N, K = 64, 64, 64
@@ -101,9 +104,9 @@ def test_pingpong_gemm_2x2x2():
     Pm, Pn, Pk = 2, 2, 2
     Mt, Nt, Kt = M // Pm, N // Pn, K // Pk
 
-    LyA = Layout("S1S2")
-    LyB = Layout("S2S0")
-    LyC = Layout("S1S0")
+    LyA = [S(1), S(0)]
+    LyB = [S(0), S(2)]
+    LyC = [S(1), S(2)]
 
     @df.region()
     def top(A: Ty[M, K], B: Ty[K, N], C: Ty[M, N]):
@@ -175,9 +178,9 @@ def test_pingpong_gemm_2x2x2_partial_chain():
     Pm, Pn, Pk = 2, 2, 2
     Mt, Nt, Kt = M // Pm, N // Pn, K // Pk
 
-    LyA = Layout("S1S2")
-    LyB = Layout("S2S0")
-    LyC = Layout("S1S0")
+    LyA = [S(1), S(0)]
+    LyB = [S(0), S(2)]
+    LyC = [S(1), S(2)]
 
     @df.region()
     def top(A: Ty[M, K], B: Ty[K, N], C: Ty[M, N]):
@@ -225,9 +228,9 @@ def test_pingpong_gemm_1x1x4():
     Pm, Pn, Pk = 1, 1, 4
     Mt, Nt, Kt = M // Pm, N // Pn, K // Pk
 
-    LyA = Layout("S1S2")
-    LyB = Layout("S2S0")
-    LyC = Layout("S1S0")
+    LyA = [S(1), S(0)]
+    LyB = [S(0), S(2)]
+    LyC = [S(1), S(2)]
 
     @df.region()
     def top(A: Ty[M, K], B: Ty[K, N], C: Ty[M, N]):
@@ -289,9 +292,9 @@ def test_pingpong_gemm_2x2x4():
     Pm, Pn, Pk = 2, 2, 4
     Mt, Nt, Kt = M // Pm, N // Pn, K // Pk
 
-    LyA = Layout("S1S2")
-    LyB = Layout("S2S0")
-    LyC = Layout("S1S0")
+    LyA = [S(1), S(0)]
+    LyB = [S(0), S(2)]
+    LyC = [S(1), S(2)]
 
     @df.region()
     def top(A: Ty[M, K], B: Ty[K, N], C: Ty[M, N]):
@@ -376,9 +379,9 @@ def test_pingpong_gemm_4x4x4():
     Pm, Pn, Pk = 4, 4, 4
     Mt, Nt, Kt = M // Pm, N // Pn, K // Pk
 
-    LyA = Layout("S1S2")
-    LyB = Layout("S2S0")
-    LyC = Layout("S1S0")
+    LyA = [S(1), S(0)]
+    LyB = [S(0), S(2)]
+    LyC = [S(1), S(2)]
 
     @df.region()
     def top(A: Ty[M, K], B: Ty[K, N], C: Ty[M, N]):
@@ -471,8 +474,8 @@ def test_split_k_gemm_1x1x4():
     M, N, K = 32, 32, 128
     Pk = 4
 
-    LyA = Layout("RS0")
-    LyB = Layout("S0R")
+    LyA = [R, S(0)]
+    LyB = [S(0), R]
 
     @df.region()
     def top(A: Ty[M, K], B: Ty[K, N], C: Ty[M, N]):
@@ -524,9 +527,9 @@ def test_split_k_gemm_2x2x4():
     Pk = 4
     Mt, Nt = M // Pm, N // Pn
 
-    LyA = Layout("S1S2")
-    LyB = Layout("S2S0")
-    LyC = Layout("S1S0")
+    LyA = [S(1), S(0)]
+    LyB = [S(0), S(2)]
+    LyC = [S(1), S(2)]
 
     @df.region()
     def top(A: Ty[M, K], B: Ty[K, N], C: Ty[M, N]):

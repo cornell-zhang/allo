@@ -9,6 +9,9 @@ import numpy as np
 from allo.memory import Layout
 from allo.backend.aie import is_available
 
+S = Layout.Shard
+R = Layout.Replicate
+
 
 def test_vector_scalar_add():
     Ty = int32
@@ -39,8 +42,8 @@ def test_gather():
     M, N, K = 32, 32, 64
     Pk = 2
 
-    LyA = Layout("RS0")
-    LyB = Layout("S0R")
+    LyA = [R, S(0)]
+    LyB = [S(0), R]
 
     @df.region()
     def top(A: Ty[M, K], B: Ty[K, N], C: Ty[M, N]):
@@ -91,7 +94,7 @@ def test_scatter():
     Ty = int32
     M = 1024
     P = 4
-    Ly = Layout("S0")
+    Ly = [S(0)]
 
     @df.region()
     def top(A: Ty[M], B: Ty[M]):
@@ -149,7 +152,7 @@ def test_scatter2():
     Ty = int32
     M = 1024
     P = 4
-    Ly = Layout("S0")
+    Ly = [S(0)]
 
     @df.region()
     def top(Inc: Ty[M // P], A: Ty[M], B: Ty[M]):

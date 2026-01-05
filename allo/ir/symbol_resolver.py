@@ -63,6 +63,10 @@ class ASTResolver:
             except Exception:
                 return None
 
+        if isinstance(node, ast.List):
+            values = [ASTResolver.resolve(v, scope) for v in node.elts]
+            return values
+
         if isinstance(node, ast.Dict):
             # Resolve dictionary literals to struct types
             from .types import Struct

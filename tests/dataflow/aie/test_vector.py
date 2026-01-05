@@ -9,7 +9,9 @@ import numpy as np
 from allo.memory import Layout
 from allo.backend.aie import is_available
 
-Ly = Layout("S0")
+S = Layout.Shard
+R = Layout.Replicate
+Ly = [S(0)]
 
 
 def test_vector_scalar_add():

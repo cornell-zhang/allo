@@ -80,15 +80,14 @@ Matrix multiplication
    import numpy as np
    from allo.memory import Layout
 
-   LyA = Layout("S0R")
-   LyB = Layout("RS1")
-   LyC = Layout("S0S1")
-
+    S = Layout.Shard
+    R = Layout.Replicate
 
    def _test_gemm_1D():
        Ty = int32
        M, N, K = 16, 16, 16
        P0 = 2
+       LyA = [S(0), R]
 
        @df.region()
        def top(A: Ty[M, K], B: Ty[K, N], C: Ty[M, N]):

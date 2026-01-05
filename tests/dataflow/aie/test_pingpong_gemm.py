@@ -9,6 +9,9 @@ import numpy as np
 from allo.memory import Layout
 from allo.backend.aie import is_available
 
+S = Layout.Shard
+R = Layout.Replicate
+
 
 @pytest.mark.parametrize("Ty", [int8, int16, int32, float32])
 def test_cooperative_gemm(Ty):
@@ -16,9 +19,9 @@ def test_cooperative_gemm(Ty):
     Pm, Pn, Pk = 2, 2, 2
     Mt, Nt = M // Pm, N // Pn
 
-    LyA = Layout("S1S2")
-    LyB = Layout("S2S0")
-    LyC = Layout("S1S0")
+    LyA = [S(1), S(0)]
+    LyB = [S(0), S(2)]
+    LyC = [S(1), S(2)]
 
     @df.region()
     def top(A: Ty[M, K], B: Ty[K, N], C: Ty[M, N]):
