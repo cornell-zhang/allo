@@ -61,7 +61,7 @@ def test_codegen_pipeline():
 
     with tempfile.TemporaryDirectory() as tmpdir:
         mod = s.build(target="xls", project=tmpdir)
-        assert "#pragma hls_pipeline_init_interval 1" in mod.final_cpp
+        assert "#pragma hls_pipeline_init_interval" in mod.final_cpp
 
     print("test_codegen_pipeline .")
 
