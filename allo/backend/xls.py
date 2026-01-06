@@ -55,6 +55,7 @@ struct Fixed {
 template <int WIDTH, int FRAC> using UFixed = Fixed<WIDTH, FRAC, false>;
 """
 
+
 #  Check if g++ is available for sw_emu compilation
 def is_available():
     try:
@@ -207,6 +208,7 @@ def _gen_textproto(mems):
 """
         )
     return "\n".join(lines)
+
 
 # Render TestBlock class with channels and optional memory/state declarations.
 def _render_testblock(
@@ -626,7 +628,7 @@ int main(int argc, char** argv) {{
     def __repr__(self):
         return self.final_cpp
 
-    # Print RAM rewrites textproto if available 
+    # Print RAM rewrites textproto if available
     def print_textproto(self):
         if self.rewrites_textproto:
             print("=" * 60)
