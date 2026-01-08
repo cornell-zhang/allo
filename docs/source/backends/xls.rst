@@ -81,7 +81,9 @@ The generated XLS project (e.g., in the folder ``gemm.prj``) typically includes:
 
 If you set `use_memory` to `True`, the generated project will also include:
 
-- **rewrites.textproto**: The memory configuration file that is required by the XLS backend to map any memory arrays to the hardware.
+- **rewrites.textproto**: The memory configuration file that is required by the XLS 
+backend to map any memory arrays to the hardware. Without this file or if this file is
+configured wrong, the XLS backend will error out during its IR optimization pass.
 
 When in software emulation mode, the above items will be generated along with:
 
@@ -122,7 +124,7 @@ Use the ``@`` operator to annotate function arguments or local variables with me
    from allo.ir.types import int32, float32
 
    # Define memory specifications
-   MemUram = Memory(resource="URAM")
+   MemUram = Memory(resource="URAM", storage_type="RAM_1P")
    MemBram = Memory(resource="BRAM", storage_type="RAM_2P")
 
    def kernel(a: int32[32] @ MemUram, b: float32[16, 16] @ MemBram) -> int32[32]:
@@ -139,22 +141,12 @@ Use the ``@`` operator to annotate function arguments or local variables with me
    mod = s.build(target="vhls")
    print(mod.hls_code)
 
-This generates HLS code with ``bind_storage`` pragmas:
-
-.. code-block:: cpp
-
-   void kernel(int32_t v0[32], float v1[16][16], int32_t v2[32]) {
-     #pragma HLS bind_storage variable=v0 impl=uram
-     #pragma HLS bind_storage variable=v1 type=ram_2p impl=bram
-
-     int32_t buf[32];
-     #pragma HLS bind_storage variable=buf impl=bram
-     // ... kernel body ...
-   }
+This generates a rewrite textproto file that has the specified 1RW type for buffer a and 1R1W RAM type
+for input buffer b:
 
 **Memory Class Parameters**
 
-The ``Memory`` class accepts the following parameters:
+The Allo ``Memory`` class accepts the following parameters:
 
 - **resource** (str): Memory resource type
 
@@ -163,6 +155,8 @@ The ``Memory`` class accepts the following parameters:
   - ``"LUTRAM"``: LUT-based RAM - faster but smaller
   - ``"SRL"``: Shift Register LUT - efficient for FIFOs
   - ``"AUTO"``: Let the HLS tool decide (default)
+
+These all default to RAM_ABSTRACT in XLS.
 
 - **storage_type** (str, optional): RAM access pattern
 
@@ -178,86 +172,10 @@ The ``Memory`` class accepts the following parameters:
 - **latency** (int, optional): Memory access latency in cycles
 - **depth** (int, optional): Depth of the memory (useful for streams/FIFOs)
 
-**Examples**
-
-1. **URAM for large buffers**:
-
-   .. code-block:: python
-
-      # URAM is ideal for large arrays on UltraScale+ FPGAs
-      LargeBuffer = Memory(resource="URAM")
-
-      def process(data: float32[1024, 1024] @ LargeBuffer):
-          ...
-
-2. **Dual-port BRAM for concurrent access**:
-
-   .. code-block:: python
-
-      # RAM_2P allows simultaneous read and write
-      DualPort = Memory(resource="BRAM", storage_type="RAM_2P")
-
-      def pipeline(inp: int32[256] @ DualPort) -> int32[256]:
-          ...
-
-3. **LUTRAM for small, fast buffers**:
-
-   .. code-block:: python
-
-      # LUTRAM is faster but uses more LUTs
-      FastBuffer = Memory(resource="LUTRAM")
-
-      def compute(weights: int8[64] @ FastBuffer):
-          ...
-
-4. **Multiple memory types in one kernel**:
-
-   .. code-block:: python
-
-      InputMem = Memory(resource="BRAM", storage_type="RAM_1P")
-      WeightMem = Memory(resource="URAM")
-      OutputMem = Memory(resource="BRAM", storage_type="RAM_2P")
-
-      def neural_layer(
-          inp: float32[128] @ InputMem,
-          weights: float32[128, 64] @ WeightMem,
-          out: float32[64] @ OutputMem
-      ):
-          ...
-
-**Best Practices**
-
-- Use **URAM** for large arrays (>36Kb) on UltraScale+ devices to save BRAM resources
-- Use **BRAM with RAM_2P** when you need concurrent read/write access
-- Use **LUTRAM** for small lookup tables that require low latency
-- Use **ROM** types for constant data that never changes
-- Let the tool decide (``resource="AUTO"``) when you don't have specific requirements
-
-
-Device and Frequency Configuration
-----------------------------------
-You can specify the target device and clock frequency through the ``configs`` dictionary:
-
-.. code-block:: python
-
-   mod = s.build(
-       target="vitis_hls",
-       mode="hw",
-       project="gemm.prj",
-       configs={
-           "device": "u280",     # Target device (default: "u280")
-           "frequency": 300,     # Target frequency in MHz (default: 300)
-       },
-   )
-
-**Supported Devices**
-
-- **Alveo**: ``u200``, ``u250``, ``u280``
-- **Zynq UltraScale+**: ``zcu102``, ``zcu104``, ``zcu106``, ``zcu111``
-- **Versal**: ``vck190``, ``vhk158``
-- **Embedded**: ``ultra96v2``, ``pynqz2``, ``zedboard``
-
+XLS currently only supports RAM_1RW and RAM_1R1W so we can only support RAM_1P, RAM_2P, and ROM_1P. the
+other storage types are currently not supported.
 
 Conclusion
 ----------
-This example illustrates the process of defining a GEMM kernel using the Allo ADL and generating HLS code for FPGA acceleration with the Vitis HLS backend. The approach supports various synthesis modes (sw_emu, hw_emu, hw) to cater to different design and verification needs.
+This example illustrates the process of defining a GEMM kernel using the Allo ADL and generating XLS code 
+for the ASIC flow. The approach supports the software synthesis modes which is wonderful for quick verifications and debugging.
