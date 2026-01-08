@@ -36,7 +36,7 @@ dot-product.
 .. code-block:: python
 
    import allo
-   from allo.ir.types import float32
+   from allo.ir.types import int32
    import numpy as np
 
    # Define matrix dimensions
