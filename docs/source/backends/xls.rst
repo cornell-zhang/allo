@@ -64,15 +64,6 @@ Allo supports several approaches to generate HLS code:
    When `use_memory` is set to `True`, the generated code will use the memory API in the XLS backend. When `use_memory` is set to `False`, 
    the generated code will use the C-style arrays which become registers clusters in the XLS backend.
 
-2. **Software Emulation, Synthesis, and Execution**:  
-   We also provide a way to emulate the generated code in software. This software emulation mode is similar to C simulation that compiles the program 
-   using C compiler and runs it on the CPU. Specify the target as `"xlscc"` along with the `sw_emu` synthesis mode and project name to generate a 
-   complete HLS project. Depending on the size of your input data, this mode may take some time to build and run.
-
-    .. code-block:: python
-
-       mod = s.build(target="xlscc", mode="sw_emu", project="gemm.prj")
-
 Project Structure and Execution
 -------------------------------
 The generated XLS project (e.g., in the folder ``gemm.prj``) typically includes:
@@ -84,28 +75,6 @@ If you set `use_memory` to `True`, the generated project will also include:
 - **rewrites.textproto**: The memory configuration file that is required by the XLS 
 backend to map any memory arrays to the hardware. Without this file or if this file is
 configured wrong, the XLS backend will error out during its IR optimization pass.
-
-When in software emulation mode, the above items will be generated along with:
-
-- **test_harness.cpp**: The host-side (CPU) code that invokes the accelerator.
-- **input*.dat**: The input data files that are used to test the accelerator.
-- **Makefile**: Build scripts to compile the project.
-
-To run the design in software emulation mode, prepare the input matrices using NumPy:
-
-.. code-block:: python
-
-   # Prepare input matrices using NumPy (must use int32 for XLS backend)
-   np_A = np.random.randint(0, 10, size=(M, K)).astype(np.int32)
-   np_B = np.random.randint(0, 10, size=(K, N)).astype(np.int32)
-
-   # Run the sw_emu and get the result
-   allo_C = mod(np_A, np_B)
-
-   # Verify the result
-   expected_C = np.matmul(np_A, np_B).astype(np.int32)
-   np.testing.assert_array_equal(allo_C, expected_C)
-   print("sw_emu verification passed!")
 
 Note:
   The XLS backend only supports integer and fixed-point types. Floating-point types (f16, f32, f64) are not supported.
