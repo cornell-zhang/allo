@@ -76,6 +76,7 @@ If you set `use_memory` to `True`, the generated project will also include:
 backend to map any memory arrays to the hardware. Without this file or if this file is
 configured wrong, the XLS backend will error out during its IR optimization pass.
 
+
 Note:
   The XLS backend only supports integer and fixed-point types. Floating-point types (f16, f32, f64) are not supported.
 
