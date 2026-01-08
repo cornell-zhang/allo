@@ -989,8 +989,8 @@ void allo::hls::XlsModuleEmitter::emitFunction(func::FuncOp func) {
         // Get memory_space as integer (0 if not specified)
         int64_t memorySpace = 0;
         if (auto memrefType = llvm::dyn_cast<MemRefType>(arg.getType())) {
-          if (auto intAttr =
-                  llvm::dyn_cast_or_null<IntegerAttr>(memrefType.getMemorySpace())) {
+          if (auto intAttr = llvm::dyn_cast_or_null<IntegerAttr>(
+                  memrefType.getMemorySpace())) {
             memorySpace = intAttr.getInt();
           }
         }

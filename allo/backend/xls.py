@@ -146,14 +146,17 @@ def _parse_memory_comments(body):
             # Format: elem_type, size, name, memory_space, dim0, dim1, ...
             if len(parts) < 4:
                 continue  # Invalid format, skip
-            
+
             elem_type, size_str, name, mem_space_str = (
-                parts[0], parts[1], parts[2], parts[3]
+                parts[0],
+                parts[1],
+                parts[2],
+                parts[3],
             )
             dims = [d for d in parts[4:] if d]
-            
+
             decls.append(f"__xls_memory<{elem_type}, {size_str}> {name};")
-            
+
             size_m = re.match(r"(\d+)", size_str)
             mem_space_m = re.match(r"(\d+)", mem_space_str)
             if size_m:
@@ -164,14 +167,16 @@ def _parse_memory_comments(body):
                 # Default to RAM_2P (dual port) when not specified
                 if storage_type_code == 0:
                     storage_type_code = 2
-                
+
                 int_dims = [
                     int(re.match(r"(\d+)", d).group(1))
                     for d in dims
                     if re.match(r"(\d+)", d)
                 ]
-                mems.append((name, elem_type, size, int_dims or [size], storage_type_code))
-                
+                mems.append(
+                    (name, elem_type, size, int_dims or [size], storage_type_code)
+                )
+
         elif state_m:
             for v in state_m.group(1).split(","):
                 v = v.split(";")[0].split("//")[0].strip()
