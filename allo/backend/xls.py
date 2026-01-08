@@ -190,9 +190,10 @@ def _parse_memory_comments(body):
 
 # Map storage_type_code to XLS RAM kind. Default is RAM_2P.
 STORAGE_TYPE_TO_XLS_RAM = {
-    1: "RAM_1RW",  # RAM_1P (single port)
+    1: "RAM_1RW",   # RAM_1P (single port)
     2: "RAM_1R1W",  # RAM_2P (dual port) - default
-    6: "RAM_1RW",  # ROM_1P (single port ROM)
+    5: "RAM_1R1W",  # RAM_S2P (alias of RAM_2P)
+    6: "RAM_1RW",   # ROM_1P (single port ROM)
 }
 
 # Mapping from storage_type_code to human-readable name for error messages
