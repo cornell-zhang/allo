@@ -157,50 +157,35 @@ def _parse_memory_comments(body):
                 p.split(";")[0].split("//")[0].strip()
                 for p in mem_m.group(1).split(",")
             ]
-            if len(parts) >= 4:
-                # New format: elem_type, size, name, memory_space, dim0, dim1, ...
-                elem_type, size_str, name, mem_space_str = (
-                    parts[0],
-                    parts[1],
-                    parts[2],
-                    parts[3],
-                )
-                dims = [d for d in parts[4:] if d]
-                decls.append(f"__xls_memory<{elem_type}, {size_str}> {name};")
-                # Extract numeric size and memory_space
-                size_m = re.match(r"(\d+)", size_str)
-                mem_space_m = re.match(r"(\d+)", mem_space_str)
-                if size_m:
-                    size = int(size_m.group(1))
-                    memory_space = int(mem_space_m.group(1)) if mem_space_m else 0
-                    # Decode memory_space to get storage_type_code
-                    # memory_space = resource_code * 16 + storage_type_code
-                    storage_type_code = memory_space % 16
-                    # Size of array dims, e.g. [100, 100]
-                    int_dims = [
-                        int(re.match(r"(\d+)", d).group(1))
-                        for d in dims
-                        if re.match(r"(\d+)", d)
-                    ]
-                    # Store: (name, elem_type, size, dims, storage_type_code)
-                    mems.append(
-                        (name, elem_type, size, int_dims or [size], storage_type_code)
-                    )
-            elif len(parts) >= 3:
-                # Backward compatibility: elem_type, size, name, dim0, dim1, ...
-                elem_type, size_str, name = parts[0], parts[1], parts[2]
-                dims = [d for d in parts[3:] if d]
-                decls.append(f"__xls_memory<{elem_type}, {size_str}> {name};")
-                size_m = re.match(r"(\d+)", size_str)
-                if size_m:
-                    size = int(size_m.group(1))
-                    int_dims = [
-                        int(re.match(r"(\d+)", d).group(1))
-                        for d in dims
-                        if re.match(r"(\d+)", d)
-                    ]
-                    # Default storage_type_code = 0 (tool decides)
-                    mems.append((name, elem_type, size, int_dims or [size], 0))
+            # Format: elem_type, size, name, memory_space, dim0, dim1, ...
+            if len(parts) < 4:
+                continue  # Invalid format, skip
+            
+            elem_type, size_str, name, mem_space_str = (
+                parts[0], parts[1], parts[2], parts[3]
+            )
+            dims = [d for d in parts[4:] if d]
+            
+            decls.append(f"__xls_memory<{elem_type}, {size_str}> {name};")
+            
+            size_m = re.match(r"(\d+)", size_str)
+            mem_space_m = re.match(r"(\d+)", mem_space_str)
+            if size_m:
+                size = int(size_m.group(1))
+                memory_space = int(mem_space_m.group(1)) if mem_space_m else 0
+                # Decode: memory_space = resource_code * 16 + storage_type_code
+                storage_type_code = memory_space % 16
+                # Default to RAM_2P (dual port) when not specified
+                if storage_type_code == 0:
+                    storage_type_code = 2
+                
+                int_dims = [
+                    int(re.match(r"(\d+)", d).group(1))
+                    for d in dims
+                    if re.match(r"(\d+)", d)
+                ]
+                mems.append((name, elem_type, size, int_dims or [size], storage_type_code))
+                
         elif state_m:
             for v in state_m.group(1).split(","):
                 v = v.split(";")[0].split("//")[0].strip()
@@ -212,23 +197,15 @@ def _parse_memory_comments(body):
     return decls, states, "\n".join(result), mems
 
 
-# Map storage_type_code to XLS RAM kind
-# XLS currently only supports RAM_1RW and RAM_1R1W
-# Supported storage_type codes (from allo/memory.py):
-#   0: None (default) -> RAM_1R1W
-#   1: RAM_1P         -> RAM_1RW (single port)
-#   2: RAM_2P         -> RAM_1R1W (dual port)
-#   6: ROM_1P         -> RAM_1RW (single port ROM, read-only)
+# Map storage_type_code to XLS RAM kind. Default is RAM_2P.
 STORAGE_TYPE_TO_XLS_RAM = {
-    0: "RAM_1R1W",  # Default
     1: "RAM_1RW",  # RAM_1P (single port)
-    2: "RAM_1R1W",  # RAM_2P (dual port)
+    2: "RAM_1R1W",  # RAM_2P (dual port) - default
     6: "RAM_1RW",  # ROM_1P (single port ROM)
 }
 
 # Mapping from storage_type_code to human-readable name for error messages
 STORAGE_TYPE_CODE_TO_NAME = {
-    0: "None (default)",
     1: "RAM_1P",
     2: "RAM_2P",
     3: "RAM_T2P",
@@ -239,8 +216,8 @@ STORAGE_TYPE_CODE_TO_NAME = {
     8: "ROM_NP",
 }
 
-# Supported storage types for XLS backend
-SUPPORTED_STORAGE_TYPES = {0, 1, 2, 6}
+# Supported storage types for XLS backend (1=RAM_1P, 2=RAM_2P, 6=ROM_1P)
+SUPPORTED_STORAGE_TYPES = {1, 2, 6}
 
 
 # Generates the RAM configuration required by XLS for the memory interface
@@ -251,16 +228,9 @@ def _gen_textproto(mems):
         "# Automatically Generated by Allo (Allo XLS [CC] Backend)",
         "# proto-file: xls/codegen/ram_rewrite.proto",
         "# proto-message: Ram Configuration Files",
-        "",  # empty line
+        "",
     ]
-    for mem_info in mems:
-        # Handle both old format (4 elements) and new format (5 elements)
-        if len(mem_info) == 5:
-            name, _, size, _, storage_type_code = mem_info
-        else:
-            name, _, size, _ = mem_info
-            storage_type_code = 0  # Default
-
+    for name, _, size, _, storage_type_code in mems:
         # Validate storage_type_code is supported by XLS backend
         if storage_type_code not in SUPPORTED_STORAGE_TYPES:
             storage_type_name = STORAGE_TYPE_CODE_TO_NAME.get(
@@ -269,7 +239,6 @@ def _gen_textproto(mems):
             supported_names = ", ".join(
                 STORAGE_TYPE_CODE_TO_NAME.get(c, str(c))
                 for c in sorted(SUPPORTED_STORAGE_TYPES)
-                if c != 0  # Don't list "None (default)" as an option
             )
             raise RuntimeError(
                 f"XLS [CC] validation failed: Memory '{name}' uses storage_type '{storage_type_name}' "
