@@ -142,7 +142,7 @@ These all default to RAM_ABSTRACT in XLS.
 - **latency** (int, optional): Memory access latency in cycles
 - **depth** (int, optional): Depth of the memory (useful for streams/FIFOs)
 
-XLS currently only supports RAM_1RW and RAM_1R1W so we can only support RAM_1P, RAM_2P, and ROM_1P. the
+XLS currently only supports RAM_1RW and RAM_1R1W, so we can only support RAM_1P, RAM_2P, and ROM_1P. The
 other storage types are currently not supported.
 
 Conclusion
