@@ -97,7 +97,7 @@ Use the ``@`` operator to annotate function arguments or local variables with me
    MemUram = Memory(resource="URAM", storage_type="RAM_1P")
    MemBram = Memory(resource="BRAM", storage_type="RAM_2P")
 
-   def kernel(a: int32[32] @ MemUram, b: float32[16, 16] @ MemBram) -> int32[32]:
+   def kernel(a: int32[32] @ MemUram, b: int32[16, 16] @ MemBram) -> int32[32]:
        # Local variable with memory annotation
        buf: int32[32] @ Memory(resource="BRAM")
        for i in range(32):
