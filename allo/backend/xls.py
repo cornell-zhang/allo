@@ -244,34 +244,33 @@ def _gen_textproto(mems):
         # Use size (array size) as depth by default
         depth = size
 
+        # Determine channel mappings based on RAM kind
         if xls_ram_kind == "RAM_1RW":
-            # Single port RAM - XLS uses different channel mapping
-            lines.append(
-                f"""rewrites {{
-  from_config {{ kind: RAM_ABSTRACT depth: {depth} }}
-  to_config {{ kind: RAM_1RW depth: {depth} }}
-  from_channels_logical_to_physical: {{ key: "abstract_read_req" value: "{name}_req" }}
-  from_channels_logical_to_physical: {{ key: "abstract_read_resp" value: "{name}_resp" }}
-  from_channels_logical_to_physical: {{ key: "abstract_write_req" value: "{name}_req" }}
-  from_channels_logical_to_physical: {{ key: "write_completion" value: "{name}_resp" }}
-  to_name_prefix: "{name}_"
-}}
-"""
-            )
+            # Single port RAM - shared channels for read and write
+            read_req = f"{name}_req"
+            read_resp = f"{name}_resp"
+            write_req = f"{name}_req"
+            write_resp = f"{name}_resp"
         else:
             # Dual port RAM (RAM_1R1W) - separate read and write channels
-            lines.append(
-                f"""rewrites {{
+            read_req = f"{name}_read_request"
+            read_resp = f"{name}_read_response"
+            write_req = f"{name}_write_request"
+            write_resp = f"{name}_write_response"
+
+        # Generate rewrite configuration (only difference is to_config kind)
+        lines.append(
+            f"""rewrites {{
   from_config {{ kind: RAM_ABSTRACT depth: {depth} }}
-  to_config {{ kind: RAM_1R1W depth: {depth} }}
-  from_channels_logical_to_physical: {{ key: "abstract_read_req" value: "{name}_read_request" }}
-  from_channels_logical_to_physical: {{ key: "abstract_read_resp" value: "{name}_read_response" }}
-  from_channels_logical_to_physical: {{ key: "abstract_write_req" value: "{name}_write_request" }}
-  from_channels_logical_to_physical: {{ key: "write_completion" value: "{name}_write_response" }}
+  to_config {{ kind: {xls_ram_kind} depth: {depth} }}
+  from_channels_logical_to_physical: {{ key: "abstract_read_req" value: "{read_req}" }}
+  from_channels_logical_to_physical: {{ key: "abstract_read_resp" value: "{read_resp}" }}
+  from_channels_logical_to_physical: {{ key: "abstract_write_req" value: "{write_req}" }}
+  from_channels_logical_to_physical: {{ key: "write_completion" value: "{write_resp}" }}
   to_name_prefix: "{name}_"
 }}
 """
-            )
+        )
     return "\n".join(lines)
 
 
