@@ -164,7 +164,7 @@ def _parse_memory_comments(body):
                 memory_space = int(mem_space_m.group(1)) if mem_space_m else 0
                 # Decode: memory_space = resource_code * 16 + storage_type_code
                 storage_type_code = memory_space % 16
-                # Default to RAM_2P (dual port) when not specified
+                # Default to RAM_2P (dual port, maps to RAM_1R1W in XLS) when not specified
                 if storage_type_code == 0:
                     storage_type_code = 2
 
