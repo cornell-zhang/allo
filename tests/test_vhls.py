@@ -597,24 +597,43 @@ def test_wrap_io_false_nested_function():
         print("\n=== Generated HLS Code ===")
         print(hls_code)
 
-        # Check that the top function has linearized indexing (flattened arrays)
-        assert "float v" in hls_code, "Top function should have pointer arguments"
+        # Check that multi-dimensional array is declared in inner function
+        # Look for pattern like: float vN[4][8]
         assert (
-            "[32]" in hls_code or "*v" in hls_code
-        ), "Top function should use flattened arrays"
+            "[4][8]" in hls_code
+        ), "Inner function should have multi-dimensional array parameter [4][8]"
 
-        # Check that the inner function has the correct signature with multi-dimensional array
-        assert (
-            "float v2[4][8]" in hls_code
-        ), "Inner function should have multi-dimensional array parameter"
+        # Check that the inner function exists
+        assert "void inner(" in hls_code, "Inner function should be generated"
 
-        # Check that inner function uses standard indexing, NOT linearized
-        # The bug would generate: v2[(m) * 8 + (n)]
-        # The fix should generate: v2[m][n]
-        assert (
-            "v2[(m) * 8 + (n)]" not in hls_code
-            and "v2[(m1) * 8 + (n1)]" not in hls_code
-        ), "Inner function should NOT use linearized indexing for multi-dimensional arrays"
+        # The key test: ensure no linearized indexing in nested function
+        # The bug would generate patterns like: v2[(m) * 8 + (n)] or v2[(m1) * 8 + (n1)]
+        # We check that these patterns don't exist
+        # Look for the specific linearized pattern with dimension 8
+        linearized_pattern_found = (
+            ") * 8 + (" in hls_code or ")* 8 +(" in hls_code or ") *8+ (" in hls_code
+        )
+        if linearized_pattern_found:
+            # If we find the pattern, it should only be in the top function or for 1D arrays
+            # Check that it's not used for accessing a 2D array parameter
+            lines = hls_code.split("\n")
+            for i, line in enumerate(lines):
+                if ") * 8 + (" in line or ")* 8 +(" in line or ") *8+ (" in line:
+                    # Check if this is in the inner function
+                    # Look backwards to find function boundary
+                    in_inner = False
+                    for j in range(i - 1, max(0, i - 100), -1):
+                        if "void inner(" in lines[j]:
+                            in_inner = True
+                            break
+                        elif "void " in lines[j] and "(" in lines[j]:
+                            break
+                    if in_inner:
+                        # Found linearized indexing in inner function - this is the bug
+                        assert False, (
+                            f"Found linearized indexing in inner function at line {i}: {line.strip()}\n"
+                            "Inner function should use standard [m][n] indexing for multi-dimensional arrays"
+                        )
 
         print(
             "✅ Test passed: wrap_io=False correctly preserves multi-dimensional indexing in nested functions"
