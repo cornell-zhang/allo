@@ -42,6 +42,9 @@ public:
 
   // Configuration flags
   bool linearize_pointers = false;
+  
+  // Track the top-level function name for linearization
+  std::string top_func_name = "";
 
 private:
   AlloEmitterState(const AlloEmitterState &) = delete;
