@@ -111,11 +111,9 @@ Use the ``@`` operator to annotate function arguments or local variables with me
    mod = s.build(target="xls", use_memory=True)
    print(mod.hls_code)
 
-This generates a rewrite textproto file that has the specified 1RW type for buffer a and 1R1W RAM type
-for input buffer b:
+This generates a rewrite textproto file that maps buffer ``a`` (``RAM_1P``) to the XLS ``RAM_1RW`` type and input buffer ``b`` (``RAM_2P``) to the XLS ``RAM_1R1W`` type:
 
 **Memory Class Parameters**
-
 The Allo ``Memory`` class accepts the following parameters:
 
 - **resource** (str): Memory resource type
