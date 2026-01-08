@@ -36,7 +36,7 @@ dot-product.
 .. code-block:: python
 
    import allo
-   from allo.ir.types import float32
+   from allo.ir.types import int32
    import numpy as np
 
    # Define matrix dimensions
@@ -97,7 +97,7 @@ Use the ``@`` operator to annotate function arguments or local variables with me
    MemUram = Memory(resource="URAM", storage_type="RAM_1P")
    MemBram = Memory(resource="BRAM", storage_type="RAM_2P")
 
-   def kernel(a: int32[32] @ MemUram, b: float32[16, 16] @ MemBram) -> int32[32]:
+   def kernel(a: int32[32] @ MemUram, b: int32[16, 16] @ MemBram) -> int32[32]:
        # Local variable with memory annotation
        buf: int32[32] @ Memory(resource="BRAM")
        for i in range(32):
@@ -108,14 +108,12 @@ Use the ``@`` operator to annotate function arguments or local variables with me
        return c
 
    s = allo.customize(kernel)
-   mod = s.build(target="vhls")
+   mod = s.build(target="xls", use_memory=True)
    print(mod.hls_code)
 
-This generates a rewrite textproto file that has the specified 1RW type for buffer a and 1R1W RAM type
-for input buffer b:
+This generates a rewrite textproto file that maps buffer ``a`` (``RAM_1P``) to the XLS ``RAM_1RW`` type and input buffer ``b`` (``RAM_2P``) to the XLS ``RAM_1R1W`` type:
 
 **Memory Class Parameters**
-
 The Allo ``Memory`` class accepts the following parameters:
 
 - **resource** (str): Memory resource type
@@ -142,7 +140,7 @@ These all default to RAM_ABSTRACT in XLS.
 - **latency** (int, optional): Memory access latency in cycles
 - **depth** (int, optional): Depth of the memory (useful for streams/FIFOs)
 
-XLS currently only supports RAM_1RW and RAM_1R1W so we can only support RAM_1P, RAM_2P, and ROM_1P. the
+XLS currently only supports RAM_1RW and RAM_1R1W, so we can only support RAM_1P, RAM_2P, and ROM_1P. The
 other storage types are currently not supported.
 
 Conclusion
