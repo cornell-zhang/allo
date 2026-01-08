@@ -108,7 +108,7 @@ Use the ``@`` operator to annotate function arguments or local variables with me
        return c
 
    s = allo.customize(kernel)
-   mod = s.build(target="vhls")
+   mod = s.build(target="xls", use_memory=True)
    print(mod.hls_code)
 
 This generates a rewrite textproto file that has the specified 1RW type for buffer a and 1R1W RAM type
