@@ -90,7 +90,7 @@ def test_gemm_memory():
     print(f"\nB:\n{B}")
     print(f"\nExpected C (A @ B):\n{C_expected}")
     
-    print("\n✓ GEMM with memory annotations test completed!")
+    print("\nPassed! GEMM with memory annotations test completed!")
     print("  Check gemm_memory.prj/ for generated files:")
     print("    - test_block.cpp: Generated C++ code")
     print("    - rewrites.textproto: RAM configuration")
