@@ -570,5 +570,48 @@ def test_while_with_array():
     print("test_while_with_array passed!")
 
 
+def test_wrap_io_false_nested_function():
+    """Test that wrap_io=False does not flatten array indexing in nested functions.
+    
+    This test verifies the fix for the bug where wrap_io=False would incorrectly
+    apply linearized indexing to ALL function arguments, including those in nested
+    (non-top) functions. The linearization should only apply to the top-level
+    function arguments.
+    """
+    M, N = 4, 8
+
+    def top(A: "float32[M * N]", B: "float32[M * N]"):
+        C: float32[M, N]
+        inner(A, B, C)
+
+    def inner(A: "float32[M * N]", B: "float32[M * N]", C: "float32[M, N]"):
+        for m, n in allo.grid(M, N):
+            C[m, n] = A[m * N + n]
+        for m, n in allo.grid(M, N):
+            B[m * N + n] = C[m, n]
+
+    s = allo.customize(top)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        mod = s.build(target="vitis_hls", mode="sw_emu", project=tmpdir, wrap_io=False)
+        hls_code = mod.hls_code
+        print("\n=== Generated HLS Code ===")
+        print(hls_code)
+        
+        # Check that the top function has linearized indexing (flattened arrays)
+        assert "float v" in hls_code, "Top function should have pointer arguments"
+        assert "[32]" in hls_code or "*v" in hls_code, "Top function should use flattened arrays"
+        
+        # Check that the inner function has the correct signature with multi-dimensional array
+        assert "float v2[4][8]" in hls_code, "Inner function should have multi-dimensional array parameter"
+        
+        # Check that inner function uses standard indexing, NOT linearized
+        # The bug would generate: v2[(m) * 8 + (n)]
+        # The fix should generate: v2[m][n]
+        assert "v2[(m) * 8 + (n)]" not in hls_code and "v2[(m1) * 8 + (n1)]" not in hls_code, \
+            "Inner function should NOT use linearized indexing for multi-dimensional arrays"
+        
+        print("✅ Test passed: wrap_io=False correctly preserves multi-dimensional indexing in nested functions")
+
+
 if __name__ == "__main__":
     pytest.main([__file__])
