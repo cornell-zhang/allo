@@ -120,12 +120,29 @@ static bool isStreamOfBlocks(StreamType streamType) {
   return llvm::isa<ShapedType>(streamType.getBaseType());
 }
 
-/// Check if a Value is a function block argument (i.e., a function parameter)
-/// These are pointers in the generated HLS code, not local arrays.
-static bool isFunctionArgument(Value val) {
-  // A value is a function argument if it has no defining operation
+/// Check if a Value is a top-level function block argument (i.e., a top
+/// function parameter) These are pointers in the generated HLS code, not local
+/// arrays. When linearize_pointers is enabled, only top-level function
+/// arguments should be linearized.
+static bool isTopFunctionArgument(Value val, const std::string &topFuncName) {
+  // A value is a top-level function argument if it has no defining operation
   // (block arguments don't have defining ops) AND it's an argument
-  // of the entry block of a FuncOp.
+  // of the entry block of the top-level FuncOp.
+  if (auto blockArg = dyn_cast<BlockArgument>(val)) {
+    Block *block = blockArg.getOwner();
+    if (block && block->isEntryBlock()) {
+      if (auto funcOp = dyn_cast<func::FuncOp>(block->getParentOp())) {
+        // Only return true if this is the top-level function
+        return !topFuncName.empty() && funcOp.getName() == topFuncName;
+      }
+    }
+  }
+  return false;
+}
+
+/// Check if a Value is any function block argument (legacy function for array
+/// declarations)
+static bool isFunctionArgument(Value val) {
   if (auto blockArg = dyn_cast<BlockArgument>(val)) {
     Block *block = blockArg.getOwner();
     if (block && block->isEntryBlock()) {
@@ -1177,8 +1194,10 @@ void allo::hls::VhlsModuleEmitter::emitAffineLoad(AffineLoadOp op) {
   }
   auto arrayType = llvm::cast<ShapedType>(memref.getType());
 
-  // Check if this is a function argument - use linearized indexing for pointers
-  if (state.linearize_pointers && isFunctionArgument(memref) &&
+  // Check if this is a top-level function argument - use linearized indexing
+  // for pointers
+  if (state.linearize_pointers &&
+      isTopFunctionArgument(memref, state.top_func_name) &&
       arrayType.hasStaticShape()) {
     emitLinearizedAffineIndex(os, affineMap, arrayType.getShape(),
                               affineMap.getNumDims(), op.getMapOperands(),
@@ -1235,8 +1254,10 @@ void allo::hls::VhlsModuleEmitter::emitAffineStore(AffineStoreOp op) {
   }
   auto arrayType = llvm::cast<ShapedType>(memref.getType());
 
-  // Check if this is a function argument - use linearized indexing for pointers
-  if (state.linearize_pointers && isFunctionArgument(memref) &&
+  // Check if this is a top-level function argument - use linearized indexing
+  // for pointers
+  if (state.linearize_pointers &&
+      isTopFunctionArgument(memref, state.top_func_name) &&
       arrayType.hasStaticShape()) {
     emitLinearizedAffineIndex(os, affineMap, arrayType.getShape(),
                               affineMap.getNumDims(), op.getMapOperands(),
@@ -1434,8 +1455,10 @@ void allo::hls::VhlsModuleEmitter::emitLoad(memref::LoadOp op) {
 
   auto arrayType = llvm::cast<ShapedType>(memref.getType());
 
-  // Check if this is a function argument - use linearized indexing for pointers
-  if (state.linearize_pointers && isFunctionArgument(memref) &&
+  // Check if this is a top-level function argument - use linearized indexing
+  // for pointers
+  if (state.linearize_pointers &&
+      isTopFunctionArgument(memref, state.top_func_name) &&
       arrayType.hasStaticShape()) {
     emitLinearizedIndex(os, op.getIndices(), arrayType.getShape(), state);
   } else {
@@ -1484,8 +1507,10 @@ void allo::hls::VhlsModuleEmitter::emitStore(memref::StoreOp op) {
 
   auto arrayType = llvm::cast<ShapedType>(memref.getType());
 
-  // Check if this is a function argument - use linearized indexing for pointers
-  if (state.linearize_pointers && isFunctionArgument(memref) &&
+  // Check if this is a top-level function argument - use linearized indexing
+  // for pointers
+  if (state.linearize_pointers &&
+      isTopFunctionArgument(memref, state.top_func_name) &&
       arrayType.hasStaticShape()) {
     emitLinearizedIndex(os, op.getIndices(), arrayType.getShape(), state);
   } else {
@@ -3024,11 +3049,31 @@ using namespace std;
         }
       }
     }
-    // Second pass: emit functions and non-stateful globals
+    // Second pass: find the top function if linearize_pointers is enabled
+    if (state.linearize_pointers) {
+      for (auto &op : *module.getBody()) {
+        if (auto func = dyn_cast<func::FuncOp>(op)) {
+          if (func->hasAttr("top")) {
+            state.top_func_name = func.getName().str();
+            break;
+          }
+        }
+      }
+      // Fallback: if no function has "top" attribute, use the first function
+      if (state.top_func_name.empty()) {
+        for (auto &op : *module.getBody()) {
+          if (auto func = dyn_cast<func::FuncOp>(op)) {
+            state.top_func_name = func.getName().str();
+            break;
+          }
+        }
+      }
+    }
+    // Third pass: emit functions and non-stateful globals
     for (auto &op : *module.getBody()) {
-      if (auto func = dyn_cast<func::FuncOp>(op))
+      if (auto func = dyn_cast<func::FuncOp>(op)) {
         emitFunction(func);
-      else if (auto cst = dyn_cast<memref::GlobalOp>(op)) {
+      } else if (auto cst = dyn_cast<memref::GlobalOp>(op)) {
         // Only emit non-stateful globals at module level
         // Stateful globals are emitted inside functions that use them
         if (!statefulGlobalNames.contains(cst.getSymName())) {
