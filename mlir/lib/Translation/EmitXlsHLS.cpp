@@ -293,7 +293,7 @@ void allo::hls::XlsModuleEmitter::emitArrayDecl(Value array, bool isFunc,
     auto attr = llvm::dyn_cast_or_null<StringAttr>(memref.getMemorySpace());
     std::string memspace = attr ? attr.getValue().str() : "";
 
-    // 1) STREAM CASE -> channel, not array/memory
+    // STREAM CASE -> channel, not array/memory
     if (!memspace.empty() && memspace.rfind("stream", 0) == 0) {
       // Delegate to stream emission (ac_channel / __xls_channel)
       os << getXLSTypeName(elemType) << " ";
@@ -301,7 +301,7 @@ void allo::hls::XlsModuleEmitter::emitArrayDecl(Value array, bool isFunc,
       return;
     }
 
-    // 2) MEMORY CASE -> __xls_memory< T, Size >
+    // MEMORY CASE -> __xls_memory< T, Size >
     if (!memspace.empty() && memspace.rfind("memory", 0) == 0) {
       // For now, flatten all dims into a single size.
       int64_t totalSize = 1;
@@ -318,7 +318,7 @@ void allo::hls::XlsModuleEmitter::emitArrayDecl(Value array, bool isFunc,
           std::string(addName(array, /*isPtr=*/false, name).str());
       os << varName;
 
-      // Optional: keep original multidim shape as a comment
+      // We can optionally keep original multidim shape as a comment
       os << " /* original shape: ";
       os << getXLSTypeName(elemType) << " " << varName;
       for (int64_t dim : shape)
@@ -328,8 +328,8 @@ void allo::hls::XlsModuleEmitter::emitArrayDecl(Value array, bool isFunc,
       return;
     }
 
-    // 3) DEFAULT MEMREF -> either skip (if USE_MEMORY_FLAG, wrapper handles it)
-    //    or plain C array: T name[d0][d1]...
+    // DEFAULT MEMREF -> either skip (if USE_MEMORY_FLAG, wrapper handles it)
+    // or plain C array: T name[d0][d1]...
     if (USE_MEMORY_FLAG) {
       // Memory mode: Don't emit declaration here - wrapper will add
       // __xls_memory at class level Just register the name so subsequent uses
@@ -339,9 +339,16 @@ void allo::hls::XlsModuleEmitter::emitArrayDecl(Value array, bool isFunc,
       int64_t totalSize = 1;
       for (int64_t dim : shape)
         totalSize *= dim;
+      // Get memory_space as integer (0 if not specified)
+      int64_t memorySpace = 0;
+      if (auto intAttr =
+              llvm::dyn_cast_or_null<IntegerAttr>(memref.getMemorySpace())) {
+        memorySpace = intAttr.getInt();
+      }
       os << "// __xls_memory_decl__: " << getXLSTypeName(elemType) << ", "
          << totalSize << ", ";
       os << (name.empty() ? std::string(getName(array).c_str()) : name);
+      os << ", " << memorySpace;
       for (int64_t dim : shape)
         os << ", " << dim;
       return;
@@ -650,14 +657,18 @@ void allo::hls::XlsModuleEmitter::emitArrayDirectives(Value memref) {
   bool emitPragmaFlag = false;
   auto type = llvm::cast<MemRefType>(memref.getType());
 
-  // streaming
+  // streaming - check if memory space is a StringAttr with "stream" prefix
   auto attr = type.getMemorySpace();
   if (attr) {
-    std::string attr_str = llvm::cast<StringAttr>(attr).getValue().str();
-    if (attr_str.substr(0, 6) == "stream") {
-      // Note: XLS HLS doesn't need explicit stream pragmas like Vivado HLS
-      return;
+    // Handle StringAttr (stream annotations)
+    if (auto strAttr = llvm::dyn_cast<StringAttr>(attr)) {
+      std::string attr_str = strAttr.getValue().str();
+      if (attr_str.substr(0, 6) == "stream") {
+        // Note: XLS HLS doesn't need explicit stream pragmas like Vivado HLS
+        return;
+      }
     }
+    // IntegerAttr (Memory annotations) - no special handling needed for XLS
   }
 
   // For other array directives, delegate to the parent implementation
@@ -704,13 +715,17 @@ void allo::hls::XlsModuleEmitter::emitLoad(memref::LoadOp op) {
   auto memrefType = llvm::cast<MemRefType>(memref.getType());
   emitValue(memref);
 
-  // Check for stream memory space
+  // Check for stream memory space (StringAttr with "stream" prefix)
   auto attr = memrefType.getMemorySpace();
-  if (attr &&
-      llvm::cast<StringAttr>(attr).getValue().str().substr(0, 6) == "stream") {
-    // Stream case - use parent's implementation
-    VhlsModuleEmitter::emitLoad(op);
-    return;
+  if (attr) {
+    if (auto strAttr = llvm::dyn_cast<StringAttr>(attr)) {
+      if (strAttr.getValue().str().substr(0, 6) == "stream") {
+        // Stream case - use parent's implementation
+        VhlsModuleEmitter::emitLoad(op);
+        return;
+      }
+    }
+    // IntegerAttr (Memory annotations) - continue with normal handling
   }
 
   // For regular memref, handle memory mode vs register mode
@@ -738,13 +753,17 @@ void allo::hls::XlsModuleEmitter::emitStore(memref::StoreOp op) {
   auto memrefType = llvm::cast<MemRefType>(memref.getType());
   emitValue(memref);
 
-  // Check for stream memory space
+  // Check for stream memory space (StringAttr with "stream" prefix)
   auto attr = memrefType.getMemorySpace();
-  if (attr &&
-      llvm::cast<StringAttr>(attr).getValue().str().substr(0, 6) == "stream") {
-    // Stream case - use parent's implementation
-    VhlsModuleEmitter::emitStore(op);
-    return;
+  if (attr) {
+    if (auto strAttr = llvm::dyn_cast<StringAttr>(attr)) {
+      if (strAttr.getValue().str().substr(0, 6) == "stream") {
+        // Stream case - use parent's implementation
+        VhlsModuleEmitter::emitStore(op);
+        return;
+      }
+    }
+    // IntegerAttr (Memory annotations) - continue with normal handling
   }
 
   // For regular memref, handle memory mode vs register mode
@@ -789,12 +808,16 @@ void allo::hls::XlsModuleEmitter::emitAffineLoad(AffineLoadOp op) {
   AffineExprEmitter affineEmitter(state, affineMap.getNumDims(),
                                   op.getMapOperands());
 
-  // Check for stream memory space
-  if (attr &&
-      llvm::cast<StringAttr>(attr).getValue().str().substr(0, 6) == "stream") {
-    // Stream case - delegate to parent
-    VhlsModuleEmitter::emitAffineLoad(op);
-    return;
+  // Check for stream memory space (StringAttr with "stream" prefix)
+  if (attr) {
+    if (auto strAttr = llvm::dyn_cast<StringAttr>(attr)) {
+      if (strAttr.getValue().str().substr(0, 6) == "stream") {
+        // Stream case - delegate to parent
+        VhlsModuleEmitter::emitAffineLoad(op);
+        return;
+      }
+    }
+    // IntegerAttr (Memory annotations) - continue with normal handling
   }
 
   // For regular memref, handle memory mode vs register mode
@@ -832,12 +855,16 @@ void allo::hls::XlsModuleEmitter::emitAffineStore(AffineStoreOp op) {
   AffineExprEmitter affineEmitter(state, affineMap.getNumDims(),
                                   op.getMapOperands());
 
-  // Check for stream memory space
-  if (attr &&
-      llvm::cast<StringAttr>(attr).getValue().str().substr(0, 6) == "stream") {
-    // Stream case - delegate to parent
-    VhlsModuleEmitter::emitAffineStore(op);
-    return;
+  // Check for stream memory space (StringAttr with "stream" prefix)
+  if (attr) {
+    if (auto strAttr = llvm::dyn_cast<StringAttr>(attr)) {
+      if (strAttr.getValue().str().substr(0, 6) == "stream") {
+        // Stream case - delegate to parent
+        VhlsModuleEmitter::emitAffineStore(op);
+        return;
+      }
+    }
+    // IntegerAttr (Memory annotations) - continue with normal handling
   }
 
   // For regular memref, handle memory mode vs register mode
@@ -955,11 +982,20 @@ void allo::hls::XlsModuleEmitter::emitFunction(func::FuncOp func) {
       if (USE_MEMORY_FLAG) {
         // Memory mode: emit comment placeholder for wrapper to parse
         // Wrapper will add __xls_memory at class level
+        // Format: elem_type, size, name, memory_space, dim0, dim1, ...
         int64_t totalSize = 1;
         for (int64_t dim : shape)
           totalSize *= dim;
+        // Get memory_space as integer (0 if not specified)
+        int64_t memorySpace = 0;
+        if (auto memrefType = llvm::dyn_cast<MemRefType>(arg.getType())) {
+          if (auto intAttr = llvm::dyn_cast_or_null<IntegerAttr>(
+                  memrefType.getMemorySpace())) {
+            memorySpace = intAttr.getInt();
+          }
+        }
         os << "// __xls_memory_decl__: " << getXLSTypeName(elemType) << ", "
-           << totalSize << ", " << localName;
+           << totalSize << ", " << localName << ", " << memorySpace;
         for (int64_t dim : shape)
           os << ", " << dim;
         os << "\n";
