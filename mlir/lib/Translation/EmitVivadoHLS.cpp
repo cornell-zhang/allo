@@ -3049,13 +3049,29 @@ using namespace std;
         }
       }
     }
-    // Second pass: emit functions and non-stateful globals
+    // Second pass: find the top function if linearize_pointers is enabled
+    if (state.linearize_pointers) {
+      for (auto &op : *module.getBody()) {
+        if (auto func = dyn_cast<func::FuncOp>(op)) {
+          if (func->hasAttr("top")) {
+            state.top_func_name = func.getName().str();
+            break;
+          }
+        }
+      }
+      // Fallback: if no function has "top" attribute, use the first function
+      if (state.top_func_name.empty()) {
+        for (auto &op : *module.getBody()) {
+          if (auto func = dyn_cast<func::FuncOp>(op)) {
+            state.top_func_name = func.getName().str();
+            break;
+          }
+        }
+      }
+    }
+    // Third pass: emit functions and non-stateful globals
     for (auto &op : *module.getBody()) {
       if (auto func = dyn_cast<func::FuncOp>(op)) {
-        // When linearize_pointers is enabled, set the first function as top
-        if (state.linearize_pointers && state.top_func_name.empty()) {
-          state.top_func_name = func.getName().str();
-        }
         emitFunction(func);
       } else if (auto cst = dyn_cast<memref::GlobalOp>(op)) {
         // Only emit non-stateful globals at module level
