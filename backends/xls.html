@@ -5,7 +5,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <title>RapidStream TAPA (FPGA) &#8212; Allo Documentation</title>
+    <title>Google XLS (ASIC) &#8212; Allo Documentation</title>
     <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=03e43079" />
     <link rel="stylesheet" type="text/css" href="../_static/basic_mod.css?v=9b2032db" />
     <link rel="stylesheet" type="text/css" href="../_static/graphviz.css?v=4ae1632d" />
@@ -23,8 +23,8 @@
     <script src="../_static/js/petite-vue.js"></script>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
-    <link rel="next" title="Google XLS (ASIC)" href="xls.html" />
-    <link rel="prev" title="AMD Vitis HLS (FPGA)" href="vitis.html" /> 
+    <link rel="next" title="Multi-Threaded Simulator (CPU)" href="simulator.html" />
+    <link rel="prev" title="RapidStream TAPA (FPGA)" href="tapa.html" /> 
   </head><body data-dark_mode_code_blocks="true">
 
 <div id="top_nav">
@@ -157,8 +157,8 @@
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="llvm.html">LLVM (CPU)</a></li>
 <li class="toctree-l1"><a class="reference internal" href="vitis.html">AMD Vitis HLS (FPGA)</a></li>
-<li class="toctree-l1 current"><a class="current reference internal" href="#">RapidStream TAPA (FPGA)</a></li>
-<li class="toctree-l1"><a class="reference internal" href="xls.html">Google XLS (ASIC)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tapa.html">RapidStream TAPA (FPGA)</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Google XLS (ASIC)</a></li>
 <li class="toctree-l1"><a class="reference internal" href="simulator.html">Multi-Threaded Simulator (CPU)</a></li>
 <li class="toctree-l1"><a class="reference internal" href="aie/index.html">AMD MLIR-AIE (AI Engine)</a></li>
 </ul>
@@ -183,83 +183,132 @@
         <div class="bodywrapper">
           <div class="body" role="main">
             
-  <section id="rapidstream-tapa-fpga">
-<h1>RapidStream TAPA (FPGA)<a class="headerlink" href="#rapidstream-tapa-fpga" title="Link to this heading"><span>¶</span></a></h1>
-<p><a class="reference external" href="https://github.com/rapidstream-org/rapidstream-tapa">RapidStream TAPA</a> is an open-source backend that enables agile synthesis for designing high-frequency FPGA dataflow accelerators. Please refer to their <a class="reference external" href="https://doi.org/10.1145/3593025">TRETS papers</a> for more details.
-It still requires the <a class="reference external" href="https://www.amd.com/en/products/software/adaptive-socs-and-fpgas/vitis/vitis-hls.html">Vitis HLS</a> toolchain to generate hardware accelerators for FPGA devices, so please set up the environment in advance. This document demonstrates how to define a general matrix multiplication (GEMM) kernel using the Allo ADL and generate TAPA code for FPGA synthesis.</p>
+  <section id="google-xls-asic">
+<h1>Google XLS (ASIC)<a class="headerlink" href="#google-xls-asic" title="Link to this heading"><span>¶</span></a></h1>
+<p>The <a class="reference external" href="https://google.github.io/xls/">Google XLS</a> ASIC backend leverages the Google Accelerated Hardware Synthesis toolchain to generate
+hardware accelerators for the ASIC flow. This document demonstrates how to define a general matrix multiplication (GEMM)
+kernel using the Allo ADL and generate HLS code for place and route. For more details on kernel customizations and scheduling optimizations,
+please refer to the <a class="reference external" href="https://cornell-zhang.github.io/allo/gallery/tutorial_02_vhls.html">Allo-HLS tutorial</a>.</p>
 <section id="kernel-definition">
 <h2>Kernel Definition<a class="headerlink" href="#kernel-definition" title="Link to this heading"><span>¶</span></a></h2>
-<p>The GEMM kernel is implemented using <cite>float32</cite> precision and pre-defined constants for the matrix dimensions. The kernel utilizes the <cite>allo.grid</cite> API to iterate over output indices and the <cite>allo.reduction</cite> API to designate the reduction axis for accumulating the dot-product.</p>
+<p>The GEMM kernel is implemented with <cite>int32</cite> precision using pre-defined constants for the matrix dimensions. The kernel utilizes the
+<cite>allo.grid</cite> API to iterate over output indices and the <cite>allo.reduction</cite> API to designate the reduction axis for accumulating the
+dot-product.</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">allo</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">allo.ir.types</span><span class="w"> </span><span class="kn">import</span> <span class="n">float32</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">allo.ir.types</span><span class="w"> </span><span class="kn">import</span> <span class="n">int32</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 
 <span class="c1"># Define matrix dimensions</span>
-<span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">,</span> <span class="n">K</span> <span class="o">=</span> <span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">,</span> <span class="mi">32</span>
+<span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">,</span> <span class="n">K</span> <span class="o">=</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">4</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">gemm</span><span class="p">(</span><span class="n">A</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">],</span> <span class="n">B</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">]:</span>
-    <span class="n">C</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
-    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">,</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">allo</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">gemm</span><span class="p">(</span><span class="n">A</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="mi">4</span><span class="p">,</span> <span class="mi">4</span><span class="p">],</span> <span class="n">B</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="mi">4</span><span class="p">,</span> <span class="mi">4</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">int32</span><span class="p">[</span><span class="mi">4</span><span class="p">,</span> <span class="mi">4</span><span class="p">]:</span>
+    <span class="n">C</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="mi">4</span><span class="p">,</span> <span class="mi">4</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">,</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">allo</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="mi">4</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">4</span><span class="p">):</span>
         <span class="n">C</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span> <span class="o">+=</span> <span class="n">A</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">k</span><span class="p">]</span> <span class="o">*</span> <span class="n">B</span><span class="p">[</span><span class="n">k</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span>
     <span class="k">return</span> <span class="n">C</span>
 </pre></div>
 </div>
 </section>
-<section id="code-generation-for-rapidstream-tapa">
-<h2>Code Generation for RapidStream TAPA<a class="headerlink" href="#code-generation-for-rapidstream-tapa" title="Link to this heading"><span>¶</span></a></h2>
-<p>Allo supports the generation of TAPA code by setting the target to <cite>“tapa”</cite>. Four synthesis modes are available:</p>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">csim</span></code>: C simulation mode, which compiles the design for software simulation.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">fast_hw_emu</span></code>: Fast hardware emulation mode developed by RapidStream, offering a rapid emulation of the hardware design.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">hw_emu</span></code>: Hardware emulation mode, synthesizing the design into an RTL model and simulating it on an FPGA emulator.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">hw</span></code>: Full hardware synthesis mode, performing complete synthesis, placement, routing, and bitstream generation for execution on FPGA hardware.</p></li>
-</ul>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">s</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">customize</span><span class="p">(</span><span class="n">gemm</span><span class="p">)</span>
-<span class="n">mod</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">&quot;tapa&quot;</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;hw_emu&quot;</span><span class="p">,</span> <span class="n">project</span><span class="o">=</span><span class="s2">&quot;gemm.prj&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">mod</span><span class="p">)</span>
+<section id="code-generation-for-google-xls">
+<h2>Code Generation for Google XLS<a class="headerlink" href="#code-generation-for-google-xls" title="Link to this heading"><span>¶</span></a></h2>
+<p>Allo supports several approaches to generate HLS code:</p>
+<ol class="arabic">
+<li><p><strong>Direct HLS Code Generation</strong>:
+Set the target to <cite>“xlscc”</cite> to produce XLS C++ frontend code as a string. This code includes the necessary headers and pragmas for
+Google XLS synthesis. We expose a <cite>use_memory</cite> flag to control whether to use the memory API in the XLS backend.</p>
+<blockquote>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">code</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">&quot;xlscc&quot;</span><span class="p">,</span> <span class="n">use_memory</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">code</span><span class="p">)</span>
 </pre></div>
 </div>
+</div></blockquote>
+<p>When <cite>use_memory</cite> is set to <cite>True</cite>, the generated code will use the memory API in the XLS backend. When <cite>use_memory</cite> is set to <cite>False</cite>,
+the generated code will use the C-style arrays which become registers clusters in the XLS backend.</p>
+</li>
+</ol>
 </section>
 <section id="project-structure-and-execution">
 <h2>Project Structure and Execution<a class="headerlink" href="#project-structure-and-execution" title="Link to this heading"><span>¶</span></a></h2>
-<p>The generated TAPA project (e.g., in the folder <code class="docutils literal notranslate"><span class="pre">gemm.prj</span></code>) typically includes:</p>
+<p>The generated XLS project (e.g., in the folder <code class="docutils literal notranslate"><span class="pre">gemm.prj</span></code>) typically includes:</p>
 <ul class="simple">
-<li><p><strong>host.cpp</strong>: The host (CPU) code that interfaces with the generated accelerator.</p></li>
-<li><p><strong>kernel.cpp</strong>: The accelerator kernel code generated for TAPA.</p></li>
-<li><p><strong>Makefile</strong>: Build scripts that streamline the project compilation.</p></li>
+<li><p><strong>test_block.cpp</strong>: The accelerator kernel code.</p></li>
 </ul>
-<p>To execute the design, prepare the input matrices using NumPy. For instance, generate random matrices for the inputs and allocate an output array:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">np_A</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">random</span><span class="p">((</span><span class="n">M</span><span class="p">,</span> <span class="n">K</span><span class="p">))</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
-<span class="n">np_B</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">random</span><span class="p">((</span><span class="n">K</span><span class="p">,</span> <span class="n">N</span><span class="p">))</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
-<span class="n">allo_C</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
-<span class="n">mod</span><span class="p">(</span><span class="n">np_A</span><span class="p">,</span> <span class="n">np_B</span><span class="p">,</span> <span class="n">allo_C</span><span class="p">)</span>
-<span class="n">np</span><span class="o">.</span><span class="n">testing</span><span class="o">.</span><span class="n">assert_allclose</span><span class="p">(</span><span class="n">allo_C</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">matmul</span><span class="p">(</span><span class="n">np_A</span><span class="p">,</span> <span class="n">np_B</span><span class="p">),</span> <span class="n">rtol</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">,</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
-</pre></div>
-</div>
+<p>If you set <cite>use_memory</cite> to <cite>True</cite>, the generated project will also include:</p>
+<ul class="simple">
+<li><p><strong>rewrites.textproto</strong>: The memory configuration file that is required by the XLS</p></li>
+</ul>
+<p>backend to map any memory arrays to the hardware. Without this file or if this file is
+configured wrong, the XLS backend will error out during its IR optimization pass.</p>
 <dl class="simple">
-<dt>Note:</dt><dd><p>Ensure that the TAPA and required toolchain environments are correctly configured before running the flow. For further environment setup and detailed information on synthesis modes, please consult the <a class="reference external" href="https://tapa.readthedocs.io/en/main/">RapidStream TAPA</a> documentation.</p>
+<dt>Note:</dt><dd><p>The XLS backend only supports integer and fixed-point types. Floating-point types (f16, f32, f64) are not supported.</p>
 </dd>
 </dl>
 </section>
-<section id="hbm-ddr-memory-mapping">
-<h2>HBM/DDR Memory Mapping<a class="headerlink" href="#hbm-ddr-memory-mapping" title="Link to this heading"><span>¶</span></a></h2>
-<p>Similar to the Vitis HLS backend, TAPA also supports HBM/DDR memory channel mapping through the <code class="docutils literal notranslate"><span class="pre">hbm_mapping</span></code> configuration option. This allows you to specify which memory channels each kernel argument should be mapped to.</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Define HBM channel mapping using argument names</span>
-<span class="n">hbm_mapping</span> <span class="o">=</span> <span class="p">{</span>
-    <span class="s2">&quot;A&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>              <span class="c1"># Input A -&gt; HBM channel 0</span>
-    <span class="s2">&quot;B&quot;</span><span class="p">:</span> <span class="s2">&quot;HBM[1]&quot;</span><span class="p">,</span>       <span class="c1"># Input B -&gt; HBM channel 1</span>
-    <span class="s2">&quot;output_0&quot;</span><span class="p">:</span> <span class="s2">&quot;DDR[0]&quot;</span><span class="p">,</span> <span class="c1"># Return value -&gt; DDR bank 0</span>
-<span class="p">}</span>
+<section id="memory-implementation-customization">
+<h2>Memory Implementation Customization<a class="headerlink" href="#memory-implementation-customization" title="Link to this heading"><span>¶</span></a></h2>
+<p>Allo provides the <code class="docutils literal notranslate"><span class="pre">Memory</span></code> class to specify on-chip memory implementation details for arrays, similar to the <a class="reference external" href="https://docs.amd.com/r/en-US/ug1399-vitis-hls/pragma-HLS-bind_storage">Vitis HLS bind_storage pragma</a>. This allows fine-grained control over how arrays are mapped to FPGA memory resources (BRAM, URAM, LUTRAM, etc.).</p>
+<p><strong>Basic Usage</strong></p>
+<p>Use the <code class="docutils literal notranslate"><span class="pre">&#64;</span></code> operator to annotate function arguments or local variables with memory specifications:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">allo</span><span class="w"> </span><span class="kn">import</span> <span class="n">Memory</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">allo.ir.types</span><span class="w"> </span><span class="kn">import</span> <span class="n">int32</span><span class="p">,</span> <span class="n">float32</span>
 
-<span class="n">mod</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">build</span><span class="p">(</span>
-    <span class="n">target</span><span class="o">=</span><span class="s2">&quot;tapa&quot;</span><span class="p">,</span>
-    <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;hw&quot;</span><span class="p">,</span>
-    <span class="n">project</span><span class="o">=</span><span class="s2">&quot;gemm.prj&quot;</span><span class="p">,</span>
-    <span class="n">configs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;hbm_mapping&quot;</span><span class="p">:</span> <span class="n">hbm_mapping</span><span class="p">},</span>
-<span class="p">)</span>
+<span class="c1"># Define memory specifications</span>
+<span class="n">MemUram</span> <span class="o">=</span> <span class="n">Memory</span><span class="p">(</span><span class="n">resource</span><span class="o">=</span><span class="s2">&quot;URAM&quot;</span><span class="p">,</span> <span class="n">storage_type</span><span class="o">=</span><span class="s2">&quot;RAM_1P&quot;</span><span class="p">)</span>
+<span class="n">MemBram</span> <span class="o">=</span> <span class="n">Memory</span><span class="p">(</span><span class="n">resource</span><span class="o">=</span><span class="s2">&quot;BRAM&quot;</span><span class="p">,</span> <span class="n">storage_type</span><span class="o">=</span><span class="s2">&quot;RAM_2P&quot;</span><span class="p">)</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">kernel</span><span class="p">(</span><span class="n">a</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">]</span> <span class="o">@</span> <span class="n">MemUram</span><span class="p">,</span> <span class="n">b</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="mi">16</span><span class="p">,</span> <span class="mi">16</span><span class="p">]</span> <span class="o">@</span> <span class="n">MemBram</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">]:</span>
+    <span class="c1"># Local variable with memory annotation</span>
+    <span class="n">buf</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">]</span> <span class="o">@</span> <span class="n">Memory</span><span class="p">(</span><span class="n">resource</span><span class="o">=</span><span class="s2">&quot;BRAM&quot;</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">32</span><span class="p">):</span>
+        <span class="n">buf</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">a</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">*</span> <span class="mi">2</span>
+    <span class="n">c</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">]</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">32</span><span class="p">):</span>
+        <span class="n">c</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">buf</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">+</span> <span class="mi">1</span>
+    <span class="k">return</span> <span class="n">c</span>
+
+<span class="n">s</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">customize</span><span class="p">(</span><span class="n">kernel</span><span class="p">)</span>
+<span class="n">mod</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">&quot;xls&quot;</span><span class="p">,</span> <span class="n">use_memory</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">mod</span><span class="o">.</span><span class="n">hls_code</span><span class="p">)</span>
 </pre></div>
 </div>
-<p>For more details on HBM/DDR memory mapping options, please refer to the <a class="reference internal" href="vitis.html"><span class="doc">Vitis HLS documentation</span></a>.</p>
+<p>This generates a rewrite textproto file that maps buffer <code class="docutils literal notranslate"><span class="pre">a</span></code> (<code class="docutils literal notranslate"><span class="pre">RAM_1P</span></code>) to the XLS <code class="docutils literal notranslate"><span class="pre">RAM_1RW</span></code> type and input buffer <code class="docutils literal notranslate"><span class="pre">b</span></code> (<code class="docutils literal notranslate"><span class="pre">RAM_2P</span></code>) to the XLS <code class="docutils literal notranslate"><span class="pre">RAM_1R1W</span></code> type:</p>
+<p><strong>Memory Class Parameters</strong>
+The Allo <code class="docutils literal notranslate"><span class="pre">Memory</span></code> class accepts the following parameters:</p>
+<ul class="simple">
+<li><p><strong>resource</strong> (str): Memory resource type</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;BRAM&quot;</span></code>: Block RAM - the most common on-chip memory</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;URAM&quot;</span></code>: Ultra RAM - larger capacity, available on UltraScale+ devices</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;LUTRAM&quot;</span></code>: LUT-based RAM - faster but smaller</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;SRL&quot;</span></code>: Shift Register LUT - efficient for FIFOs</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;AUTO&quot;</span></code>: Let the HLS tool decide (default)</p></li>
+</ul>
+</li>
+</ul>
+<p>These all default to RAM_ABSTRACT in XLS.</p>
+<ul class="simple">
+<li><p><strong>storage_type</strong> (str, optional): RAM access pattern</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;RAM_1P&quot;</span></code>: Single-port RAM</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;RAM_2P&quot;</span></code>: Simple dual-port RAM (one read, one write port)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;RAM_T2P&quot;</span></code>: True dual-port RAM (two read/write ports)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;RAM_1WNR&quot;</span></code>: Single write, N read ports</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;RAM_S2P&quot;</span></code>: Simple dual-port (alias for RAM_2P)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;ROM_1P&quot;</span></code>: Single-port ROM</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;ROM_2P&quot;</span></code>: Dual-port ROM</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;ROM_NP&quot;</span></code>: N-port ROM</p></li>
+</ul>
+</li>
+<li><p><strong>latency</strong> (int, optional): Memory access latency in cycles</p></li>
+<li><p><strong>depth</strong> (int, optional): Depth of the memory (useful for streams/FIFOs)</p></li>
+</ul>
+<p>XLS currently only supports RAM_1RW and RAM_1R1W, so we can only support RAM_1P, RAM_2P, and ROM_1P. The
+other storage types are currently not supported.</p>
+</section>
+<section id="conclusion">
+<h2>Conclusion<a class="headerlink" href="#conclusion" title="Link to this heading"><span>¶</span></a></h2>
+<p>This example illustrates the process of defining a GEMM kernel using the Allo ADL and generating XLS code
+for the ASIC flow. The approach supports the software synthesis modes which is wonderful for quick verifications and debugging.</p>
 </section>
 </section>
 
@@ -277,11 +326,12 @@ It still requires the <a class="reference external" href="https://www.amd.com/en
             <p><a class="toggle_right_sidebar" href="#"><span class="icon">&gt;</span><span>Page contents:</span></a></p>
             <div class="page_toc">
                 <ul>
-<li><a class="reference internal" href="#">RapidStream TAPA (FPGA)</a><ul>
+<li><a class="reference internal" href="#">Google XLS (ASIC)</a><ul>
 <li><a class="reference internal" href="#kernel-definition">Kernel Definition</a></li>
-<li><a class="reference internal" href="#code-generation-for-rapidstream-tapa">Code Generation for RapidStream TAPA</a></li>
+<li><a class="reference internal" href="#code-generation-for-google-xls">Code Generation for Google XLS</a></li>
 <li><a class="reference internal" href="#project-structure-and-execution">Project Structure and Execution</a></li>
-<li><a class="reference internal" href="#hbm-ddr-memory-mapping">HBM/DDR Memory Mapping</a></li>
+<li><a class="reference internal" href="#memory-implementation-customization">Memory Implementation Customization</a></li>
+<li><a class="reference internal" href="#conclusion">Conclusion</a></li>
 </ul>
 </li>
 </ul>
@@ -296,14 +346,14 @@ It still requires the <a class="reference external" href="https://www.amd.com/en
         <div class="button_nav">
             <div class="left">
                 
-                <a href="vitis.html">
-                    <span class="icon">&lt;</span><span>AMD Vitis HLS (FPGA)</span></a>
+                <a href="tapa.html">
+                    <span class="icon">&lt;</span><span>RapidStream TAPA (FPGA)</span></a>
                 
             </div>
 
             <div class="right">
                 
-                    <a href="xls.html"><span>Google XLS (ASIC)</span><span class="icon">&gt;</span></a>
+                    <a href="simulator.html"><span>Multi-Threaded Simulator (CPU)</span><span class="icon">&gt;</span></a>
                 
             </div>
         </div>
