@@ -570,5 +570,48 @@ def test_while_with_array():
     print("test_while_with_array passed!")
 
 
+def test_wrap_io_false_nested_function():
+    """Test that wrap_io=False does not flatten array indexing in nested functions."""
+    M, N = 4, 8
+
+    def top(A: "float32[M * N]", B: "float32[M * N]"):
+        C: float32[M, N]
+        inner(A, B, C)
+
+    def inner(A: "float32[M * N]", B: "float32[M * N]", C: "float32[M, N]"):
+        for m, n in allo.grid(M, N):
+            C[m, n] = A[m * N + n]
+        for m, n in allo.grid(M, N):
+            B[m * N + n] = C[m, n]
+
+    s = allo.customize(top)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        mod = s.build(target="vitis_hls", mode="sw_emu", project=tmpdir, wrap_io=False)
+        hls_code = mod.hls_code
+        print("\n=== Generated HLS Code ===")
+        print(hls_code)
+        # Check that inner function uses 2D indexing for C
+        assert (
+            "v2[(m1) * 8 + (n1)]" not in hls_code
+        ), "C should use 2D indexing in inner function"
+        assert "v2[m1][n1]" in hls_code, "C should use 2D indexing in inner function"
+        print("test_wrap_io_false_nested_function passed!")
+
+
+def test_wrap_io_false_nested_function_2D():
+    M, N = 4, 8
+
+    def inner(A: float32[M, N], B: float32[M, N]):
+        for m, n in allo.grid(M, N):
+            B[m, n] = A[m, n]
+
+    def top(A: float32[M, N], B: float32[M, N]):
+        inner(A, B)
+
+    s = allo.customize(top)
+    with pytest.raises(RuntimeError):
+        s.build(target="vitis_hls", mode="sw_emu", project="", wrap_io=False)
+
+
 if __name__ == "__main__":
     pytest.main([__file__])
