@@ -24,7 +24,7 @@ def test_uint():
             for mt, nt in allo.grid(M, N):
                 local_C[mt, nt] = stream.get()
 
-    mod = df.build(top, target="vitis_hls", project="top.prj", wrap_io=False)
+    mod = df.build(top, target="vitis_hls", project="top.prj")
     print(mod.hls_code)
     assert "hls::stream< uint16_t >" in mod.hls_code
     assert "hls::stream< int16_t >" not in mod.hls_code
