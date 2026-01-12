@@ -62,7 +62,6 @@ from .utils import (
     get_func_id_from_param_types,
     resolve_generic_types,
     parse_ast,
-    get_global_vars,
 )
 from .infer import TypeInferer
 from .types import (
@@ -2042,7 +2041,7 @@ class ASTTransformer(ASTBuilder):
                                 node.name = orig_name
                             return
 
-                        elif decorator.func.attr == "region":
+                        if decorator.func.attr == "region":
                             # If it is a region, we should insert the calls to the kernels
                             pass
         else:
@@ -2177,7 +2176,7 @@ class ASTTransformer(ASTBuilder):
                                     # we assume there is no tag mismatch for now
                                     # if stmt.name in ctx.func_tag2instance:
                                     #     ...
-                                    call_op = func_d.CallOp(
+                                    func_d.CallOp(
                                         [],
                                         FlatSymbolRefAttr.get(kernel_name),
                                         arg_values,
