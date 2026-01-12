@@ -390,11 +390,21 @@ def analyze_arg_load_store_in_func(func, mapping={}):
 
 def analyze_arg_load_store(mod):
     res = {}
-    for func in mod.body.operations:
-        if not isinstance(func, func_d.FuncOp):
-            continue
-        func_res = analyze_arg_load_store_in_func(func, res)
-        res[func.attributes["sym_name"].value] = func_res
+    # Run iteratively until the mapping stabilizes
+    # This is needed because functions may appear in the module in any order
+    # and we need to propagate information from callees to callers
+    changed = True
+    while changed:
+        changed = False
+        for func in mod.body.operations:
+            if not isinstance(func, func_d.FuncOp):
+                continue
+            func_name = func.attributes["sym_name"].value
+            old_res = res.get(func_name, [])
+            func_res = analyze_arg_load_store_in_func(func, res)
+            if func_res != old_res:
+                changed = True
+            res[func_name] = func_res
     return res
 
 

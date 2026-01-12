@@ -128,7 +128,12 @@ def get_func_id_from_param_types(param_types):
 def get_all_df_kernels(s):
     funcs = []
     for func in s.module.body.operations:
-        if isinstance(func, func_d.FuncOp) and "df.kernel" in func.attributes:
+        # Exclude nested kernels (those inside sub-regions) from top-level calls
+        if (
+            isinstance(func, func_d.FuncOp)
+            and "df.kernel" in func.attributes
+            and "df.nested_kernel" not in func.attributes
+        ):
             funcs.append(func)
     return funcs
 
