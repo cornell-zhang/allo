@@ -7,6 +7,7 @@ import gc
 import ast
 import sys
 import copy
+import inspect
 import itertools
 import traceback
 import numpy as np
@@ -60,7 +61,10 @@ from .utils import (
     get_kwarg_value,
     get_func_id_from_param_types,
     resolve_generic_types,
+    parse_ast,
+    get_global_vars,
 )
+from .infer import TypeInferer
 from .types import (
     AlloType,
     Int,
@@ -1981,6 +1985,7 @@ class ASTTransformer(ASTBuilder):
                                     ):
                                         continue
                                 new_ctx = old_ctx.copy()
+                                new_ctx.top_func = old_ctx.top_func
                                 new_ctx.set_ip(old_ctx.top_func)
                                 new_ctx.top_func_tree = node
                                 new_ctx.buffers = old_ctx.buffers.copy()
@@ -1991,10 +1996,41 @@ class ASTTransformer(ASTBuilder):
                                         {"df.p" + str(axis): val}
                                     )
                                 node.name = construct_kernel_name(orig_name, dim)
+                                # Append suffix from parent context to ensure uniqueness
+                                if hasattr(ctx, "func_suffix"):
+                                    node.name = f"{node.name}_{ctx.func_suffix}"
+
+                                # Update func_suffix for children
+                                instance_suffix = "_".join([str(x) for x in dim])
+                                if hasattr(ctx, "func_suffix"):
+                                    new_ctx.func_suffix = (
+                                        f"{instance_suffix}_{ctx.func_suffix}"
+                                    )
+                                else:
+                                    new_ctx.func_suffix = instance_suffix
+
+                                # Create a copy of the node to avoid modifying the original AST
+                                # and remove the kernel decorator to prevent infinite recursion
+                                new_node = copy.copy(node)
+                                new_node.decorator_list = [
+                                    d
+                                    for d in node.decorator_list
+                                    if not (
+                                        isinstance(d, ast.Call)
+                                        and isinstance(d.func, ast.Attribute)
+                                        and d.func.attr == "kernel"
+                                    )
+                                ]
+
                                 func_op = ASTTransformer.build_FunctionDef(
-                                    new_ctx, node
+                                    new_ctx, new_node
                                 )
                                 func_op.attributes["df.kernel"] = UnitAttr.get()
+                                # Mark kernels inside sub-regions so they aren't called from top
+                                if hasattr(ctx, "func_suffix"):
+                                    func_op.attributes["df.nested_kernel"] = (
+                                        UnitAttr.get()
+                                    )
                                 if not ctx.unroll:
                                     func_op.attributes["tag"] = StringAttr.get(
                                         f"{orig_name}_{str(predicate_tag)}"
@@ -2002,7 +2038,13 @@ class ASTTransformer(ASTBuilder):
                                     ctx.func_tag2instance[orig_name][
                                         predicate_tag
                                     ] = func_op
+                                # Restore original name for next iteration
+                                node.name = orig_name
                             return
+
+                        elif decorator.func.attr == "region":
+                            # If it is a region, we should insert the calls to the kernels
+                            pass
         else:
             old_ctx = None
 
@@ -2094,6 +2136,54 @@ class ASTTransformer(ASTBuilder):
             ctx.func_args[func_name] = dtensors
             ctx.set_ip(func_op.entry_block)
             stmts = build_stmts(ctx, node.body)
+
+            # Insert calls to the kernels in the region (must be inside scope where args are visible)
+            if getattr(node, "is_region", False):
+                for stmt in node.body:
+                    if isinstance(stmt, ast.FunctionDef):
+                        # Check if it is a kernel
+                        for decorator in stmt.decorator_list:
+                            if (
+                                isinstance(decorator, ast.Call)
+                                and isinstance(decorator.func, ast.Attribute)
+                                and decorator.func.attr == "kernel"
+                            ):
+                                # It is a kernel, insert calls
+                                assert (
+                                    len(decorator.keywords) > 0
+                                ), "Missing kernel mapping"
+                                mapping = eval(
+                                    ast.unparse(decorator.keywords[0].value),
+                                    ctx.global_vars,
+                                )
+                                # Get arguments
+                                args_kw = get_kwarg_value(decorator.keywords, "args")
+                                if args_kw is not None:
+                                    args = build_stmts(ctx, args_kw)
+                                    arg_values = [
+                                        ASTTransformer.get_mlir_op_result(ctx, arg)
+                                        for arg in args
+                                    ]
+                                else:
+                                    arg_values = []
+                                # Insert calls
+                                for dim in np.ndindex(*mapping):
+                                    kernel_name = construct_kernel_name(stmt.name, dim)
+                                    # Append suffix from parent context to match kernel definition
+                                    if hasattr(ctx, "func_suffix"):
+                                        kernel_name = f"{kernel_name}_{ctx.func_suffix}"
+                                    # We need to resolve the tag for the kernel
+                                    # FIXME: checking the tag mapping is tricky here,
+                                    # we assume there is no tag mismatch for now
+                                    # if stmt.name in ctx.func_tag2instance:
+                                    #     ...
+                                    call_op = func_d.CallOp(
+                                        [],
+                                        FlatSymbolRefAttr.get(kernel_name),
+                                        arg_values,
+                                        ip=ctx.get_ip(),
+                                    )
+
             # node.returns is the function definition, not the actual return operation
             if len(stmts) > 0 and not ctx.has_return:
                 if (
@@ -2507,6 +2597,63 @@ class ASTTransformer(ASTBuilder):
                     ip=ctx.get_ip(),
                 )
             raise RuntimeError(f"Cannot resolve function `{node.func.id}`")
+
+        # Check if it is a Allo dataflow region/kernel (has mappings attribute from @df.region decorator)
+        if hasattr(obj, "mappings"):
+
+            # It is a dataflow region/kernel
+            # We need to build it first
+            src = inspect.getsource(obj)
+            tree = parse_ast(src)
+            # Find the function definition
+            # The structure should be Module -> FunctionDef
+            assert isinstance(tree, ast.Module)
+            assert isinstance(tree.body[0], ast.FunctionDef)
+            func_def = tree.body[0]
+            original_name = func_def.name
+
+            # Run type inference on the tree before building
+            # We need a fresh type inference context
+            type_inf_ctx = ASTContext(
+                tree=tree,
+                global_vars=ctx.global_vars.copy(),
+                mlir_ctx=ctx.mlir_ctx,
+            )
+            tree = TypeInferer()(type_inf_ctx, tree)
+            func_def = tree.body[0]
+
+            if not isinstance(node.func, ast.Attribute) or node.func.attr != "kernel":
+                # Mark as region so we can insert calls later
+                func_def.is_region = True
+                # Resolve naming collision by appending suffix
+                if hasattr(ctx, "func_suffix"):
+                    func_def.name = f"{original_name}_{ctx.func_suffix}"
+
+            # Create a new context
+            new_ctx = ctx.copy()
+            # Clear top_func to avoid nested definition behavior which assumes context sharing
+            # recursive build should start fresh but share globals/module
+            new_ctx.top_func = None
+            # We need to set the insertion point to the module body
+            # because the function op should be at the top level
+            # The first IP in the stack should be the module body
+            new_ctx.ip_stack = [ctx.ip_stack[0]]
+
+            func_op = ASTTransformer.build_FunctionDef(new_ctx, func_def)
+
+            # Now insert the call
+            # Parse arguments
+            new_args = build_stmts(ctx, node.args)
+            arg_values = [
+                ASTTransformer.get_mlir_op_result(ctx, arg) for arg in new_args
+            ]
+            call_op = func_d.CallOp(
+                [],
+                FlatSymbolRefAttr.get(func_def.name),
+                arg_values,
+                ip=ctx.get_ip(),
+            )
+            return call_op
 
         try:
             from ..backend.aie.vliw import VLIWKernelFunction

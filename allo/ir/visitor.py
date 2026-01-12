@@ -141,6 +141,8 @@ class ASTContext:
         ctx.rank = self.rank
         ctx.mapping = self.mapping
         ctx.meta_fors_to_unroll = self.meta_fors_to_unroll
+        if hasattr(self, "func_suffix"):
+            ctx.func_suffix = self.func_suffix
         return ctx
 
     def set_ip(self, ip):
@@ -326,9 +328,7 @@ class ASTVisitor:
 
     @staticmethod
     def visit_FunctionDef(ctx, node):
-        print("inside fundef")
         visit_stmts(ctx, node.body)
-        print("end inside fundef")
 
     @staticmethod
     def visit_Compare(ctx, node):
@@ -358,9 +358,7 @@ class ASTVisitor:
     @staticmethod
     def visit_Module(ctx, node):
         for stmt in node.body:
-            print("stmt", stmt)
             visit_stmt(ctx, stmt)
-            print("end", stmt)
 
     @staticmethod
     def visit_Call(ctx, node):
