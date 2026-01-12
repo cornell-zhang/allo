@@ -1998,6 +1998,9 @@ class ASTTransformer(ASTBuilder):
                             orig_name = node.name
                             if orig_name not in ctx.func_tag2instance:
                                 ctx.func_tag2instance[orig_name] = {}
+                            # Initialize dict to store kernel instance names for call insertion
+                            if not hasattr(ctx, "_kernel_instance_names"):
+                                ctx._kernel_instance_names = {}
                             for dim in np.ndindex(*mapping):
                                 if not ctx.unroll:
                                     # If not unrolled, assign tag to each instance.
@@ -2025,6 +2028,9 @@ class ASTTransformer(ASTBuilder):
                                 # Append suffix from parent context to ensure uniqueness
                                 if hasattr(ctx, "func_suffix"):
                                     node.name = f"{node.name}_{ctx.func_suffix}"
+                                # Store the kernel name for later call insertion
+                                # Use ctx since AST is reparsed for each region call
+                                ctx._kernel_instance_names[(orig_name, dim)] = node.name
 
                                 # Update func_suffix for children
                                 instance_suffix = "_".join([str(x) for x in dim])
@@ -2194,10 +2200,23 @@ class ASTTransformer(ASTBuilder):
                                     arg_values = []
                                 # Insert calls
                                 for dim in np.ndindex(*mapping):
-                                    kernel_name = construct_kernel_name(stmt.name, dim)
-                                    # Append suffix from parent context to match kernel definition
-                                    if hasattr(ctx, "func_suffix"):
-                                        kernel_name = f"{kernel_name}_{ctx.func_suffix}"
+                                    # Use stored kernel name from ctx (set during kernel definition)
+                                    # This ensures call uses the exact same name as definition
+                                    key = (stmt.name, dim)
+                                    if (
+                                        hasattr(ctx, "_kernel_instance_names")
+                                        and key in ctx._kernel_instance_names
+                                    ):
+                                        kernel_name = ctx._kernel_instance_names[key]
+                                    else:
+                                        kernel_name = construct_kernel_name(
+                                            stmt.name, dim
+                                        )
+                                        # Append suffix from parent context to match kernel definition
+                                        if hasattr(ctx, "func_suffix"):
+                                            kernel_name = (
+                                                f"{kernel_name}_{ctx.func_suffix}"
+                                            )
                                     # We need to resolve the tag for the kernel
                                     # FIXME: checking the tag mapping is tricky here,
                                     # we assume there is no tag mismatch for now
@@ -2645,6 +2664,9 @@ class ASTTransformer(ASTBuilder):
                 global_vars=ctx.global_vars.copy(),
                 mlir_ctx=ctx.mlir_ctx,
             )
+            # Propagate type parameters from subscript call (e.g., inner[2, 2])
+            if ctx.inst is not None:
+                type_inf_ctx.inst = ctx.inst
             tree = TypeInferer()(type_inf_ctx, tree)
             func_def = tree.body[0]
 
@@ -2652,7 +2674,17 @@ class ASTTransformer(ASTBuilder):
                 # Mark as region so we can insert calls later
                 func_def.is_region = True
                 # Resolve naming collision by appending suffix
-                if hasattr(ctx, "func_suffix"):
+                # Use type parameters as part of the suffix for uniqueness
+                if ctx.inst is not None:
+                    # Create suffix from type parameters (e.g., "2_2" for inner[2, 2])
+                    inst_suffix = "_".join(str(x) for x in ctx.inst)
+                    if hasattr(ctx, "func_suffix"):
+                        func_def.name = (
+                            f"{original_name}_{inst_suffix}_{ctx.func_suffix}"
+                        )
+                    else:
+                        func_def.name = f"{original_name}_{inst_suffix}"
+                elif hasattr(ctx, "func_suffix"):
                     func_def.name = f"{original_name}_{ctx.func_suffix}"
 
             # Create a new context
@@ -2660,10 +2692,22 @@ class ASTTransformer(ASTBuilder):
             # Clear top_func to avoid nested definition behavior which assumes context sharing
             # recursive build should start fresh but share globals/module
             new_ctx.top_func = None
+            # Clear func_id since we already handle uniqueness via func_suffix and type parameters
+            # Otherwise func_id would append another suffix in build_FunctionDef
+            new_ctx.func_id = None
             # We need to set the insertion point to the module body
             # because the function op should be at the top level
             # The first IP in the stack should be the module body
             new_ctx.ip_stack = [ctx.ip_stack[0]]
+            # Propagate type parameters from subscript call (e.g., inner[2, 2])
+            if ctx.inst is not None:
+                new_ctx.inst = ctx.inst
+                # Set func_suffix for kernels inside the region based on type parameters
+                inst_suffix = "_".join(str(x) for x in ctx.inst)
+                if hasattr(ctx, "func_suffix"):
+                    new_ctx.func_suffix = f"{inst_suffix}_{ctx.func_suffix}"
+                else:
+                    new_ctx.func_suffix = inst_suffix
 
             func_op = ASTTransformer.build_FunctionDef(new_ctx, func_def)
 
