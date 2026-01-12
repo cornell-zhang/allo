@@ -1293,6 +1293,11 @@ class ASTTransformer(ASTBuilder):
                 and isinstance(val.dtype, Index)
             ):
                 return ASTTransformer.build_affine_expr(ctx, val.value)
+            # If the symbol is found in the local scope but not handled above
+            # (e.g., non-affine loop variable), we should return None immediately
+            # to avoid masking it with global variables (e.g., from get_pid).
+            if val is not None:
+                return None
             if node.id in ctx.global_vars and isinstance(ctx.global_vars[node.id], int):
                 return ASTTransformer.build_affine_expr(
                     ctx, ast.Constant(ctx.global_vars[node.id])
@@ -1826,6 +1831,26 @@ class ASTTransformer(ASTBuilder):
     @staticmethod
     def build_AnnAssign(ctx: ASTContext, node: ast.AnnAssign):
         shape, dtype = node.target.shape, node.target.dtype
+        if hasattr(dtype, "constexpr") and dtype.constexpr:
+            if node.value is None:
+                raise RuntimeError(
+                    f"ConstExpr variable '{node.target.id}' must be initialized"
+                )
+            try:
+                # We need to evaluate the expression in the context of global_vars
+                # Construct an expression from node.value
+                expr = ast.Expression(node.value)
+                code = compile(expr, filename="<string>", mode="eval")
+                val = eval(code, ctx.global_vars)
+                ctx.global_vars[node.target.id] = val
+                # Also put in current scope to avoid lookup failure if shadowed?
+                # But builder prefers get_symbol.
+                # Types/Values in global_vars are handled by build_Name.
+                return None
+            except Exception as e:
+                raise RuntimeError(
+                    f"Failed to evaluate ConstExpr '{node.target.id}': {e}"
+                ) from e
         if hasattr(dtype, "stateful") and dtype.stateful:
             # Generate unique global name
             if not hasattr(ctx, "stateful_counter"):
