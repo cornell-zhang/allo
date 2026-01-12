@@ -580,21 +580,25 @@ class ASTTransformer(ASTBuilder):
             op = arith_d.FPToUIOp(
                 IntegerType.get_signless(32), op_result, ip=ctx.get_ip()
             )
+            op_result = op.result
             opcls = arith_d.IndexCastOp  # proceed to build cast to index
         elif isinstance(src_type, Index) and isinstance(res_type, Float):
             op = arith_d.IndexCastOp(
                 IntegerType.get_signless(32), op_result, ip=ctx.get_ip()
             )
+            op_result = op.result
             opcls = arith_d.SIToFPOp  # proceed to build cast to float
         elif isinstance(src_type, Index) and isinstance(res_type, (Fixed, UFixed)):
             op = arith_d.IndexCastOp(
                 IntegerType.get_signless(32), op_result, ip=ctx.get_ip()
             )
+            op_result = op.result
             opcls = allo_d.IntToFixedOp  # proceed to build cast to float
         elif isinstance(src_type, (Fixed, UFixed)) and isinstance(res_type, Index):
             op = allo_d.FixedToIntOp(
                 IntegerType.get_signless(32), op_result, ip=ctx.get_ip()
             )
+            op_result = op.result
             opcls = arith_d.IndexCastOp
         elif isinstance(src_type, (Int, UInt)) and isinstance(res_type, (Int, UInt)):
             if src_type.bits > res_type.bits:
