@@ -7,11 +7,10 @@ import allo.backend.hls as hls
 import numpy as np
 
 M, N, K = 32, 32, 32
-P0, P1 = 2, 2
 
 
 @df.region()
-def inner(A: float32[M, K], B: float32[K, N], C: float32[M, N]):
+def inner[P0, P1](A: float32[M, K], B: float32[K, N], C: float32[M, N]):
     @df.kernel(mapping=[P0, P1], args=[A, B, C])
     def gemm(local_A: float32[M, K], local_B: float32[K, N], local_C: float32[M, N]):
         pi, pj = df.get_pid()
@@ -34,9 +33,9 @@ def top(A: float32[M, K], B: float32[K, N], C1: float32[M, N], C2: float32[M, N]
     ):
         i = df.get_pid()
         with allo.meta_if(i == 0):
-            inner(local_A, local_B, local_C1)
+            inner[2, 2](local_A, local_B, local_C1)
         with allo.meta_if(i == 1):
-            inner(local_A, local_B, local_C2)
+            inner[4, 4](local_A, local_B, local_C2)
 
 
 def test_hierachical_function():
