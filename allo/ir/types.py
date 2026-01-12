@@ -59,6 +59,7 @@ class AlloType:
         self.fracs = fracs
         self.name = name
         self.stateful = False
+        self.constexpr = False
 
     def build(self):
         # Required a MLIR context outside
@@ -301,6 +302,18 @@ class Struct(AlloType):
         for _, dtype in self.dtype_dict.items():
             types.append(dtype.build())
         return allo_d.StructType.get(types)
+
+
+class ConstExpr:
+    """
+    A marker for compile-time constant variables.
+    Usage:
+        a: ConstExpr[int32] = 10
+    """
+
+    # pylint: disable=unused-argument
+    def __class_getitem__(cls, item):
+        return cls
 
 
 class Stream(AlloType):

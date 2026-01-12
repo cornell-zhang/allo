@@ -6,7 +6,7 @@ import tempfile
 import numpy as np
 import pytest
 import allo
-from allo.ir.types import bool, int8, int32, float32, index
+from allo.ir.types import bool, int8, int32, float32, index, ConstExpr
 import allo.backend.hls as hls
 import io
 from contextlib import redirect_stdout
@@ -1288,6 +1288,89 @@ def test_augmented_assign_in_meta_for():
     # Result should be (A * 2) + 1
     np.testing.assert_array_equal(np_A3, np.array([3, 5, 7, 9, 11], dtype=np.int32))
     print("Test 3 passed: multiple augmented operations work correctly")
+
+
+def test_constexpr_loop_bound():
+    M = 10
+
+    def kernel(A: int32[10]) -> int32[10]:
+        limit: ConstExpr[int32] = M // 2
+        B: int32[10]
+        # limit is 5
+        for i in range(limit):
+            B[i] = A[i] + 1
+        for i in range(limit, 10):
+            B[i] = A[i]
+        return B
+
+    s = allo.customize(kernel)
+    mod = s.build()
+    np_A = np.arange(10, dtype=np.int32)
+    np_B = mod(np_A)
+    expected = np.copy(np_A)
+    expected[:5] += 1
+    np.testing.assert_array_equal(np_B, expected)
+
+    # Check IR for constant loop bounds
+    src = str(s.module)
+    print(src)
+    assert "to 5" in src
+    assert "scf.for" not in src
+
+
+def test_constexpr_arithmetic():
+    def kernel(A: int32[10]) -> int32[10]:
+        base: ConstExpr[int32] = 2
+        mult: ConstExpr[int32] = 3
+        # offset should be 6
+        offset: ConstExpr[int32] = base * mult
+        B: int32[10]
+        for i in range(10):
+            B[i] = A[i] + offset
+        return B
+
+    s = allo.customize(kernel)
+    mod = s.build()
+    np_A = np.arange(10, dtype=np.int32)
+    np_B = mod(np_A)
+    np.testing.assert_array_equal(np_B, np_A + 6)
+
+    # Check IR to ensure '6' is used as a constant or folded
+    src = str(s.module)
+    print(src)
+    # It might appear as constant 6 or used in map
+    assert "constant 6" in src or "c6_i32" in src
+
+
+def test_constexpr_dependence():
+    def kernel(A: int32[10]) -> int32[10]:
+        N: ConstExpr[int32] = 4
+        M: ConstExpr[int32] = N + 2  # 6
+        K: ConstExpr[int32] = M + 2  # 8
+        B: int32[10]
+        for i in range(K):
+            B[i] = A[i] * 2
+        for i in range(K, 10):
+            B[i] = A[i]
+        return B
+
+    s = allo.customize(kernel)
+    print(s.module)
+    mod = s.build()
+    np_A = np.arange(10, dtype=np.int32)
+    np_B = mod(np_A)
+    expected = np.copy(np_A)
+    expected[:8] *= 2
+    np.testing.assert_array_equal(np_B, expected)
+
+
+def test_constexpr_error_uninitialized():
+    def kernel():
+        a: ConstExpr[int32]
+        pass
+
+    with pytest.raises(SystemExit):
+        allo.customize(kernel)
 
 
 if __name__ == "__main__":

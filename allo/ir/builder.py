@@ -580,21 +580,25 @@ class ASTTransformer(ASTBuilder):
             op = arith_d.FPToUIOp(
                 IntegerType.get_signless(32), op_result, ip=ctx.get_ip()
             )
+            op_result = op.result
             opcls = arith_d.IndexCastOp  # proceed to build cast to index
         elif isinstance(src_type, Index) and isinstance(res_type, Float):
             op = arith_d.IndexCastOp(
                 IntegerType.get_signless(32), op_result, ip=ctx.get_ip()
             )
+            op_result = op.result
             opcls = arith_d.SIToFPOp  # proceed to build cast to float
         elif isinstance(src_type, Index) and isinstance(res_type, (Fixed, UFixed)):
             op = arith_d.IndexCastOp(
                 IntegerType.get_signless(32), op_result, ip=ctx.get_ip()
             )
+            op_result = op.result
             opcls = allo_d.IntToFixedOp  # proceed to build cast to float
         elif isinstance(src_type, (Fixed, UFixed)) and isinstance(res_type, Index):
             op = allo_d.FixedToIntOp(
                 IntegerType.get_signless(32), op_result, ip=ctx.get_ip()
             )
+            op_result = op.result
             opcls = arith_d.IndexCastOp
         elif isinstance(src_type, (Int, UInt)) and isinstance(res_type, (Int, UInt)):
             if src_type.bits > res_type.bits:
@@ -744,15 +748,13 @@ class ASTTransformer(ASTBuilder):
             else:
                 cast_op = opcls(
                     mlir_type,
-                    ASTTransformer.get_mlir_op_result(ctx, op),
+                    op_result,
                     ip=ctx.get_ip(),
                 )
             if isinstance(res_type, UInt):
                 cast_op.attributes["unsigned"] = UnitAttr.get()
         else:
-            cast_op = opcls(
-                mlir_type, ASTTransformer.get_mlir_op_result(ctx, op), ip=ctx.get_ip()
-            )
+            cast_op = opcls(mlir_type, op_result, ip=ctx.get_ip())
         return cast_op
 
     @staticmethod
@@ -1293,6 +1295,11 @@ class ASTTransformer(ASTBuilder):
                 and isinstance(val.dtype, Index)
             ):
                 return ASTTransformer.build_affine_expr(ctx, val.value)
+            # If the symbol is found in the local scope but not handled above
+            # (e.g., non-affine loop variable), we should return None immediately
+            # to avoid masking it with global variables (e.g., from get_pid).
+            if val is not None:
+                return None
             if node.id in ctx.global_vars and isinstance(ctx.global_vars[node.id], int):
                 return ASTTransformer.build_affine_expr(
                     ctx, ast.Constant(ctx.global_vars[node.id])
@@ -1826,6 +1833,26 @@ class ASTTransformer(ASTBuilder):
     @staticmethod
     def build_AnnAssign(ctx: ASTContext, node: ast.AnnAssign):
         shape, dtype = node.target.shape, node.target.dtype
+        if hasattr(dtype, "constexpr") and dtype.constexpr:
+            if node.value is None:
+                raise RuntimeError(
+                    f"ConstExpr variable '{node.target.id}' must be initialized"
+                )
+            try:
+                # We need to evaluate the expression in the context of global_vars
+                # Construct an expression from node.value
+                expr = ast.Expression(node.value)
+                code = compile(expr, filename="<string>", mode="eval")
+                val = eval(code, ctx.global_vars)
+                ctx.global_vars[node.target.id] = val
+                # Also put in current scope to avoid lookup failure if shadowed?
+                # But builder prefers get_symbol.
+                # Types/Values in global_vars are handled by build_Name.
+                return None
+            except Exception as e:
+                raise RuntimeError(
+                    f"Failed to evaluate ConstExpr '{node.target.id}': {e}"
+                ) from e
         if hasattr(dtype, "stateful") and dtype.stateful:
             # Generate unique global name
             if not hasattr(ctx, "stateful_counter"):

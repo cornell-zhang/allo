@@ -32,6 +32,7 @@ from .types import (
     Struct,
     Stream,
     stateful,
+    ConstExpr,
 )
 from .typing_rule import get_typing_rule
 from ..utils import (
@@ -107,6 +108,13 @@ class TypeInferer(ASTVisitor):
                 stream_dtype = Stream(dtype=base_type, shape=base_shape, depth=depth)
                 shape = tuple()
                 return stream_dtype, shape, None
+            if dtype is ConstExpr:
+                # e.g., a: ConstExpr[int32]
+                base_type, base_shape, _ = TypeInferer.visit_type_hint(ctx, node.slice)
+                assert len(base_shape) == 0, "ConstExpr only supports scalar types"
+                const_dtype = copy.deepcopy(base_type)
+                const_dtype.constexpr = True
+                return const_dtype, tuple(), None
             assert dtype is not None, f"Unsupported type `{node.value.id}`"
             size = node.slice.value if isinstance(node.slice, ast.Index) else node.slice
             elts = size.elts if isinstance(size, ast.Tuple) else [size]
