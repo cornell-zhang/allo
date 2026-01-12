@@ -5,31 +5,23 @@ import tempfile
 
 import pytest
 import allo
-from allo.ir.types import int8, Stream, UInt
+from allo.ir.types import int8, int32, Stream, UInt, ConstExpr
 from allo.utils import get_np_struct_type
 import allo.dataflow as df
 import allo.backend.hls as hls
 import allo.dsl as dsl
 import numpy as np
 
-# M, N, K = 64, 64, 64
-# M, N, K = 128, 128, 128
-# M, N, K = 256, 256, 256
-# M, N, K = 512, 512, 512
-M, N, K = 1024, 1024, 1024
-Rt, Ct = 16, 16
-# Rt, Ct = 8, 8
-# Rt, Ct = 4, 4
-# Rt, Ct = 2, 2
-P0, P1 = Rt + 2, Ct + 2
-
 
 @df.region()
-def top(
-    A_Packed: UInt(Rt * 8)[M * K // Rt],
-    B_Packed: UInt(Ct * 8)[K * N // Ct],
-    C_Packed: UInt(Rt * 8)[M * N // Rt],
+def MXU[Rt, Ct, M, N, K](
+    A_Packed: "UInt(Rt * 8)[M * K // Rt]",
+    B_Packed: "UInt(Ct * 8)[K * N // Ct]",
+    C_Packed: "UInt(Rt * 8)[M * N // Rt]",
 ):
+    P0: ConstExpr[int32] = Rt + 2
+    P1: ConstExpr[int32] = Ct + 2
+
     L3_A: Stream[UInt(Rt * 8), 4]
     L3_B: Stream[UInt(Ct * 8), 4]
     L3_C: Stream[UInt(Rt * 8), 4]
@@ -44,18 +36,18 @@ def top(
     fifo_B: Stream[int8, 4][Rt, Ct]
 
     @df.kernel(mapping=[1], args=[A_Packed])
-    def offchip_loadA(local_A_Packed: UInt(Rt * 8)[M * K // Rt]):
+    def offchip_loadA(A_Packed_in: "UInt(Rt * 8)[M * K // Rt]"):
         for mt, nt in dsl.grid(M // Rt, N // Ct):
             for k in range(K):
-                L3_A.put(local_A_Packed[mt * K + k])
+                L3_A.put(A_Packed_in[mt * K + k])
 
     @df.kernel(mapping=[1], args=[B_Packed])
-    def offchip_loadB(local_B_Packed: UInt(Ct * 8)[K * N // Ct]):
+    def offchip_loadB(B_Packed_in: "UInt(Ct * 8)[K * N // Ct]"):
         for mt, nt in dsl.grid(M // Rt, N // Ct):
             for k in range(K):
-                L3_B.put(local_B_Packed[nt * K + k])
+                L3_B.put(B_Packed_in[nt * K + k])
 
-    @df.kernel(mapping=[P0, P1], args=[])
+    @df.kernel(mapping=[P0, P1])
     def gemm():
         i, j = df.get_pid()
         # peripheral kernels
@@ -131,10 +123,29 @@ def top(
                 L1_C[i - 1, j - 1].put(packed_c)
 
     @df.kernel(mapping=[1], args=[C_Packed])
-    def offchip_store(local_C_Packed: UInt(Rt * 8)[M * N // Rt]):
+    def offchip_store(C_Packed_out: "UInt(Rt * 8)[M * N // Rt]"):
         for mt, nt in dsl.grid(M // Rt, N // Ct):
             for n in range(Ct):
-                local_C_Packed[mt * N + nt * Ct + n] = L3_C.get()
+                C_Packed_out[mt * N + nt * Ct + n] = L3_C.get()
+
+
+Rt, Ct = 2, 2
+M, N, K = 32, 32, 32
+
+
+@df.region()
+def top(
+    A: "UInt(Rt * 8)[M * K // Rt]",
+    B: "UInt(Ct * 8)[K * N // Ct]",
+    C: "UInt(Rt * 8)[M * N // Rt]",
+):
+    @df.kernel(mapping=[1], args=[A, B, C])
+    def wrapper(
+        A_Packed: "UInt(Rt * 8)[M * K // Rt]",
+        B_Packed: "UInt(Ct * 8)[K * N // Ct]",
+        C_Packed: "UInt(Rt * 8)[M * N // Rt]",
+    ):
+        MXU[Rt, Ct, M, N, K](A_Packed, B_Packed, C_Packed)
 
 
 @pytest.mark.skip(

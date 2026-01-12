@@ -679,6 +679,11 @@ class TypeInferer(ASTVisitor):
         node.target.shape = node.shape = target_shape
         # Store the memory/layout spec for local variables
         node.target.spec = node.spec = spec
+        # If the variable is a compile-time constant, we need to register it in the global_vars
+        # so that it can be used in the type hint of the following statements.
+        if getattr(target_dtype, "constexpr", False):
+            val = ASTResolver.resolve(node.value, ctx.global_vars)
+            ctx.global_vars[node.target.id] = val
         final_shape, lhs_dims, rhs_dims = TypeInferer.visit_broadcast(
             ctx,
             node.target.shape,
@@ -1398,11 +1403,24 @@ class TypeInferer(ASTVisitor):
         # Compile-time comparison
         if node.items[0].context_expr.func.attr in {"meta_if", "meta_elif"}:
             cond = ASTResolver.resolve_constant(node.items[0].context_expr.args[0], ctx)
+            alive_var_names = ctx.get_alive_var_names()
+            # Filter out ConstExpr variables from alive_var_names
+            filtered_var_names = set()
+            for name in alive_var_names:
+                sym = ctx.get_symbol(name)
+                # If the symbol is a ConstExpr, we should treat it as a constant
+                # and allow it to be resolved by the ASTResolver / ReplaceNames.
+                # Therefore, we remove it from the "variables" list which represents
+                # dynamic variables that cannot be resolved at compile time.
+                if not (
+                    hasattr(sym, "dtype") and getattr(sym.dtype, "constexpr", False)
+                ):
+                    filtered_var_names.add(name)
             symbolic_cond, loops_to_unroll = get_symbolic_expr(
                 copy.deepcopy(node.items[0].context_expr.args[0]),
                 ctx.symbolic,
                 ctx.global_vars,
-                ctx.get_alive_var_names(),
+                filtered_var_names,
             )
             ctx.meta_fors_to_unroll.update(loops_to_unroll)
             if node.items[0].context_expr.func.attr == "meta_if":
