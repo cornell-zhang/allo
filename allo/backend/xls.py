@@ -160,14 +160,17 @@ def _parse_memory_comments(body):
             # Format: elem_type, size, name, memory_space, dim0, dim1, ...
             if len(parts) < 4:
                 continue  # Invalid format, skip
-            
+
             elem_type, size_str, name, mem_space_str = (
-                parts[0], parts[1], parts[2], parts[3]
+                parts[0],
+                parts[1],
+                parts[2],
+                parts[3],
             )
             dims = [d for d in parts[4:] if d]
-            
+
             decls.append(f"__xls_memory<{elem_type}, {size_str}> {name};")
-            
+
             size_m = re.match(r"(\d+)", size_str)
             mem_space_m = re.match(r"(\d+)", mem_space_str)
             if size_m:
@@ -175,17 +178,19 @@ def _parse_memory_comments(body):
                 memory_space = int(mem_space_m.group(1)) if mem_space_m else 0
                 # Decode: memory_space = resource_code * 16 + storage_type_code
                 storage_type_code = memory_space % 16
-                # Default to RAM_2P (dual port) when not specified
+                # Default to RAM_2P (dual port, maps to RAM_1R1W in XLS) when not specified
                 if storage_type_code == 0:
                     storage_type_code = 2
-                
+
                 int_dims = [
                     int(re.match(r"(\d+)", d).group(1))
                     for d in dims
                     if re.match(r"(\d+)", d)
                 ]
-                mems.append((name, elem_type, size, int_dims or [size], storage_type_code))
-                
+                mems.append(
+                    (name, elem_type, size, int_dims or [size], storage_type_code)
+                )
+
         elif state_m:
             for v in state_m.group(1).split(","):
                 v = v.split(";")[0].split("//")[0].strip()
@@ -201,6 +206,7 @@ def _parse_memory_comments(body):
 STORAGE_TYPE_TO_XLS_RAM = {
     1: "RAM_1RW",  # RAM_1P (single port)
     2: "RAM_1R1W",  # RAM_2P (dual port) - default
+    5: "RAM_1R1W",  # RAM_S2P (alias of RAM_2P)
     6: "RAM_1RW",  # ROM_1P (single port ROM)
 }
 
@@ -253,30 +259,29 @@ def _gen_textproto(mems):
         # Use size (array size) as depth by default
         depth = size
 
+        # Determine channel mappings based on RAM kind
         if xls_ram_kind == "RAM_1RW":
-            # Single port RAM - XLS uses different channel mapping
-            lines.append(
-                f"""rewrites {{
-  from_config {{ kind: RAM_ABSTRACT depth: {depth} }}
-  to_config {{ kind: RAM_1RW depth: {depth} }}
-  from_channels_logical_to_physical: {{ key: "abstract_read_req" value: "{name}_req" }}
-  from_channels_logical_to_physical: {{ key: "abstract_read_resp" value: "{name}_resp" }}
-  from_channels_logical_to_physical: {{ key: "abstract_write_req" value: "{name}_req" }}
-  from_channels_logical_to_physical: {{ key: "write_completion" value: "{name}_resp" }}
-  to_name_prefix: "{name}_"
-}}
-"""
-            )
+            # Single port RAM - shared channels for read and write
+            read_req = f"{name}_req"
+            read_resp = f"{name}_resp"
+            write_req = f"{name}_req"
+            write_resp = f"{name}_resp"
         else:
             # Dual port RAM (RAM_1R1W) - separate read and write channels
-            lines.append(
-                f"""rewrites {{
+            read_req = f"{name}_read_request"
+            read_resp = f"{name}_read_response"
+            write_req = f"{name}_write_request"
+            write_resp = f"{name}_write_response"
+
+        # Generate rewrite configuration (only difference is to_config kind)
+        lines.append(
+            f"""rewrites {{
   from_config {{ kind: RAM_ABSTRACT depth: {depth} }}
-  to_config {{ kind: RAM_1R1W depth: {depth} }}
-  from_channels_logical_to_physical: {{ key: "abstract_read_req" value: "{name}_read_request" }}
-  from_channels_logical_to_physical: {{ key: "abstract_read_resp" value: "{name}_read_response" }}
-  from_channels_logical_to_physical: {{ key: "abstract_write_req" value: "{name}_write_request" }}
-  from_channels_logical_to_physical: {{ key: "write_completion" value: "{name}_write_response" }}
+  to_config {{ kind: {xls_ram_kind} depth: {depth} }}
+  from_channels_logical_to_physical: {{ key: "abstract_read_req" value: "{read_req}" }}
+  from_channels_logical_to_physical: {{ key: "abstract_read_resp" value: "{read_resp}" }}
+  from_channels_logical_to_physical: {{ key: "abstract_write_req" value: "{write_req}" }}
+  from_channels_logical_to_physical: {{ key: "write_completion" value: "{write_resp}" }}
   to_name_prefix: "{name}_"
 }}
 """

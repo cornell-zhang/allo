@@ -352,7 +352,7 @@ def update_streaming_interface(module, target, depth=-1):
 
 
 def create_data_movement(
-    tensors, name, ip, from_memory=True, flatten=False, mapping=None
+    tensors, name, ip, from_memory=True, flatten=False, mapping=None, typehint=None
 ):
 
     if len(tensors) != 2:
@@ -392,6 +392,9 @@ def create_data_movement(
                 induction_vars,
                 affine_attr,
             )
+            # Set unsigned attribute if typehint indicates unsigned
+            if typehint == "u":
+                load.attributes["unsigned"] = UnitAttr.get()
             affine_d.AffineStoreOp(
                 load.result,
                 des_tensor,
@@ -426,6 +429,9 @@ def create_data_movement(
                 induction_vars,
                 affine_attr,
             )
+            # Set unsigned attribute if typehint indicates unsigned
+            if typehint == "u":
+                load.attributes["unsigned"] = UnitAttr.get()
 
             # Build StoreOp
             if dst_pattern is not None:
@@ -441,7 +447,9 @@ def create_data_movement(
             )
 
 
-def wrap_data_movement(arg, ip, func_name, from_memory, flatten, mapping):
+def wrap_data_movement(
+    arg, ip, func_name, from_memory, flatten, mapping, typehint=None
+):
     # Build input types
     shape = MemRefType(arg.type).shape
 
@@ -460,9 +468,18 @@ def wrap_data_movement(arg, ip, func_name, from_memory, flatten, mapping):
     func_op = func_d.FuncOp(name=func_name, type=func_type, ip=ip)
 
     # Attach type hints
-    if hasattr(arg, "dtype"):
-        typehints = [get_extra_type_hints(arg.dtype)] * 2
+    if typehint is not None:
+        # Use provided type hint
+        typehints = [typehint] * 2
         func_op.attributes["itypes"] = StringAttr.get("".join(typehints))
+        # Extract the typehint character for create_data_movement
+        typehint_char = typehint
+    elif hasattr(arg, "dtype"):
+        typehint_char = get_extra_type_hints(arg.dtype)
+        typehints = [typehint_char] * 2
+        func_op.attributes["itypes"] = StringAttr.get("".join(typehints))
+    else:
+        typehint_char = None
 
     # Set context
     func_op.add_entry_block()
@@ -478,6 +495,7 @@ def wrap_data_movement(arg, ip, func_name, from_memory, flatten, mapping):
             from_memory=from_memory,
             flatten=flatten,
             mapping=mapping,
+            typehint=typehint_char,
         )
 
     func_d.ReturnOp([], ip=InsertionPoint(func_op.entry_block))

@@ -13,6 +13,7 @@ from .._mlir.ir import (
     Context,
     Location,
     Module,
+    UnitAttr,
 )
 from .._mlir.passmanager import PassManager
 
@@ -200,6 +201,9 @@ class HLSModule:
         with Context() as ctx, Location.unknown():
             allo_d.register_dialect(ctx)
             self.module = Module.parse(str(mod), ctx)
+            func = find_func_in_module(self.module, top_func_name)
+            func.attributes["top"] = UnitAttr.get()
+
             if platform in {"vitis_hls", "pynq"}:
                 assert func_args is not None, "Need to specify func_args"
                 if wrap_io:
@@ -226,13 +230,24 @@ class HLSModule:
             )
             pm.run(self.module.operation)
         buf = io.StringIO()
+        success = True
         match platform:
             case "tapa":
-                allo_d.emit_thls(self.module, buf)
+                success = allo_d.emit_thls(self.module, buf)
             case "intel_hls":
-                allo_d.emit_ihls(self.module, buf)
+                success = allo_d.emit_ihls(self.module, buf)
             case _:
-                allo_d.emit_vhls(self.module, buf, flatten=(not wrap_io))
+                # wrap_io=True has already linearized array indexing in
+                # generate_input_output_buffers, so we don't need to do it again
+                flatten = False if platform == "vivado_hls" else (not wrap_io)
+                success = allo_d.emit_vhls(self.module, buf, flatten=flatten)
+
+        if not success:
+            raise RuntimeError(
+                "Failed to emit HLS code. Check error messages above for details. "
+                "Common issues: nested functions with multi-dimensional arrays when wrap_io=False."
+            )
+
         buf.seek(0)
         self.hls_code = buf.read()
         # pylint: disable=too-many-nested-blocks

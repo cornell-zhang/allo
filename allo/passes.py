@@ -130,6 +130,18 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
     if mappings is None:
         mappings = [None] * len(top_func.arguments)
 
+    # Extract type hints from top function's itypes and otypes attributes
+    input_typehints = {}
+    output_typehints = {}
+    if "itypes" in top_func.attributes:
+        itypes_str = top_func.attributes["itypes"].value
+        for idx, typehint in enumerate(itypes_str):
+            input_typehints[idx] = typehint
+    if "otypes" in top_func.attributes:
+        otypes_str = top_func.attributes["otypes"].value
+        for idx, typehint in enumerate(otypes_str):
+            output_typehints[idx] = typehint
+
     load_store_mapping = analyze_arg_load_store(module)
     # Build Buffer-Load functions
     load_func_names = []
@@ -151,6 +163,7 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
                     from_memory=True,
                     flatten=flatten,
                     mapping=mappings[idx],
+                    typehint=input_typehints.get(idx),
                 )
 
     # Find ReturnOp
@@ -181,6 +194,7 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
                     from_memory=False,
                     flatten=flatten,
                     mapping=mappings[idx],
+                    typehint=output_typehints.get(idx),
                 )
 
         else:
@@ -200,6 +214,7 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
                         from_memory=False,
                         flatten=flatten,
                         mapping=mappings[-1],
+                        typehint=input_typehints.get(idx),
                     )
 
     # Modify Top function
@@ -223,6 +238,9 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
                     [],
                 )
                 alloc_op.attributes["name"] = StringAttr.get(f"buf{idx}")
+                # Set unsigned attribute if typehint indicates unsigned
+                if input_typehints.get(idx) == "u":
+                    alloc_op.attributes["unsigned"] = UnitAttr.get()
 
                 # Replace original argument with buffer
                 arg.replace_all_uses_with(alloc_op.result)
@@ -283,6 +301,9 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
                 alloc_op.attributes["name"] = StringAttr.get(
                     f"res{idx + len(top_func.arguments)}"
                 )
+                # Set unsigned attribute if typehint indicates unsigned
+                if output_typehints.get(idx) == "u":
+                    alloc_op.attributes["unsigned"] = UnitAttr.get()
 
                 # Update returnop
                 op_return.operation.replace_uses_of_with(arg, alloc_op.result)

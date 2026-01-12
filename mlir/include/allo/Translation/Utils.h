@@ -43,6 +43,9 @@ public:
   // Configuration flags
   bool linearize_pointers = false;
 
+  // Track which values are top-level function arguments (for linearization)
+  DenseSet<Value> topLevelFunctionArgs;
+
 private:
   AlloEmitterState(const AlloEmitterState &) = delete;
   void operator=(const AlloEmitterState &) = delete;
