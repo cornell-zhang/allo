@@ -311,6 +311,7 @@ class ConstExpr:
         a: ConstExpr[int32] = 10
     """
 
+    # pylint: disable=unused-argument
     def __class_getitem__(cls, item):
         return cls
 
