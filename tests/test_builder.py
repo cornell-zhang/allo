@@ -1346,19 +1346,21 @@ def test_constexpr_dependence():
     def kernel(A: int32[10]) -> int32[10]:
         N: ConstExpr[int32] = 4
         M: ConstExpr[int32] = N + 2  # 6
+        K: ConstExpr[int32] = M + 2  # 8
         B: int32[10]
-        for i in range(M):
+        for i in range(K):
             B[i] = A[i] * 2
-        for i in range(M, 10):
+        for i in range(K, 10):
             B[i] = A[i]
         return B
 
     s = allo.customize(kernel)
+    print(s.module)
     mod = s.build()
     np_A = np.arange(10, dtype=np.int32)
     np_B = mod(np_A)
     expected = np.copy(np_A)
-    expected[:6] *= 2
+    expected[:8] *= 2
     np.testing.assert_array_equal(np_B, expected)
 
 

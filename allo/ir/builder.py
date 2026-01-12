@@ -744,15 +744,13 @@ class ASTTransformer(ASTBuilder):
             else:
                 cast_op = opcls(
                     mlir_type,
-                    ASTTransformer.get_mlir_op_result(ctx, op),
+                    op_result,
                     ip=ctx.get_ip(),
                 )
             if isinstance(res_type, UInt):
                 cast_op.attributes["unsigned"] = UnitAttr.get()
         else:
-            cast_op = opcls(
-                mlir_type, ASTTransformer.get_mlir_op_result(ctx, op), ip=ctx.get_ip()
-            )
+            cast_op = opcls(mlir_type, op_result, ip=ctx.get_ip())
         return cast_op
 
     @staticmethod
