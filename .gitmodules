@@ -5,3 +5,11 @@
 [submodule "externals/past-python-bindings"]
 	path = externals/past-python-bindings
 	url = https://github.com/cornell-zhang/past-python-bindings.git
+
+[submodule "externals/stablehlo"]
+	path = externals/stablehlo
+	url = https://github.com/openxla/stablehlo.git
+
+[submodule "externals/shardy"]
+	path = externals/shardy
+	url = https://github.com/openxla/shardy.git

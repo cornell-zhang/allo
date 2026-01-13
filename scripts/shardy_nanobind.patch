@@ -1,0 +1,3771 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index ec8d310..2405027 100755
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -53,5 +53,7 @@ add_compile_options(-Wno-deprecated-declarations -Wno-unused-but-set-variable -W
+ add_subdirectory(shardy/common)
+ add_subdirectory(shardy/dialect/sdy/ir)
+ add_subdirectory(shardy/dialect/sdy/transforms)
++add_subdirectory(shardy/dialect/mpmd/ir)
++add_subdirectory(shardy/dialect/mpmd/transforms)
+ add_subdirectory(shardy/integrations/python/ir)
+ add_subdirectory(shardy/integrations/c)
+\ No newline at end of file
+diff --git a/shardy/dialect/mpmd/ir/CMakeLists.txt b/shardy/dialect/mpmd/ir/CMakeLists.txt
+new file mode 100644
+index 0000000..e19a236
+--- /dev/null
++++ b/shardy/dialect/mpmd/ir/CMakeLists.txt
+@@ -0,0 +1,104 @@
++# Shardy MLIR MPMD dialect.
++
++set(LLVM_TARGET_DEFINITIONS dialect.td)
++mlir_tablegen(dialect.h.inc -gen-dialect-decls -dialect=mpmd)
++mlir_tablegen(dialect.cc.inc -gen-dialect-defs -dialect=mpmd)
++add_public_tablegen_target(MpmdDialectIncGen)
++add_dependencies(mlir-headers MpmdDialectIncGen)
++add_mlir_doc(dialect MpmdDialect src/autogen/md/Dialect/ -gen-dialect-doc)
++
++set(LLVM_TARGET_DEFINITIONS canonicalization.td)
++mlir_tablegen(canonicalization.cc.inc -gen-rewriters)
++add_public_tablegen_target(MpmdCanonicalizationIncGen)
++add_dependencies(mlir-headers MpmdCanonicalizationIncGen)
++
++set(LLVM_TARGET_DEFINITIONS ops.td)
++mlir_tablegen(ops.h.inc -gen-op-decls)
++mlir_tablegen(ops.cc.inc -gen-op-defs)
++add_public_tablegen_target(MpmdOpsIncGen)
++add_dependencies(mlir-headers MpmdOpsIncGen)
++
++set(LLVM_TARGET_DEFINITIONS types.td)
++mlir_tablegen(types.h.inc -gen-typedef-decls)
++mlir_tablegen(types.cc.inc -gen-typedef-defs)
++add_public_tablegen_target(MpmdTypesIncGen)
++add_dependencies(mlir-headers MpmdTypesIncGen)
++
++set(LLVM_TARGET_DEFINITIONS attrs.td)
++mlir_tablegen(attrs.h.inc -gen-attrdef-decls)
++mlir_tablegen(attrs.cc.inc -gen-attrdef-defs)
++add_public_tablegen_target(MpmdAttrsIncGen)
++add_dependencies(mlir-headers MpmdAttrsIncGen)
++
++set(LLVM_TARGET_DEFINITIONS enums.td)
++mlir_tablegen(enums.h.inc -gen-enum-decls)
++mlir_tablegen(enums.cc.inc -gen-enum-defs)
++add_public_tablegen_target(MpmdEnumsIncGen)
++add_dependencies(mlir-headers MpmdEnumsIncGen)
++
++add_mlir_dialect_library(MpmdDialect
++  dialect.cc
++  utils.cc
++
++  DEPENDS
++  MpmdDialectIncGen
++  MpmdOpsIncGen
++  MpmdAttrsIncGen
++  MpmdEnumsIncGen
++  MpmdTypesIncGen
++  MpmdCanonicalizationIncGen
++
++  LINK_LIBS PUBLIC
++  LLVMSupport
++  MLIRBytecodeOpInterface
++  MLIRFuncDialect
++  MLIRIR
++  MLIRInferTypeOpInterface
++  MLIRTransformUtils
++  MLIRShapeDialect
++  MLIRSideEffectInterfaces
++  MLIRSupport
++  StablehloAssemblyFormat
++  StablehloBase
++  StablehloOps
++  StablehloTypeInference
++)
++
++target_include_directories(MpmdDialect INTERFACE
++  $<BUILD_INTERFACE:${SHARDY_SOURCE_DIR}>
++  $<BUILD_INTERFACE:${SHARDY_BINARY_DIR}>
++)
++
++add_mlir_dialect_library(MpmdRegister
++  register.cc
++
++  LINK_LIBS PUBLIC
++  MpmdDialect
++  MLIRFuncDialect
++  MLIRFuncAllExtensions
++  MLIRIR
++  StablehloOps
++)
++
++target_include_directories(MpmdRegister INTERFACE
++  $<BUILD_INTERFACE:${SHARDY_SOURCE_DIR}>
++  $<BUILD_INTERFACE:${SHARDY_BINARY_DIR}>
++)
++
++add_mlir_dialect_library(MpmdFragmentExecutionRules
++  fragment_execution_rules.cc
++
++  LINK_LIBS PUBLIC
++  MpmdDialect
++  MpmdTransformsCommonUtils
++  LLVMSupport
++  MLIRIR
++  MLIRSupport
++  MLIRParser
++)
++
++target_include_directories(MpmdFragmentExecutionRules INTERFACE
++  $<BUILD_INTERFACE:${SHARDY_SOURCE_DIR}>
++  $<BUILD_INTERFACE:${SHARDY_BINARY_DIR}>
++)
+diff --git a/shardy/dialect/mpmd/ir/dialect.cc b/shardy/dialect/mpmd/ir/dialect.cc
+index 5fc8c90..e211b65 100644
+--- a/shardy/dialect/mpmd/ir/dialect.cc
++++ b/shardy/dialect/mpmd/ir/dialect.cc
+@@ -887,9 +887,9 @@ FragmentOp CreateMeshFragmentWithBody(
+   // Only user defined fragments can be assigned to a stage and any fragment
+   // created by the compiler is considered to be an inferred fragment.
+   // Therefore, the created fragment isn't assigned to a stage.
+-  FragmentOp fragment_op = FragmentOp::create(builder, loc, result_types,
+-                                              tensors, origin_attr, mesh_name,
+-                                              /*stage_id=*/IntegerAttr());
++  FragmentOp fragment_op = builder.create<FragmentOp>(
++    loc, result_types, tensors, origin_attr, mesh_name,
++    /*stage_id=*/IntegerAttr());
+   Block& fragment_block = fragment_op.getRegion().emplaceBlock();
+   sdy::MeshAttr mesh_attr = GetMeshOrFail(fragment_op, mesh_name);
+
+@@ -901,8 +901,7 @@ FragmentOp CreateMeshFragmentWithBody(
+                             fragment_block.args_end());
+
+   OpBuilder block_builder = OpBuilder::atBlockBegin(&fragment_block);
+-  ReturnOp::create(block_builder, loc,
+-                   body_populator(arguments, block_builder));
++  block_builder.create<ReturnOp>(loc, body_populator(arguments, block_builder));
+   return fragment_op;
+ }
+ }  // namespace
+@@ -1354,9 +1353,9 @@ ForOp ForOp::create(Location loc, ValueRange tensors, uint32_t iterations,
+                     OpBuilder& builder, ForOpBodyPopulator body_populator,
+                     uint32_t unroll_factor) {
+   TypeRange result_types = tensors.getTypes();
+-  auto op = ForOp::create(
+-      builder, loc, result_types, tensors, iterations,
+-      unroll_factor == 1 ? nullptr : builder.getUI32IntegerAttr(unroll_factor));
++  auto op = builder.create<ForOp>(
++    loc, result_types, tensors, iterations,
++    unroll_factor == 1 ? nullptr : builder.getUI32IntegerAttr(unroll_factor));
+
+   Block& block = op.getRegion().emplaceBlock();
+   for (Value operand : tensors) {
+@@ -1369,8 +1368,8 @@ ForOp ForOp::create(Location loc, ValueRange tensors, uint32_t iterations,
+   ArrayRef<Value> args(block.args_begin(), block.args_end());
+
+   OpBuilder block_builder = OpBuilder::atBlockBegin(&block);
+-  ReturnOp::create(
+-      block_builder, loc,
++  block_builder.create<ReturnOp>(
++    loc,
+       body_populator(args.drop_back(), /*index=*/args.back(), block_builder));
+   return op;
+ }
+diff --git a/shardy/dialect/mpmd/transforms/CMakeLists.txt b/shardy/dialect/mpmd/transforms/CMakeLists.txt
+new file mode 100644
+index 0000000..0728af8
+--- /dev/null
++++ b/shardy/dialect/mpmd/transforms/CMakeLists.txt
+@@ -0,0 +1,31 @@
++# Shardy MLIR MPMD Transforms Passes
++
++add_subdirectory(common)
++add_subdirectory(export)
++add_subdirectory(import)
++add_subdirectory(optimize)
++add_subdirectory(sharding_propagation)
++
++add_mlir_library(MpmdTransformsPasses
++  passes.cc
++
++  DEPENDS
++  MpmdTransformsCommonPasses
++  MpmdTransformsExportPasses
++  MpmdTransformsImportPasses
++  MpmdTransformsOptimizePasses
++  MpmdTransformsShardingPropagationPasses
++
++  LINK_LIBS PUBLIC
++  MLIRPass
++  MpmdTransformsCommonPasses
++  MpmdTransformsExportPasses
++  MpmdTransformsImportPasses
++  MpmdTransformsOptimizePasses
++  MpmdTransformsShardingPropagationPasses
++)
++
++target_include_directories(MpmdTransformsPasses INTERFACE
++  $<BUILD_INTERFACE:${SHARDY_SOURCE_DIR}>
++  $<BUILD_INTERFACE:${SHARDY_BINARY_DIR}>
++)
+diff --git a/shardy/dialect/mpmd/transforms/common/CMakeLists.txt b/shardy/dialect/mpmd/transforms/common/CMakeLists.txt
+new file mode 100644
+index 0000000..f717544
+--- /dev/null
++++ b/shardy/dialect/mpmd/transforms/common/CMakeLists.txt
+@@ -0,0 +1,88 @@
++# Shardy MLIR MPMD Transforms Common
++
++set(LLVM_TARGET_DEFINITIONS passes.td)
++mlir_tablegen(passes.h.inc -gen-pass-decls -name=MpmdCommon)
++add_public_tablegen_target(MpmdTransformsCommonPassesIncGen)
++add_dependencies(mlir-headers MpmdTransformsCommonPassesIncGen)
++
++add_mlir_library(MpmdTransformsCommonUtils
++  utils.cc
++
++  DEPENDS
++  MpmdDialect
++
++  LINK_LIBS PUBLIC
++  MpmdDialect
++  LLVMSupport
++  MLIRFuncDialect
++  MLIRIR
++  MLIRTransformUtils
++  MLIRSupport
++  MLIRPass
++  MLIRTransforms
++)
++
++add_mlir_library(MpmdTransformsCommonSimplifyRegionOpBase
++  simplify_region_op_base.cc
++
++  DEPENDS
++  MpmdTransformsCommonUtils
++
++  LINK_LIBS PUBLIC
++  MpmdTransformsCommonUtils
++  LLVMSupport
++  MLIRIR
++  MLIRSideEffectInterfaces
++  MLIRSupport
++  MLIRTransformUtils
++)
++
++add_mlir_library(MpmdTransformsCommonDistributedFunctionPass
++  distributed_function_pass.cc
++
++  DEPENDS
++  MpmdDialect
++
++  LINK_LIBS PUBLIC
++  MpmdDialect
++  MLIRFuncDialect
++  MLIRPass
++)
++
++add_mlir_library(MpmdTransformsCommonPasses
++  absorb_inferred_fragments.cc
++  call_rewrites.cc
++  copy_constants.cc
++  fragment_dce.cc
++  fragment_dedup.cc
++  merge_fragments.cc
++  merge_transfers.cc
++  remove_transfer_cycles.cc
++  rule_based_merge.cc
++  split_bwd_fragments.cc
++  uniquify_function_inputs_outputs.cc
++  unroll_for_loops.cc
++  scheduler_preprocess.cc
++
++  DEPENDS
++  MpmdTransformsCommonPassesIncGen
++  MpmdTransformsCommonDistributedFunctionPass
++  MpmdTransformsCommonUtils
++
++  LINK_LIBS PUBLIC
++  LLVMSupport
++  StablehloOps
++  MpmdTransformsCommonDistributedFunctionPass
++  MpmdTransformsCommonUtils
++  MLIRAnalysis
++  MLIRDataLayoutInterfaces
++  MLIRFuncDialect
++  MLIRIR
++  MLIRTransformUtils
++  MLIRLoopLikeInterface
++  MLIRPass
++  MLIRRewrite
++  MLIRSideEffectInterfaces
++  MLIRSupport
++  MLIRTransforms
++)
+diff --git a/shardy/dialect/mpmd/transforms/common/call_rewrites.cc b/shardy/dialect/mpmd/transforms/common/call_rewrites.cc
+index 67022ca..d1da0a6 100644
+--- a/shardy/dialect/mpmd/transforms/common/call_rewrites.cc
++++ b/shardy/dialect/mpmd/transforms/common/call_rewrites.cc
+@@ -277,9 +277,9 @@ class EraseUnusedCalleeBlockArgumentsPass
+       // Alas, we cannot directly erase results of an op, so we need to create
+       // a new call op, and use it to replace the old one.
+       rewriter.setInsertionPoint(call_op);
+-      auto new_call_op =
+-          CallOp::create(rewriter, call_op.getLoc(), result_types,
+-                         call_op->getOperands(), call_op.getCalleeAttr());
++      auto new_call_op = rewriter.create<CallOp>(call_op.getLoc(), result_types,
++                                                 call_op->getOperands(),
++                                                 call_op.getCalleeAttr());
+       new_call_op->setDiscardableAttrs(call_op->getDiscardableAttrDictionary());
+       for (auto [new_result, old_result_index] :
+            llvm::zip_equal(new_call_op.getResults(), kept_results.set_bits())) {
+diff --git a/shardy/dialect/mpmd/transforms/common/merge_fragments.cc b/shardy/dialect/mpmd/transforms/common/merge_fragments.cc
+index 4447b06..e68d4ca 100644
+--- a/shardy/dialect/mpmd/transforms/common/merge_fragments.cc
++++ b/shardy/dialect/mpmd/transforms/common/merge_fragments.cc
+@@ -89,7 +89,7 @@ bool TypeHasOneElement(Type type) {
+
+ // Returns true if `op` is an inter-mesh TransferOp whose global type has only
+ // one element.
+-bool IsNonScalarInterMeshTransfer(Operation* op) {
++[[ maybe_unused ]] bool IsNonScalarInterMeshTransfer(Operation* op) {
+   TransferOp transfer_op = DynCastInterMeshTransfer(op);
+   return transfer_op &&
+          !TypeHasOneElement(transfer_op.getType().getGlobalTensorType());
+@@ -336,7 +336,7 @@ FailureOr<FragmentOp> MergeFragmentBasePass::MergeFragmentsRewrite(
+       producer_op.getMeshNameAttr(),
+       /*stage_id=*/GetMergedStageIdAttribute(producer_op, mergeable_user));
+
+-  for (const auto [attr_name, attr] : merged_attributes) {
++  for (const auto &[attr_name, attr] : merged_attributes) {
+     merged_fragment->setAttr(attr_name, attr);
+   }
+
+diff --git a/shardy/dialect/mpmd/transforms/common/uniquify_function_inputs_outputs.cc b/shardy/dialect/mpmd/transforms/common/uniquify_function_inputs_outputs.cc
+index 7aaa133..f76f2e1 100644
+--- a/shardy/dialect/mpmd/transforms/common/uniquify_function_inputs_outputs.cc
++++ b/shardy/dialect/mpmd/transforms/common/uniquify_function_inputs_outputs.cc
+@@ -71,8 +71,8 @@ void CreateReturnFragmentForMesh(StringRef mesh_name, Operation* return_op,
+   }
+
+   auto loc = return_op->getLoc();
+-  auto fragment_op = FragmentOp::create(
+-      builder, loc, fragment_return_types, fragment_operands,
++  auto fragment_op = builder.create<FragmentOp>(
++      loc, fragment_return_types, fragment_operands,
+       /*user_origin=*/ArrayAttr::get(builder.getContext(), {}),
+       /*mesh_name=*/mesh_name, /*stage_id=*/IntegerAttr());
+   Block& fragment_block = fragment_op.getRegion().emplaceBlock();
+@@ -98,7 +98,7 @@ void CreateReturnFragmentForMesh(StringRef mesh_name, Operation* return_op,
+     }
+   }
+   auto block_builder = OpBuilder::atBlockEnd(&fragment_block);
+-  ReturnOp::create(block_builder, loc, returned_values);
++  block_builder.create<ReturnOp>(loc, returned_values);
+ }
+
+ // Replaces the return values of the function with transfer ops.
+diff --git a/shardy/dialect/mpmd/transforms/export/CMakeLists.txt b/shardy/dialect/mpmd/transforms/export/CMakeLists.txt
+new file mode 100644
+index 0000000..a42701e
+--- /dev/null
++++ b/shardy/dialect/mpmd/transforms/export/CMakeLists.txt
+@@ -0,0 +1,75 @@
++# Shardy MLIR MPMD Transform Export Passes and Pipeline
++
++set(LLVM_TARGET_DEFINITIONS passes.td)
++mlir_tablegen(passes.h.inc -gen-pass-decls -name=MpmdExport)
++add_public_tablegen_target(MpmdTransformsExportPassesIncGen)
++add_dependencies(mlir-headers MpmdTransformsExportPassesIncGen)
++
++add_mlir_library(MpmdTransformsExportUtils
++  utils.cc
++
++  DEPENDS
++  MpmdDialect
++
++  LINK_LIBS PUBLIC
++  MpmdDialect
++  MLIRAnalysis
++  MLIRFuncDialect
++  MLIRIR
++  MLIRSupport
++)
++
++add_mlir_library(MpmdTransformsExportNamingUtils
++  naming_utils.cc
++
++  DEPENDS
++  MpmdDialect
++  MpmdTransformsCommonUtils
++
++  LINK_LIBS PUBLIC
++  MpmdDialect
++  MpmdTransformsCommonUtils
++  MLIRFuncDialect
++  MLIRPass
++  LLVMSupport
++  MLIRIR
++  MLIRSupport
++)
++
++add_mlir_library(MpmdTransformsExportPasses
++  export_pipeline.cc
++  lower_to_fragment_calls.cc
++  mark_aliasing_and_donation.cc
++  mark_fragment_reserved_memory.cc
++  mark_input_output_with_layouts.cc
++  mark_offloaded_input_output.cc
++  reschedule_ops.cc
++
++  DEPENDS
++  MpmdDialect
++  MpmdTransformsExportPassesIncGen
++  MpmdTransformsExportNamingUtils
++  MpmdTransformsExportUtils
++  MpmdTransformsCommonDistributedFunctionPass
++  MpmdTransformsCommonPasses
++  MpmdTransformsCommonUtils
++  SdyDialect
++
++  LINK_LIBS PUBLIC
++  MpmdTransformsExportNamingUtils
++  MpmdTransformsExportUtils
++  MpmdDialect
++  MpmdTransformsCommonDistributedFunctionPass
++  MpmdTransformsCommonPasses
++  MpmdTransformsCommonUtils
++  SdyDialect
++  LLVMSupport
++  MLIRAnalysis
++  MLIRFuncDialect
++  MLIRIR
++  MLIRPass
++  MLIRSupport
++  MLIRTransformUtils
++  MLIRTransforms
++  StablehloOps
++)
+diff --git a/shardy/dialect/mpmd/transforms/import/CMakeLists.txt b/shardy/dialect/mpmd/transforms/import/CMakeLists.txt
+new file mode 100644
+index 0000000..c4c4e81
+--- /dev/null
++++ b/shardy/dialect/mpmd/transforms/import/CMakeLists.txt
+@@ -0,0 +1,125 @@
++# Shardy MLIR MPMD Transforms Import Passes and Pipeline
++
++set(LLVM_TARGET_DEFINITIONS passes.td)
++mlir_tablegen(passes.h.inc -gen-pass-decls -name=MpmdImport)
++add_public_tablegen_target(MpmdTransformsImportPassesIncGen)
++add_dependencies(mlir-headers MpmdTransformsImportPassesIncGen)
++
++add_mlir_library(MpmdTransformsImportMeshAssignmentMap
++  mesh_assignment_map.cc
++
++  LINK_LIBS PUBLIC
++  LLVMSupport
++)
++
++add_mlir_library(MpmdTransformsImportMeshInferenceOrigins
++  mesh_inference_origins.cc
++
++  DEPENDS
++  MpmdDialect
++
++  LINK_LIBS PUBLIC
++  MpmdDialect
++  LLVMSupport
++  MLIRIR
++  MLIRPass
++  MLIRSupport
++)
++
++add_mlir_library(MpmdTransformsImportMeshesWithOrigins
++  meshes_with_origins.cc
++
++  DEPENDS
++  MpmdDialect
++  MpmdTransformsImportMeshInferenceOrigins
++
++  LINK_LIBS PUBLIC
++  MpmdDialect
++  MpmdTransformsImportMeshInferenceOrigins
++  LLVMSupport
++  MLIRIR
++  MLIRSupport
++)
++
++
++add_mlir_library(MpmdTransformsImportMeshInferenceUtils
++  mesh_inference_utils.cc
++
++  DEPENDS
++  MpmdTransformsImportMeshesWithOrigins
++  MpmdDialect
++  MpmdTransformsCommonUtils
++  SdyDialect
++
++  LINK_LIBS PUBLIC
++  MpmdTransformsImportMeshesWithOrigins
++  MpmdDialect
++  MpmdTransformsCommonUtils
++  SdyDialect
++  LLVMSupport
++  MLIRFuncDialect
++  MLIRIR
++  MLIRPass
++  MLIRSupport
++)
++
++add_mlir_library(MpmdTransformsImportShardingConstraints
++  sharding_constraints.cc
++
++  LINK_LIBS PUBLIC
++  LLVMSupport
++)
++
++add_mlir_library(MpmdTransformsImportPasses
++  copy_topology_from_main.cc
++  enforce_equisharding.cc
++  import_pipeline.cc
++  infer_mesh_assignment.cc
++  infer_mesh_validation.cc
++  insert_nameless_clones_of_negligible_ops.cc
++  introduce_transfers.cc
++  map_input_output_to_mesh.cc
++  map_named_ops_to_mpmd_ops.cc
++  simplify_named_computations.cc
++  validate_named_ops_in_mpmd_func.cc
++  generate_sdy_meshes_from_topology_pass.cc
++
++  DEPENDS
++  MpmdTransformsImportMeshAssignmentMap
++  MpmdTransformsImportMeshInferenceOrigins
++  MpmdTransformsImportMeshInferenceUtils
++  MpmdTransformsImportMeshesWithOrigins
++  MpmdTransformsImportPassesIncGen
++  MpmdTransformsImportShardingConstraints
++  MpmdDialect
++  MpmdTransformsCommonDistributedFunctionPass
++  MpmdTransformsCommonPasses
++  MpmdTransformsCommonUtils
++  MpmdTransformsCommonSimplifyRegionOpBase
++  SdyDialect
++
++  LINK_LIBS PUBLIC
++  MpmdTransformsImportMeshAssignmentMap
++  MpmdTransformsImportMeshInferenceOrigins
++  MpmdTransformsImportMeshInferenceUtils
++  MpmdTransformsImportMeshesWithOrigins
++  MpmdTransformsImportShardingConstraints
++  MpmdDialect
++  MpmdTransformsCommonDistributedFunctionPass
++  MpmdTransformsCommonPasses
++  MpmdTransformsCommonUtils
++  MpmdTransformsCommonSimplifyRegionOpBase
++  SdyDialect
++  LLVMSupport
++  MLIRFuncDialect
++  MLIRIR
++  MLIRPass
++  MLIRRewrite
++  MLIRSideEffectInterfaces
++  MLIRSupport
++  MLIRTransforms
++  MLIRTransformUtils
++  StablehloOps
++  StablehloPasses
++  StablehloOptimizationPasses
++)
+\ No newline at end of file
+diff --git a/shardy/dialect/mpmd/transforms/import/infer_mesh_assignment.cc b/shardy/dialect/mpmd/transforms/import/infer_mesh_assignment.cc
+index 45f6523..9ef9270 100644
+--- a/shardy/dialect/mpmd/transforms/import/infer_mesh_assignment.cc
++++ b/shardy/dialect/mpmd/transforms/import/infer_mesh_assignment.cc
+@@ -462,8 +462,8 @@ class LowerMpmdReducePattern final : public OpRewritePattern<ReduceOp> {
+         if (reduced_val.getType() == user_type) {
+           transferred_intermediates.push_back(reduced_val);
+         } else {
+-          transferred_intermediates.push_back(TransferOp::create(
+-              rewriter, reduced_val.getLoc(), user_type, reduced_val));
++          transferred_intermediates.push_back(rewriter.create<TransferOp>(
++            reduced_val.getLoc(), user_type, reduced_val));
+         }
+       }
+
+@@ -1096,8 +1096,7 @@ void AssignInputAndOutputToMesh(FuncOp func, BlockArgument input_arg,
+   // Assign the output to the mesh.
+   if (!isa<MeshTensorType>(return_operand.get().getType())) {
+     rewriter.setInsertionPoint(return_operand.getOwner());
+-    return_operand.set(AssignOp::create(
+-        rewriter,
++    return_operand.set(rewriter.create<AssignOp>(
+         GetResultInfoLoc(func, return_operand.getOperandNumber())
+             .value_or(return_operand.get().getLoc()),
+         return_operand.get(), mesh_name, mesh_attr, kIoConstraintOutputOrigin));
+@@ -1109,8 +1108,8 @@ void AssignInputAndOutputToMesh(FuncOp func, BlockArgument input_arg,
+     input_arg.setType(MeshTensorType::getFullyReplicated(
+         input_arg.getContext(), mesh_name, mesh_attr,
+         cast<RankedTensorType>(input_arg.getType())));
+-    auto unassign = UnassignOp::create(rewriter, input_arg.getLoc(), input_arg,
+-                                       kIoConstraintInputOrigin);
++    auto unassign = rewriter.create<UnassignOp>(input_arg.getLoc(), input_arg,
++        kIoConstraintInputOrigin);
+     rewriter.replaceAllUsesExcept(input_arg, unassign, unassign);
+   }
+ }
+@@ -1293,8 +1292,7 @@ class InferMeshAssignMeshForFuncLeavesPass
+         }
+         mesh_name = first_mesh_name;
+       }
+-      return_op_operand.set(AssignOp::create(
+-          builder,
++      return_op_operand.set(builder.create<AssignOp>(
+           GetResultInfoLoc(func, return_op_operand.getOperandNumber())
+               .value_or(return_operand.getLoc()),
+           return_operand, *mesh_name, GetMeshByName(meshes_by_name, *mesh_name),
+@@ -1405,8 +1403,8 @@ class InferMeshAssignMeshForFuncLeavesPass
+     rewriter.setInsertionPointAfter(op);
+     sdy::MeshAttr mesh = GetMeshByName(meshes_by_name, mesh_name);
+     for (Value res : op->getResults()) {
+-      AssignOp::create(rewriter, op->getLoc(), res, mesh_name, mesh,
+-                       kInferredUnusedOrigin);
++      rewriter.create<AssignOp>(op->getLoc(), res, mesh_name, mesh,
++                                kInferredUnusedOrigin);
+     }
+
+     ClearUseSet(op);
+@@ -1491,10 +1489,10 @@ class InferMeshAssignMeshForFuncLeavesPass
+             preferred_meshes.GetPrioritizedMeshName().value_or(first_mesh_name);
+       }
+       Value operand_val = operand.get();
+-      AssignOp assign = AssignOp::create(
+-          builder, operand_val.getLoc(), operand_val, *mesh_name,
++      AssignOp assign = builder.create<AssignOp>(
++        operand_val.getLoc(), operand_val, *mesh_name,
+           GetMeshByName(meshes_by_name, *mesh_name), TerminalNodesOrigin(op));
+-      operand.set(UnassignOp::create(builder, operand_val.getLoc(), assign));
++          operand.set(builder.create<UnassignOp>(operand_val.getLoc(), assign));
+     }
+   }
+
+@@ -1537,8 +1535,8 @@ void ConvertConcatReduceOp(Operation* op, RewriterBase& rewriter) {
+   SmallVector<Value> reshaped_operands;
+   reshaped_operands.reserve(concat.getOperands().size());
+   for (Value operand : concat.getOperands()) {
+-    auto reshape = stablehlo::ReshapeOp::create(
+-        rewriter, operand.getLoc(), reduce->getResultTypes().front(), operand);
++    auto reshape = rewriter.create<stablehlo::ReshapeOp>(
++      operand.getLoc(), reduce->getResultTypes().front(), operand);
+     if (operand.getDefiningOp()) {
+       reshape->setDiscardableAttrs(
+           operand.getDefiningOp()->getDiscardableAttrDictionary());
+@@ -1811,8 +1809,8 @@ void AssignCalleeFuncResultsUsingAnalysis(
+     // meshes, we copy it such that each result corresponds to a single mesh.
+     for (auto [i, mesh_name] : llvm::enumerate(mesh_names.getArrayRef())) {
+       auto assign =
+-          AssignOp::create(rewriter, return_val.getLoc(), return_val, mesh_name,
+-                           GetMeshByName(meshes_by_name, mesh_name));
++      rewriter.create<AssignOp>(return_val.getLoc(), return_val, mesh_name,
++      GetMeshByName(meshes_by_name, mesh_name));
+       if (i == 0) {
+         new_operands[res_num] = assign;
+       } else {
+@@ -1891,10 +1889,10 @@ void AssignCalleeFuncArgsToAssignUsers(
+       UnassignOp unassign_op;
+       if (i == 0) {
+         arg.setType(mesh_type);
+-        unassign_op = UnassignOp::create(rewriter, arg.getLoc(), arg);
++        unassign_op = rewriter.create<UnassignOp>(arg.getLoc(), arg);
+       } else {
+-        unassign_op = UnassignOp::create(
+-            rewriter, arg.getLoc(), body.addArgument(mesh_type, arg.getLoc()));
++        unassign_op = rewriter.create<UnassignOp>(
++          arg.getLoc(), body.addArgument(mesh_type, arg.getLoc()));
+       }
+
+       if (auto users_it = assign_users_by_mesh_name.find(mesh_name);
+@@ -1928,25 +1926,24 @@ void RewriteAccordingToUpdatedCallee(CallOp call_op, RewriterBase& rewriter) {
+       continue;
+     }
+     SDY_CHECK(isa<MeshTensorType>(call_body.getArgument(arg_num).getType()));
+-    new_operands[arg_num] =
+-        AssignOp::create(rewriter, operand.getLoc(),
+-                         call_body.getArgument(arg_num).getType(), operand);
++    new_operands[arg_num] = rewriter.create<AssignOp>(
++      operand.getLoc(), call_body.getArgument(arg_num).getType(), operand);
+
+     if (auto copies =
+             callee.getArgAttrOfType<DenseI64ArrayAttr>(arg_num, kMpmdCopied)) {
+       for (int64_t cloned_arg_index : copies.asArrayRef()) {
+         SDY_CHECK(isa<MeshTensorType>(
+             call_body.getArgument(cloned_arg_index).getType()));
+-        new_operands[cloned_arg_index] = AssignOp::create(
+-            rewriter, operand.getLoc(),
+-            call_body.getArgument(cloned_arg_index).getType(), operand);
++            new_operands[cloned_arg_index] = rewriter.create<AssignOp>(
++              operand.getLoc(), call_body.getArgument(cloned_arg_index).getType(),
++              operand);
+       }
+     }
+   }
+
+   // Create the new call and copy attrs over.
+-  auto new_call_op = CallOp::create(
+-      rewriter, call_op.getLoc(), call_body.getTerminator()->getOperandTypes(),
++  auto new_call_op = rewriter.create<CallOp>(
++    call_op.getLoc(), call_body.getTerminator()->getOperandTypes(),
+       new_operands, call_op.getCalleeAttr());
+   new_call_op->setDiscardableAttrs(call_op->getDiscardableAttrDictionary());
+
+@@ -1972,9 +1969,8 @@ void RewriteAccordingToUpdatedCallee(CallOp call_op, RewriterBase& rewriter) {
+         SDY_CHECK(arg_num_it != type_to_arg_num.end())
+             << "Argument number for type " << debugString(assign_user.getType())
+             << " not found";
+-        assign_user.setOperand(
+-            UnassignOp::create(rewriter, assign_user.getLoc(),
+-                               new_call_op.getResult(arg_num_it->second)));
++            assign_user.setOperand(rewriter.create<UnassignOp>(
++              assign_user.getLoc(), new_call_op.getResult(arg_num_it->second)));
+       }
+     }
+   }
+@@ -2061,7 +2057,7 @@ bool AssignEntrypointFuncArgsToAssignUsers(FuncOp entrypoint_func,
+                                     cast<RankedTensorType>(arg.getType()),
+                                     memory_kind));
+
+-    UnassignOp unassign_op = UnassignOp::create(rewriter, arg.getLoc(), arg);
++                                    UnassignOp unassign_op = rewriter.create<UnassignOp>(arg.getLoc(), arg);
+     rewriter.replaceAllUsesExcept(arg, unassign_op, unassign_op);
+   }
+   return true;
+@@ -2187,12 +2183,12 @@ void AbsorbMeshlessProducer(FragmentOp consumer, Operation* op,
+   }
+   rewriter.setInsertionPoint(consumer);
+   for (Value operand : op_operands_and_free_vars) {
+-    new_consumer_operands.push_back(
+-        AssignOp::create(rewriter, operand.getLoc(),
+-                         MeshTensorType::getFullyReplicated(
+-                             operand.getContext(), mesh_name, mesh_attr,
+-                             cast<RankedTensorType>(operand.getType())),
+-                         operand));
++    new_consumer_operands.push_back(rewriter.create<AssignOp>(
++      operand.getLoc(),
++      MeshTensorType::getFullyReplicated(
++          operand.getContext(), mesh_name, mesh_attr,
++          cast<RankedTensorType>(operand.getType())),
++      operand));
+   }
+   consumer->setOperands(new_consumer_operands);
+ }
+@@ -2316,8 +2312,8 @@ void RewriteForOpTerminator(
+     SDY_CHECK_LE(mesh_names.size(), 1)
+         << "Multiple mesh names found for return value";
+
+-    new_operands.push_back(AssignOp::create(
+-        rewriter, return_val.getLoc(), return_val, mesh_names[0],
++        new_operands.push_back(rewriter.create<AssignOp>(
++          return_val.getLoc(), return_val, mesh_names[0],
+         GetMeshByName(meshes_by_name, mesh_names[0])));
+   }
+
+@@ -2382,7 +2378,7 @@ void RewriteForOpArgsAndTypes(
+           arg.getContext(), mesh_names[0],
+           GetMeshByName(meshes_by_name, mesh_names[0]), local_type);
+       arg.setType(mesh_type);
+-      UnassignOp unassign_op = UnassignOp::create(rewriter, arg.getLoc(), arg);
++      UnassignOp unassign_op = rewriter.create<UnassignOp>(arg.getLoc(), arg);
+
+       if (auto users_it = assign_users_by_mesh_name.find(mesh_names[0]);
+           users_it != assign_users_by_mesh_name.end()) {
+@@ -2414,9 +2410,8 @@ void RewriteForOpOperands(ForOp for_op, RewriterBase& rewriter) {
+       new_operands[arg_num] = operand;
+       continue;
+     }
+-    new_operands[arg_num] =
+-        AssignOp::create(rewriter, operand.getLoc(),
+-                         for_body.getArgument(arg_num).getType(), operand);
++    new_operands[arg_num] = rewriter.create<AssignOp>(
++      operand.getLoc(), for_body.getArgument(arg_num).getType(), operand);
+   }
+
+   for_op->setOperands(new_operands);
+@@ -2430,7 +2425,7 @@ void RewriteForOpResults(ForOp for_op, RewriterBase& rewriter) {
+     for (Operation* user : res.getUsers()) {
+       if (auto assign_user = dyn_cast<AssignOp>(user)) {
+         assign_user.setOperand(
+-            UnassignOp::create(rewriter, assign_user.getLoc(), res));
++          rewriter.create<UnassignOp>(assign_user.getLoc(), res));
+       }
+     }
+   }
+diff --git a/shardy/dialect/mpmd/transforms/optimize/CMakeLists.txt b/shardy/dialect/mpmd/transforms/optimize/CMakeLists.txt
+new file mode 100644
+index 0000000..0607049
+--- /dev/null
++++ b/shardy/dialect/mpmd/transforms/optimize/CMakeLists.txt
+@@ -0,0 +1,72 @@
++# Shardy MLIR MPMD Transforms Optimize
++
++set(LLVM_TARGET_DEFINITIONS passes.td)
++mlir_tablegen(passes.h.inc -gen-pass-decls -name=MpmdOptimize)
++add_public_tablegen_target(MpmdTransformsOptimizePassesIncGen)
++add_dependencies(mlir-headers MpmdTransformsOptimizePassesIncGen)
++
++add_mlir_library(MpmdTransformsOptimizeUtils
++  utils.cc
++
++  DEPENDS
++  MpmdDialect
++  MpmdTransformsCommonUtils
++
++  LINK_LIBS PUBLIC
++  MpmdDialect
++  MpmdTransformsCommonUtils
++  LLVMSupport
++  MLIRIR
++  MLIRSupport
++)
++
++add_mlir_library(MpmdTransformsOptimizePipelineSchedule
++  pipeline_schedule.cc
++
++  DEPENDS
++  MpmdTransformsOptimizeUtils
++  MpmdDialect
++  MpmdTransformsCommonUtils
++
++  LINK_LIBS PUBLIC
++  MpmdTransformsOptimizeUtils
++  MpmdDialect
++  MpmdTransformsCommonUtils
++  LLVMSupport
++  MLIRIR
++  MLIRSupport
++)
++
++add_mlir_library(MpmdTransformsOptimizePasses
++  optimize_pipeline.cc
++  remat_fragment.cc
++  scheduler.cc
++  rule_based_schedule.cc
++
++  DEPENDS
++  MpmdTransformsOptimizePassesIncGen
++  MpmdTransformsOptimizePipelineSchedule
++  MpmdTransformsOptimizeUtils
++  MpmdDialect
++  MpmdTransformsCommonDistributedFunctionPass
++  MpmdFragmentExecutionRules
++  MpmdTransformsCommonPasses
++  MpmdTransformsCommonUtils
++
++  LINK_LIBS PUBLIC
++  MpmdTransformsOptimizePipelineSchedule
++  MpmdTransformsOptimizeUtils
++  MpmdDialect
++  MpmdTransformsCommonDistributedFunctionPass
++  MpmdFragmentExecutionRules
++  MpmdTransformsCommonPasses
++  MpmdTransformsCommonUtils
++  LLVMSupport
++  MLIRAnalysis
++  MLIRFuncDialect
++  MLIRIR
++  MLIRPass
++  MLIRSupport
++  MLIRTransforms
++  MLIRTransformUtils
++)
+diff --git a/shardy/dialect/mpmd/transforms/sharding_propagation/CMakeLists.txt b/shardy/dialect/mpmd/transforms/sharding_propagation/CMakeLists.txt
+new file mode 100644
+index 0000000..a8a8b05
+--- /dev/null
++++ b/shardy/dialect/mpmd/transforms/sharding_propagation/CMakeLists.txt
+@@ -0,0 +1,41 @@
++# Shardy MLIR MPMD Transforms Sharding Propagation
++
++set(LLVM_TARGET_DEFINITIONS passes.td)
++mlir_tablegen(passes.h.inc -gen-pass-decls -name=MpmdShardingPropagation)
++add_public_tablegen_target(MpmdTransformsShardingPropagationPassesIncGen)
++add_dependencies(mlir-headers MpmdTransformsShardingPropagationPassesIncGen)
++
++add_mlir_library(MpmdTransformsShardingPropagationPasses
++  convert_sdy_constants.cc
++  convert_sdy_shardings_to_mpmd_types.cc
++  enforce_user_shardings.cc
++  extract_reshards_from_inter_mesh_transfers.cc
++  sharding_propagation_pipeline.cc
++
++  DEPENDS
++  MpmdTransformsShardingPropagationPassesIncGen
++  MpmdDialect
++  MpmdTransformsCommonDistributedFunctionPass
++  MpmdTransformsCommonPasses
++  MpmdTransformsCommonUtils
++  SdyDialect
++  SdyExplicitReshardsUtil
++  SdyTransformsPropagationPasses
++
++  LINK_LIBS PUBLIC
++  MpmdDialect
++  MpmdTransformsCommonDistributedFunctionPass
++  MpmdTransformsCommonPasses
++  MpmdTransformsCommonUtils
++  SdyDialect
++  SdyExplicitReshardsUtil
++  SdyTransformsPropagationPasses
++  LLVMSupport
++  MLIRFuncDialect
++  MLIRIR
++  MLIRPass
++  MLIRRewrite
++  MLIRSupport
++  MLIRTransformUtils
++  StablehloOps
++)
+diff --git a/shardy/integrations/c/CMakeLists.txt b/shardy/integrations/c/CMakeLists.txt
+index fdd50c4..1c3a624 100644
+--- a/shardy/integrations/c/CMakeLists.txt
++++ b/shardy/integrations/c/CMakeLists.txt
+@@ -1,8 +1,39 @@
+ add_mlir_public_c_api_library(SdyCAPI
+   PARTIAL_SOURCES_INTENDED
+-  attributes.cc
+-  dialect.cc
+-  passes.cc
++  attributes_sdy.cc
++  dialect_sdy.cc
++  passes_sdy.cc
++
++  DEPENDS
++  SdyDialect
++  SdyTransformsPasses
++
++  LINK_LIBS PUBLIC
++  LLVMSupport
++  MLIRBytecodeOpInterface
++  MLIRFuncDialect
++  MLIRIR
++  MLIRInferTypeOpInterface
++  MLIRTransformUtils
++  MLIRShapeDialect
++  MLIRSideEffectInterfaces
++  MLIRSupport
++  StablehloAssemblyFormat
++  StablehloOps
++  StablehloTypeInference
++  SdyDialect
++  SdyTransformsPasses
++)
++
++add_mlir_public_c_api_library(MpmdCAPI
++  PARTIAL_SOURCES_INTENDED
++  passes_mpmd.cc
++  dialect_mpmd.cc
++  attributes_mpmd.cc
++
++  DEPENDS
++  MpmdDialect
++  MpmdTransformsPasses
+
+   LINK_LIBS PUBLIC
+   LLVMSupport
+@@ -17,4 +48,6 @@ add_mlir_public_c_api_library(SdyCAPI
+   StablehloAssemblyFormat
+   StablehloOps
+   StablehloTypeInference
++  MpmdDialect
++  MpmdTransformsPasses
+ )
+diff --git a/shardy/integrations/c/attributes_mpmd.cc b/shardy/integrations/c/attributes_mpmd.cc
+new file mode 100644
+index 0000000..355107f
+--- /dev/null
++++ b/shardy/integrations/c/attributes_mpmd.cc
+@@ -0,0 +1,126 @@
++/* Copyright 2025 The Shardy Authors.
++
++Licensed under the Apache License, Version 2.0 (the "License");
++you may not use this file except in compliance with the License.
++You may obtain a copy of the License at
++
++    http://www.apache.org/licenses/LICENSE-2.0
++
++Unless required by applicable law or agreed to in writing, software
++distributed under the License is distributed on an "AS IS" BASIS,
++WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++See the License for the specific language governing permissions and
++limitations under the License.
++==============================================================================*/
++
++#include "shardy/integrations/c/attributes_mpmd.h"
++
++#include <cstdint>
++#include <optional>
++
++#include "mlir-c/IR.h"
++#include "mlir-c/Support.h"
++#include "mlir/CAPI/IR.h"
++#include "mlir/CAPI/Support.h"
++#include "mlir/IR/Attributes.h"
++#include "mlir/Support/LLVM.h"
++#include "shardy/dialect/mpmd/ir/dialect.h"
++
++namespace {
++
++namespace mpmd = ::mlir::mpmd;
++
++template <typename AttrTy>
++AttrTy unwrapAttr(MlirAttribute attr) {
++  return mlir::cast<AttrTy>(unwrap(attr));
++}
++
++template <typename AttrTy>
++mlir::ArrayRef<AttrTy> unwrapAttrs(const MlirAttribute* attrs,
++                                   intptr_t nAttrs) {
++  return mlir::ArrayRef(reinterpret_cast<const AttrTy*>(attrs), nAttrs);
++}
++
++}  // namespace
++
++extern "C" {
++
++//===----------------------------------------------------------------------===//
++// NamedMeshAttr
++//===----------------------------------------------------------------------===//
++
++bool mpmdAttributeIsANamedMeshAttr(MlirAttribute attr) {
++  return mlir::isa<mpmd::NamedMeshAttr>(unwrap(attr));
++}
++
++MlirAttribute mpmdNamedMeshAttrGet(MlirContext ctx, MlirStringRef name, MlirAttribute mesh) {
++  return wrap(mpmd::NamedMeshAttr::get(unwrap(ctx), unwrap(name), unwrapAttr<mlir::sdy::MeshAttr>(mesh)));
++}
++
++MlirStringRef mpmdNamedMeshAttrGetName(MlirAttribute attr) {
++  return wrap(unwrapAttr<mpmd::NamedMeshAttr>(attr).getName());
++}
++
++MlirAttribute mpmdNamedMeshAttrGetMesh(MlirAttribute attr) {
++  mlir::sdy::MeshAttr mesh = unwrapAttr<mpmd::NamedMeshAttr>(attr).getMesh();
++  return wrap(mesh);
++}
++
++//===----------------------------------------------------------------------===//
++// TopologyAttr
++//===----------------------------------------------------------------------===//
++
++bool mpmdAttributeIsATopologyAttr(MlirAttribute attr) {
++  return mlir::isa<mpmd::TopologyAttr>(unwrap(attr));
++}
++
++MlirAttribute mpmdTopologyAttrGet(MlirContext ctx, intptr_t nMeshes, const MlirAttribute* meshes) {
++  return wrap(mpmd::TopologyAttr::get(
++      unwrap(ctx), unwrapAttrs<mpmd::NamedMeshAttr>(meshes, nMeshes)));
++}
++
++int64_t mpmdTopologyAttrGetMeshesSize(MlirAttribute attr) {
++  return unwrapAttr<mpmd::TopologyAttr>(attr).getMeshes().size();
++}
++
++MlirAttribute mpmdTopologyAttrGetMeshesElem(MlirAttribute attr, int64_t pos) {
++  return wrap(unwrapAttr<mpmd::TopologyAttr>(attr).getMeshes()[pos]);
++}
++
++//===----------------------------------------------------------------------===//
++// UserOriginAttr
++//===----------------------------------------------------------------------===//
++
++bool mpmdAttributeIsAUserOriginAttr(MlirAttribute attr) {
++  return mlir::isa<mpmd::UserOriginAttr>(unwrap(attr));
++}
++
++MlirAttribute mpmdUserOriginAttrGet(MlirContext ctx, MlirAttribute userName, int64_t transposeCount) {
++  return wrap(mpmd::UserOriginAttr::get(unwrap(ctx), unwrapAttr<mlir::StringAttr>(userName), transposeCount));
++}
++
++MlirStringRef mpmdUserOriginAttrGetUserName(MlirAttribute attr) {
++  return wrap(unwrapAttr<mpmd::UserOriginAttr>(attr).getUserName().getValue());
++}
++
++int64_t mpmdUserOriginAttrGetTransposeCount(MlirAttribute attr) {
++  return unwrapAttr<mpmd::UserOriginAttr>(attr).getTransposeCount();
++}
++
++//===----------------------------------------------------------------------===//
++// OriginAttr
++//===----------------------------------------------------------------------===//
++
++bool mpmdAttributeIsAOriginAttr(MlirAttribute attr) {
++  return mlir::isa<mpmd::OriginAttr>(unwrap(attr));
++}
++
++MlirAttribute mpmdOriginAttrGet(MlirContext ctx, MlirStringRef originLabel) {
++  return wrap(mpmd::OriginAttr::get(unwrap(ctx), unwrap(originLabel)));
++}
++
++MlirStringRef mpmdOriginAttrGetOriginLabel(MlirAttribute attr) {
++  return wrap(unwrapAttr<mpmd::OriginAttr>(attr).getOriginLabel());
++}
++
++}  // extern "C"
+diff --git a/shardy/integrations/c/attributes_mpmd.h b/shardy/integrations/c/attributes_mpmd.h
+new file mode 100644
+index 0000000..0d638fd
+--- /dev/null
++++ b/shardy/integrations/c/attributes_mpmd.h
+@@ -0,0 +1,84 @@
++/* Copyright 2025 The Shardy Authors.
++
++Licensed under the Apache License, Version 2.0 (the "License");
++you may not use this file except in compliance with the License.
++You may obtain a copy of the License at
++
++    http://www.apache.org/licenses/LICENSE-2.0
++
++Unless required by applicable law or agreed to in writing, software
++distributed under the License is distributed on an "AS IS" BASIS,
++WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++See the License for the specific language governing permissions and
++limitations under the License.
++==============================================================================*/
++
++#ifndef SHARDY_INTEGRATIONS_C_ATTRIBUTES_MPMD_H_
++#define SHARDY_INTEGRATIONS_C_ATTRIBUTES_MPMD_H_
++
++#include <stdint.h>
++#include <sys/types.h>
++
++#include "mlir-c/IR.h"
++#include "mlir-c/Support.h"
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++//===----------------------------------------------------------------------===//
++// NamedMeshAttr
++//===----------------------------------------------------------------------===//
++
++MLIR_CAPI_EXPORTED bool mpmdAttributeIsANamedMeshAttr(MlirAttribute attr);
++
++MLIR_CAPI_EXPORTED MlirAttribute mpmdNamedMeshAttrGet(MlirContext ctx,
++                                                    MlirStringRef name,
++                                                    MlirAttribute mesh);
++
++MLIR_CAPI_EXPORTED MlirStringRef mpmdNamedMeshAttrGetName(MlirAttribute attr);
++
++MLIR_CAPI_EXPORTED MlirAttribute mpmdNamedMeshAttrGetMesh(MlirAttribute attr);
++
++//===----------------------------------------------------------------------===//
++// TopologyAttr
++//===----------------------------------------------------------------------===//
++
++MLIR_CAPI_EXPORTED bool mpmdAttributeIsATopologyAttr(MlirAttribute attr);
++
++MLIR_CAPI_EXPORTED MlirAttribute mpmdTopologyAttrGet(MlirContext ctx,
++                                                    intptr_t nMeshes,
++                                                    const MlirAttribute* meshes);
++
++MLIR_CAPI_EXPORTED int64_t mpmdTopologyAttrGetMeshesSize(MlirAttribute attr);
++
++MLIR_CAPI_EXPORTED MlirAttribute mpmdTopologyAttrGetMeshesElem(MlirAttribute attr,
++                                                              int64_t pos);
++
++//===----------------------------------------------------------------------===//
++// UserOriginAttr
++//===----------------------------------------------------------------------===//
++
++MLIR_CAPI_EXPORTED bool mpmdAttributeIsAUserOriginAttr(MlirAttribute attr);
++
++MLIR_CAPI_EXPORTED MlirAttribute mpmdUserOriginAttrGet(MlirContext ctx, MlirAttribute userName, int64_t transposeCount);
++
++MLIR_CAPI_EXPORTED MlirStringRef mpmdUserOriginAttrGetUserName(MlirAttribute attr);
++
++MLIR_CAPI_EXPORTED int64_t mpmdUserOriginAttrGetTransposeCount(MlirAttribute attr);
++
++//===----------------------------------------------------------------------===//
++// OriginAttr
++//===----------------------------------------------------------------------===//
++
++MLIR_CAPI_EXPORTED bool mpmdAttributeIsAOriginAttr(MlirAttribute attr);
++
++MLIR_CAPI_EXPORTED MlirAttribute mpmdOriginAttrGet(MlirContext ctx, MlirStringRef originLabel);
++
++MLIR_CAPI_EXPORTED MlirStringRef mpmdOriginAttrGetOriginLabel(MlirAttribute attr);
++
++#ifdef __cplusplus
++}
++#endif
++
++#endif  // SHARDY_INTEGRATIONS_C_ATTRIBUTES_MPMD_H_
+diff --git a/shardy/integrations/c/attributes.cc b/shardy/integrations/c/attributes_sdy.cc
+similarity index 99%
+rename from shardy/integrations/c/attributes.cc
+rename to shardy/integrations/c/attributes_sdy.cc
+index b683d09..417ed66 100644
+--- a/shardy/integrations/c/attributes.cc
++++ b/shardy/integrations/c/attributes_sdy.cc
+@@ -13,7 +13,7 @@ See the License for the specific language governing permissions and
+ limitations under the License.
+ ==============================================================================*/
+
+-#include "shardy/integrations/c/attributes.h"
++#include "shardy/integrations/c/attributes_sdy.h"
+
+ #include <cstdint>
+ #include <optional>
+diff --git a/shardy/integrations/c/attributes.h b/shardy/integrations/c/attributes_sdy.h
+similarity index 98%
+rename from shardy/integrations/c/attributes.h
+rename to shardy/integrations/c/attributes_sdy.h
+index b6e77c9..d2c5c72 100644
+--- a/shardy/integrations/c/attributes.h
++++ b/shardy/integrations/c/attributes_sdy.h
+@@ -13,8 +13,8 @@ See the License for the specific language governing permissions and
+ limitations under the License.
+ ==============================================================================*/
+
+-#ifndef SHARDY_INTEGRATIONS_C_ATTRIBUTES_H_
+-#define SHARDY_INTEGRATIONS_C_ATTRIBUTES_H_
++#ifndef SHARDY_INTEGRATIONS_C_ATTRIBUTES_SDY_H_
++#define SHARDY_INTEGRATIONS_C_ATTRIBUTES_SDY_H_
+
+ #include <stdint.h>
+ #include <sys/types.h>
+@@ -276,4 +276,4 @@ MLIR_CAPI_EXPORTED MlirStringRef sdyManualAxesAttrGetAxesElem(
+ }
+ #endif
+
+-#endif  // SHARDY_INTEGRATIONS_C_ATTRIBUTES_H_
++#endif  // SHARDY_INTEGRATIONS_C_ATTRIBUTES_SDY_H_
+diff --git a/shardy/integrations/c/dialect_mpmd.cc b/shardy/integrations/c/dialect_mpmd.cc
+new file mode 100644
+index 0000000..d311822
+--- /dev/null
++++ b/shardy/integrations/c/dialect_mpmd.cc
+@@ -0,0 +1,21 @@
++/* Copyright 2025 The Shardy Authors.
++
++Licensed under the Apache License, Version 2.0 (the "License");
++you may not use this file except in compliance with the License.
++You may obtain a copy of the License at
++
++    http://www.apache.org/licenses/LICENSE-2.0
++
++Unless required by applicable law or agreed to in writing, software
++distributed under the License is distributed on an "AS IS" BASIS,
++WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++See the License for the specific language governing permissions and
++limitations under the License.
++==============================================================================*/
++
++#include "shardy/integrations/c/dialect_mpmd.h"  // IWYU pragma: keep
++
++#include "mlir/CAPI/Registration.h"
++#include "shardy/dialect/mpmd/ir/dialect.h"
++
++MLIR_DEFINE_CAPI_DIALECT_REGISTRATION(Mpmd, mpmd, mlir::mpmd::MpmdDialect);
+diff --git a/shardy/integrations/c/dialect_mpmd.h b/shardy/integrations/c/dialect_mpmd.h
+new file mode 100644
+index 0000000..6d699bb
+--- /dev/null
++++ b/shardy/integrations/c/dialect_mpmd.h
+@@ -0,0 +1,31 @@
++/* Copyright 2025 The Shardy Authors.
++
++Licensed under the Apache License, Version 2.0 (the "License");
++you may not use this file except in compliance with the License.
++You may obtain a copy of the License at
++
++    http://www.apache.org/licenses/LICENSE-2.0
++
++Unless required by applicable law or agreed to in writing, software
++distributed under the License is distributed on an "AS IS" BASIS,
++WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++See the License for the specific language governing permissions and
++limitations under the License.
++==============================================================================*/
++
++#ifndef SHARDY_DIALECT_MPMD_IR_C_DIALECT_H_
++#define SHARDY_DIALECT_MPMD_IR_C_DIALECT_H_
++
++#include "mlir-c/IR.h"
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++MLIR_DECLARE_CAPI_DIALECT_REGISTRATION(Mpmd, mpmd);
++
++#ifdef __cplusplus
++}
++#endif
++
++#endif  // SHARDY_DIALECT_MPMD_IR_C_DIALECT_H_
+diff --git a/shardy/integrations/c/dialect.cc b/shardy/integrations/c/dialect_sdy.cc
+similarity index 92%
+rename from shardy/integrations/c/dialect.cc
+rename to shardy/integrations/c/dialect_sdy.cc
+index 1408631..5e3dfe3 100644
+--- a/shardy/integrations/c/dialect.cc
++++ b/shardy/integrations/c/dialect_sdy.cc
+@@ -13,7 +13,7 @@ See the License for the specific language governing permissions and
+ limitations under the License.
+ ==============================================================================*/
+
+-#include "shardy/integrations/c/dialect.h"  // IWYU pragma: keep
++#include "shardy/integrations/c/dialect_sdy.h"  // IWYU pragma: keep
+
+ #include "mlir/CAPI/Registration.h"
+ #include "shardy/dialect/sdy/ir/dialect.h"
+diff --git a/shardy/integrations/c/dialect.h b/shardy/integrations/c/dialect_sdy.h
+similarity index 100%
+rename from shardy/integrations/c/dialect.h
+rename to shardy/integrations/c/dialect_sdy.h
+diff --git a/shardy/integrations/c/passes_mpmd.cc b/shardy/integrations/c/passes_mpmd.cc
+new file mode 100644
+index 0000000..e843a16
+--- /dev/null
++++ b/shardy/integrations/c/passes_mpmd.cc
+@@ -0,0 +1,22 @@
++/* Copyright 2025 The Shardy Authors.
++
++Licensed under the Apache License, Version 2.0 (the "License");
++you may not use this file except in compliance with the License.
++You may obtain a copy of the License at
++
++    http://www.apache.org/licenses/LICENSE-2.0
++
++Unless required by applicable law or agreed to in writing, software
++distributed under the License is distributed on an "AS IS" BASIS,
++WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++See the License for the specific language governing permissions and
++limitations under the License.
++==============================================================================*/
++
++#include "shardy/integrations/c/passes_mpmd.h"
++
++#include "shardy/dialect/mpmd/transforms/passes.h"
++
++void mlirRegisterAllMpmdPassesAndPipelines() {
++  mlir::mpmd::registerAllMpmdPassesAndPipelines();
++}
+diff --git a/shardy/integrations/c/passes_mpmd.h b/shardy/integrations/c/passes_mpmd.h
+new file mode 100644
+index 0000000..2125752
+--- /dev/null
++++ b/shardy/integrations/c/passes_mpmd.h
+@@ -0,0 +1,33 @@
++/* Copyright 2025 The Shardy Authors.
++
++Licensed under the Apache License, Version 2.0 (the "License");
++you may not use this file except in compliance with the License.
++You may obtain a copy of the License at
++
++    http://www.apache.org/licenses/LICENSE-2.0
++
++Unless required by applicable law or agreed to in writing, software
++distributed under the License is distributed on an "AS IS" BASIS,
++WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++See the License for the specific language governing permissions and
++limitations under the License.
++==============================================================================*/
++
++#ifndef SHARDY_INTEGRATIONS_C_PASSES_MPMD_H_
++#define SHARDY_INTEGRATIONS_C_PASSES_MPMD_H_
++
++#include "mlir-c/Support.h"
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++/// Register all compiler passes and pipelines of Shardy.
++MLIR_CAPI_EXPORTED void mlirRegisterAllMpmdPassesAndPipelines();
++
++#ifdef __cplusplus
++}
++#endif
++
++
++#endif  // SHARDY_INTEGRATIONS_C_PASSES_MPMD_H_
+diff --git a/shardy/integrations/c/passes.cc b/shardy/integrations/c/passes_sdy.cc
+similarity index 94%
+rename from shardy/integrations/c/passes.cc
+rename to shardy/integrations/c/passes_sdy.cc
+index 063c1cf..f10b199 100644
+--- a/shardy/integrations/c/passes.cc
++++ b/shardy/integrations/c/passes_sdy.cc
+@@ -13,7 +13,7 @@ See the License for the specific language governing permissions and
+ limitations under the License.
+ ==============================================================================*/
+
+-#include "shardy/integrations/c/passes.h"
++#include "shardy/integrations/c/passes_sdy.h"
+
+ #include "shardy/dialect/sdy/transforms/passes.h"
+
+diff --git a/shardy/integrations/c/passes.h b/shardy/integrations/c/passes_sdy.h
+similarity index 86%
+rename from shardy/integrations/c/passes.h
+rename to shardy/integrations/c/passes_sdy.h
+index 6863333..6ffd052 100644
+--- a/shardy/integrations/c/passes.h
++++ b/shardy/integrations/c/passes_sdy.h
+@@ -13,8 +13,8 @@ See the License for the specific language governing permissions and
+ limitations under the License.
+ ==============================================================================*/
+
+-#ifndef SHARDY_INTEGRATIONS_C_PASSES_H_
+-#define SHARDY_INTEGRATIONS_C_PASSES_H_
++#ifndef SHARDY_INTEGRATIONS_C_PASSES_SDY_H_
++#define SHARDY_INTEGRATIONS_C_PASSES_SDY_H_
+
+ #include "mlir-c/Support.h"
+
+@@ -30,4 +30,4 @@ MLIR_CAPI_EXPORTED void mlirRegisterAllSdyPassesAndPipelines();
+ #endif
+
+
+-#endif  // SHARDY_INTEGRATIONS_C_PASSES_H_
++#endif  // SHARDY_INTEGRATIONS_C_PASSES_SDY_H_
+diff --git a/shardy/integrations/python/ir/CMakeLists.txt b/shardy/integrations/python/ir/CMakeLists.txt
+index cbb4d66..1e8d7bd 100644
+--- a/shardy/integrations/python/ir/CMakeLists.txt
++++ b/shardy/integrations/python/ir/CMakeLists.txt
+@@ -28,3 +28,32 @@ declare_mlir_python_extension(SdyPythonExtensions.Main
+     SdyCAPI
+     LLVMSupport
+ )
++
++declare_mlir_python_sources(MpmdPythonSources)
++declare_mlir_python_sources(MpmdPythonSources.Dialects
++  ADD_TO_PARENT MpmdPythonSources
++)
++
++declare_mlir_dialect_python_bindings(
++  ADD_TO_PARENT MpmdPythonSources.Dialects
++  ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}"
++  TD_FILE dialects/mpmd_ops.td
++  GEN_ENUM_BINDINGS ON
++  GEN_ENUM_BINDINGS_TD_FILE dialects/mpmd_enums.td
++  SOURCES dialects/mpmd.py
++  DIALECT_NAME mpmd
++)
++
++declare_mlir_python_sources(MpmdPythonExtensions)
++declare_mlir_python_extension(MpmdPythonExtensions.Main
++  MODULE_NAME _mpmd
++  ADD_TO_PARENT MpmdPythonExtensions
++  PYTHON_BINDINGS_LIBRARY nanobind
++  SOURCES
++    mpmd_module.cc
++  EMBED_CAPI_LINK_LIBS
++    MpmdCAPI
++  PRIVATE_LINK_LIBS
++    MpmdCAPI
++    LLVMSupport
++)
+diff --git a/shardy/integrations/python/ir/__init__.py b/shardy/integrations/python/ir/__init__.py
+index 7373840..ce9d4ca 100644
+--- a/shardy/integrations/python/ir/__init__.py
++++ b/shardy/integrations/python/ir/__init__.py
+@@ -12,7 +12,7 @@
+ # See the License for the specific language governing permissions and
+ # limitations under the License.
+ # ==============================================================================
+-"""Python bindings for the SDY dialect."""
++"""Python bindings for the SDY and MPMD dialect."""
+
+ # pylint: disable=g-multiple-import,g-importing-member,unused-import,useless-import-alias
+ from ._sdy import (
+@@ -36,3 +36,27 @@ from ._sdy_ops_gen import (
+     ReturnOp as ReturnOp,
+     ShardingConstraintOp as ShardingConstraintOp,
+ )
++
++# pylint: disable=g-multiple-import,g-importing-member,unused-import,useless-import-alias
++from ._mpmd import (
++    register_dialect as register_dialect,
++    NamedMeshAttr as NamedMeshAttr,
++    TopologyAttr as TopologyAttr,
++)
++
++from ._mpmd_enums_gen import ReductionType as ReductionType
++
++from ._mpmd_ops_gen import (
++    ReturnOp as ReturnOp,
++    NamedComputationOp as NamedComputationOp,
++    NamedTensorOp as NamedTensorOp,
++    FragmentOp as FragmentOp,
++    FragmentCallOp as FragmentCallOp,
++    TransferOp as TransferOp,
++    AssignOp as AssignOp,
++    UnassignOp as UnassignOp,
++    CallOp as CallOp,
++    ForOp as ForOp,
++    BroadcastOp as BroadcastOp,
++    ReduceOp as ReduceOp,
++)
+diff --git a/shardy/integrations/python/ir/dialects/mpmd.py b/shardy/integrations/python/ir/dialects/mpmd.py
+new file mode 100644
+index 0000000..ab22061
+--- /dev/null
++++ b/shardy/integrations/python/ir/dialects/mpmd.py
+@@ -0,0 +1,20 @@
++# Copyright 2025 The Shardy Authors.
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++#     http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++# ==============================================================================
++"""Python bindings for the MPMD dialect."""
++
++# pylint: disable=wildcard-import
++from .._mlir_libs._mpmd import *
++from ._mpmd_enum_gen import *
++from ._mpmd_ops_gen import *
+diff --git a/shardy/integrations/python/ir/dialects/mpmd_enums.td b/shardy/integrations/python/ir/dialects/mpmd_enums.td
+new file mode 100644
+index 0000000..0dfad9b
+--- /dev/null
++++ b/shardy/integrations/python/ir/dialects/mpmd_enums.td
+@@ -0,0 +1,21 @@
++/* Copyright 2025 The Shardy Authors.
++
++Licensed under the Apache License, Version 2.0 (the "License");
++you may not use this file except in compliance with the License.
++You may obtain a copy of the License at
++
++    http://www.apache.org/licenses/LICENSE-2.0
++
++Unless required by applicable law or agreed to in writing, software
++distributed under the License is distributed on an "AS IS" BASIS,
++WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++See the License for the specific language governing permissions and
++limitations under the License.
++==============================================================================*/
++
++#ifndef SHARDY_INTEGRATIONS_PYTHON_MPMD_ENUMS
++#define SHARDY_INTEGRATIONS_PYTHON_MPMD_ENUMS
++
++include "shardy/dialect/mpmd/ir/enums.td"
++
++#endif // SHARDY_INTEGRATIONS_PYTHON_MPMD_ENUMS
+diff --git a/shardy/integrations/python/ir/dialects/mpmd_ops.td b/shardy/integrations/python/ir/dialects/mpmd_ops.td
+new file mode 100644
+index 0000000..86d6dcf
+--- /dev/null
++++ b/shardy/integrations/python/ir/dialects/mpmd_ops.td
+@@ -0,0 +1,21 @@
++/* Copyright 2025 The Shardy Authors.
++
++Licensed under the Apache License, Version 2.0 (the "License");
++you may not use this file except in compliance with the License.
++You may obtain a copy of the License at
++
++    http://www.apache.org/licenses/LICENSE-2.0
++
++Unless required by applicable law or agreed to in writing, software
++distributed under the License is distributed on an "AS IS" BASIS,
++WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++See the License for the specific language governing permissions and
++limitations under the License.
++==============================================================================*/
++
++#ifndef SHARDY_INTEGRATIONS_PYTHON_MPMD_OPS
++#define SHARDY_INTEGRATIONS_PYTHON_MPMD_OPS
++
++include "shardy/dialect/mpmd/ir/ops.td"
++
++#endif
+diff --git a/shardy/integrations/python/ir/mpmd.py b/shardy/integrations/python/ir/mpmd.py
+new file mode 100644
+index 0000000..2524fe2
+--- /dev/null
++++ b/shardy/integrations/python/ir/mpmd.py
+@@ -0,0 +1,20 @@
++# Copyright 2025 The Shardy Authors.
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++#     http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++# ==============================================================================
++"""Python bindings for the MPMD dialect."""
++
++# pylint: disable=wildcard-import
++from .._mlir_libs._mpmd import *
++from ._mpmd_enums_gen import *
++from ._mpmd_ops_gen import *
+diff --git a/shardy/integrations/python/ir/mpmd_enums.td b/shardy/integrations/python/ir/mpmd_enums.td
+new file mode 100644
+index 0000000..0dfad9b
+--- /dev/null
++++ b/shardy/integrations/python/ir/mpmd_enums.td
+@@ -0,0 +1,21 @@
++/* Copyright 2025 The Shardy Authors.
++
++Licensed under the Apache License, Version 2.0 (the "License");
++you may not use this file except in compliance with the License.
++You may obtain a copy of the License at
++
++    http://www.apache.org/licenses/LICENSE-2.0
++
++Unless required by applicable law or agreed to in writing, software
++distributed under the License is distributed on an "AS IS" BASIS,
++WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++See the License for the specific language governing permissions and
++limitations under the License.
++==============================================================================*/
++
++#ifndef SHARDY_INTEGRATIONS_PYTHON_MPMD_ENUMS
++#define SHARDY_INTEGRATIONS_PYTHON_MPMD_ENUMS
++
++include "shardy/dialect/mpmd/ir/enums.td"
++
++#endif // SHARDY_INTEGRATIONS_PYTHON_MPMD_ENUMS
+diff --git a/shardy/integrations/python/ir/mpmd_module.cc b/shardy/integrations/python/ir/mpmd_module.cc
+new file mode 100644
+index 0000000..9bcab92
+--- /dev/null
++++ b/shardy/integrations/python/ir/mpmd_module.cc
+@@ -0,0 +1,165 @@
++/* Copyright 2025 The Shardy Authors.
++
++Licensed under the Apache License, Version 2.0 (the "License");
++you may not use this file except in compliance with the License.
++You may obtain a copy of the License at
++
++    http://www.apache.org/licenses/LICENSE-2.0
++
++Unless required by applicable law or agreed to in writing, software
++distributed under the License is distributed on an "AS IS" BASIS,
++WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++See the License for the specific language governing permissions and
++limitations under the License.
++==============================================================================*/
++
++#include <cstdint>
++#include <optional>
++#include <string>
++#include <variant>
++#include <vector>
++
++#include "mlir-c/BuiltinAttributes.h"
++#include "mlir-c/IR.h"
++#include "mlir-c/Support.h"
++#include "mlir/Bindings/Python/NanobindAdaptors.h"  // IWYU pragma: keep
++#include "nanobind/nanobind.h"
++#include "nanobind/stl/optional.h"  // IWYU pragma: keep
++#include "nanobind/stl/string.h"    // IWYU pragma: keep
++#include "nanobind/stl/variant.h"   // IWYU pragma: keep
++#include "nanobind/stl/vector.h"    // IWYU pragma: keep
++#include "shardy/integrations/c/attributes_mpmd.h"
++#include "shardy/integrations/c/dialect_mpmd.h"
++
++namespace mlir {
++namespace mpmd {
++
++namespace {
++
++namespace nb = nanobind;
++
++// Returns a vector containing elements with type T extracted from an attribute
++// using the two provided callbacks.
++template <typename T>
++std::vector<T> propertyVector(
++    MlirAttribute attr, llvm::function_ref<intptr_t(MlirAttribute)> sizeFn,
++    llvm::function_ref<T(MlirAttribute, intptr_t)> getFn) {
++  std::vector<T> result;
++  intptr_t size = sizeFn(attr);
++  result.reserve(size);
++  for (intptr_t i = 0; i < size; ++i) {
++    result.push_back(getFn(attr, i));
++  }
++  return result;
++}
++
++nb::str toPyString(MlirStringRef mlirStringRef) {
++  return nb::str(mlirStringRef.data, mlirStringRef.length);
++}
++
++MlirStringRef toStringRef(const std::string& s) {
++  return mlirStringRefCreate(s.c_str(), s.size());
++}
++
++NB_MODULE(_mpmd, m) {
++  m.doc() = "MPMD main Python extension";
++
++  //
++  // Dialects.
++  //
++
++  m.def(
++      "register_dialect",
++      [](MlirContext context, bool load) {
++        MlirDialectHandle dialect = mlirGetDialectHandle__mpmd__();
++        mlirDialectHandleRegisterDialect(dialect, context);
++        if (load) {
++          mlirDialectHandleLoadDialect(dialect, context);
++        }
++      },
++      nb::arg("context"), nb::arg("load") = true);
++
++  //
++  // Attributes.
++  //
++
++  mlir::python::nanobind_adaptors::mlir_attribute_subclass(
++      m, "NamedMeshAttr", mpmdAttributeIsANamedMeshAttr)
++      .def_classmethod(
++          "get",
++          [](nb::object cls, const std::string& name,
++            MlirAttribute meshAttr, MlirContext ctx) {
++            return cls(mpmdNamedMeshAttrGet(ctx, toStringRef(name), meshAttr));
++          },
++          nb::arg("cls"), nb::arg("name"),
++          nb::arg("mesh").none() = nb::none(),
++          nb::arg("context").none() = nb::none(),
++          "Creates an NamedMeshAttr with the given name and MeshAttr.")
++      .def_property_readonly("name",
++                             [](MlirAttribute self) {
++                               return toPyString(mpmdNamedMeshAttrGetName(self));
++                             })
++      .def_property_readonly("mesh", [](MlirAttribute self) {
++        return mpmdNamedMeshAttrGetMesh(self);
++      });
++
++  mlir::python::nanobind_adaptors::mlir_attribute_subclass(
++      m, "TopologyAttr", mpmdAttributeIsATopologyAttr)
++      .def_classmethod(
++          "get",
++          [](nb::object cls, const std::vector<MlirAttribute>& meshes,
++             MlirContext ctx) {
++            return cls(mpmdTopologyAttrGet(ctx, meshes.size(), meshes.data()));
++          },
++          nb::arg("cls"), nb::arg("meshes"),
++          nb::arg("context").none() = nb::none(),
++          "Creates a TopologyAttr with the given meshes.")
++      .def_property_readonly("meshes",
++                             [](MlirAttribute self) {
++                               return propertyVector<MlirAttribute>(
++                                   self, mpmdTopologyAttrGetMeshesSize,
++                                   mpmdTopologyAttrGetMeshesElem);
++                             })
++      .def_property_readonly("size", [](MlirAttribute self) {
++        return mpmdTopologyAttrGetMeshesSize(self);
++      });
++
++  mlir::python::nanobind_adaptors::mlir_attribute_subclass(
++      m, "UserOriginAttr", mpmdAttributeIsAUserOriginAttr)
++      .def_classmethod(
++          "get",
++          [](nb::object cls, MlirAttribute& userName, int64_t transposeCount,
++             MlirContext ctx) {
++            return cls(mpmdUserOriginAttrGet(ctx, userName, transposeCount));
++          },
++          nb::arg("cls"), nb::arg("user_name"),
++          nb::arg("transpose_count") = 0,
++          nb::arg("context").none() = nb::none(),
++          "Creates a UserOriginAttr with the given user name and transpose count.")
++      .def_property_readonly("user_name",
++                             [](MlirAttribute self) {
++                               return toPyString(mpmdUserOriginAttrGetUserName(self));
++                             })
++      .def_property_readonly("transpose_count", [](MlirAttribute self) {
++        return mpmdUserOriginAttrGetTransposeCount(self);
++      });
++
++  mlir::python::nanobind_adaptors::mlir_attribute_subclass(
++      m, "OriginAttr", mpmdAttributeIsAOriginAttr)
++      .def_classmethod(
++          "get",
++          [](nb::object cls, const std::string& originLabel, MlirContext ctx) {
++            return cls(mpmdOriginAttrGet(ctx, toStringRef(originLabel)));
++          },
++          nb::arg("cls"), nb::arg("origin_label"),
++          nb::arg("context").none() = nb::none(),
++          "Creates an OriginAttr with the given origin label.")
++      .def_property_readonly("origin_label",
++                             [](MlirAttribute self) {
++                               return toPyString(mpmdOriginAttrGetOriginLabel(self));
++                             });
++}
++
++}  // namespace
++}  // namespace mpmd
++}  // namespace mlir
+diff --git a/shardy/integrations/python/ir/mpmd_ops.td b/shardy/integrations/python/ir/mpmd_ops.td
+new file mode 100644
+index 0000000..86d6dcf
+--- /dev/null
++++ b/shardy/integrations/python/ir/mpmd_ops.td
+@@ -0,0 +1,21 @@
++/* Copyright 2025 The Shardy Authors.
++
++Licensed under the Apache License, Version 2.0 (the "License");
++you may not use this file except in compliance with the License.
++You may obtain a copy of the License at
++
++    http://www.apache.org/licenses/LICENSE-2.0
++
++Unless required by applicable law or agreed to in writing, software
++distributed under the License is distributed on an "AS IS" BASIS,
++WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++See the License for the specific language governing permissions and
++limitations under the License.
++==============================================================================*/
++
++#ifndef SHARDY_INTEGRATIONS_PYTHON_MPMD_OPS
++#define SHARDY_INTEGRATIONS_PYTHON_MPMD_OPS
++
++include "shardy/dialect/mpmd/ir/ops.td"
++
++#endif
+diff --git a/shardy/integrations/python/ir/sdy_module.cc b/shardy/integrations/python/ir/sdy_module.cc
+index da451fa..318e14f 100644
+--- a/shardy/integrations/python/ir/sdy_module.cc
++++ b/shardy/integrations/python/ir/sdy_module.cc
+@@ -28,8 +28,8 @@ limitations under the License.
+ #include "nanobind/stl/string.h"    // IWYU pragma: keep
+ #include "nanobind/stl/variant.h"   // IWYU pragma: keep
+ #include "nanobind/stl/vector.h"    // IWYU pragma: keep
+-#include "shardy/integrations/c/attributes.h"
+-#include "shardy/integrations/c/dialect.h"
++#include "shardy/integrations/c/attributes_sdy.h"
++#include "shardy/integrations/c/dialect_sdy.h"
+
+ namespace mlir {
+ namespace sdy {
+diff --git a/shardy_mpmd_pybinds.patch b/shardy_mpmd_pybinds.patch
+new file mode 100644
+index 0000000..58ce9e1
+--- /dev/null
++++ b/shardy_mpmd_pybinds.patch
+@@ -0,0 +1,1908 @@
++From 248452a6152e710a212611f3be9db01f7d3c927b Mon Sep 17 00:00:00 2001
++From: tenstorrent <tt-mlir@tenstorrent.com>
++Date: Sat, 16 Aug 2025 19:37:33 +0000
++Subject: [PATCH] changes
++
++---
++ CMakeLists.txt                                |   2 +
++ shardy/dialect/mpmd/ir/CMakeLists.txt         |  86 +++++++++
++ shardy/dialect/mpmd/ir/dialect.cc             |  19 +-
++ shardy/dialect/mpmd/transforms/CMakeLists.txt |  31 ++++
++ .../mpmd/transforms/common/CMakeLists.txt     |  87 +++++++++
++ .../mpmd/transforms/common/call_rewrites.cc   |   6 +-
++ .../mpmd/transforms/common/merge_fragments.cc |   4 +-
++ .../uniquify_function_inputs_outputs.cc       |   6 +-
++ .../mpmd/transforms/export/CMakeLists.txt     |  75 ++++++++
++ .../mpmd/transforms/import/CMakeLists.txt     | 124 +++++++++++++
++ .../import/infer_mesh_assignment.cc           |  85 +++++----
++ .../mpmd/transforms/optimize/CMakeLists.txt   |  69 ++++++++
++ .../sharding_propagation/CMakeLists.txt       |  41 +++++
++ shardy/integrations/c/CMakeLists.txt          |  39 ++++-
++ shardy/integrations/c/attributes_mpmd.cc      | 126 +++++++++++++
++ shardy/integrations/c/attributes_mpmd.h       |  84 +++++++++
++ .../c/{attributes.cc => attributes_sdy.cc}    |   2 +-
++ .../c/{attributes.h => attributes_sdy.h}      |   6 +-
++ shardy/integrations/c/dialect_mpmd.cc         |  21 +++
++ shardy/integrations/c/dialect_mpmd.h          |  31 ++++
++ .../c/{dialect.cc => dialect_sdy.cc}          |   2 +-
++ .../c/{dialect.h => dialect_sdy.h}            |   0
++ shardy/integrations/c/passes_mpmd.cc          |  22 +++
++ shardy/integrations/c/passes_mpmd.h           |  33 ++++
++ .../c/{passes.cc => passes_sdy.cc}            |   2 +-
++ .../integrations/c/{passes.h => passes_sdy.h} |   6 +-
++ shardy/integrations/python/ir/CMakeLists.txt  |  29 +++
++ shardy/integrations/python/ir/__init__.py     |  26 ++-
++ .../integrations/python/ir/dialects/mpmd.py   |  20 +++
++ .../python/ir/dialects/mpmd_enums.td          |  21 +++
++ .../python/ir/dialects/mpmd_ops.td            |  21 +++
++ shardy/integrations/python/ir/mpmd.py         |  20 +++
++ shardy/integrations/python/ir/mpmd_enums.td   |  21 +++
++ shardy/integrations/python/ir/mpmd_module.cc  | 165 ++++++++++++++++++
++ shardy/integrations/python/ir/mpmd_ops.td     |  21 +++
++ shardy/integrations/python/ir/sdy_module.cc   |   4 +-
++ 36 files changed, 1279 insertions(+), 78 deletions(-)
++ create mode 100644 shardy/dialect/mpmd/ir/CMakeLists.txt
++ create mode 100644 shardy/dialect/mpmd/transforms/CMakeLists.txt
++ create mode 100644 shardy/dialect/mpmd/transforms/common/CMakeLists.txt
++ create mode 100644 shardy/dialect/mpmd/transforms/export/CMakeLists.txt
++ create mode 100644 shardy/dialect/mpmd/transforms/import/CMakeLists.txt
++ create mode 100644 shardy/dialect/mpmd/transforms/optimize/CMakeLists.txt
++ create mode 100644 shardy/dialect/mpmd/transforms/sharding_propagation/CMakeLists.txt
++ create mode 100644 shardy/integrations/c/attributes_mpmd.cc
++ create mode 100644 shardy/integrations/c/attributes_mpmd.h
++ rename shardy/integrations/c/{attributes.cc => attributes_sdy.cc} (99%)
++ rename shardy/integrations/c/{attributes.h => attributes_sdy.h} (98%)
++ create mode 100644 shardy/integrations/c/dialect_mpmd.cc
++ create mode 100644 shardy/integrations/c/dialect_mpmd.h
++ rename shardy/integrations/c/{dialect.cc => dialect_sdy.cc} (92%)
++ rename shardy/integrations/c/{dialect.h => dialect_sdy.h} (100%)
++ create mode 100644 shardy/integrations/c/passes_mpmd.cc
++ create mode 100644 shardy/integrations/c/passes_mpmd.h
++ rename shardy/integrations/c/{passes.cc => passes_sdy.cc} (94%)
++ rename shardy/integrations/c/{passes.h => passes_sdy.h} (86%)
++ create mode 100644 shardy/integrations/python/ir/dialects/mpmd.py
++ create mode 100644 shardy/integrations/python/ir/dialects/mpmd_enums.td
++ create mode 100644 shardy/integrations/python/ir/dialects/mpmd_ops.td
++ create mode 100644 shardy/integrations/python/ir/mpmd.py
++ create mode 100644 shardy/integrations/python/ir/mpmd_enums.td
++ create mode 100644 shardy/integrations/python/ir/mpmd_module.cc
++ create mode 100644 shardy/integrations/python/ir/mpmd_ops.td
++
++diff --git a/CMakeLists.txt b/CMakeLists.txt
++index b73a2bd..c5cb085 100755
++--- a/CMakeLists.txt
+++++ b/CMakeLists.txt
++@@ -52,5 +52,7 @@ add_compile_options(-Wno-deprecated-declarations -Wno-unused-but-set-variable -W
++ add_subdirectory(shardy/common)
++ add_subdirectory(shardy/dialect/sdy/ir)
++ add_subdirectory(shardy/dialect/sdy/transforms)
+++add_subdirectory(shardy/dialect/mpmd/ir)
+++add_subdirectory(shardy/dialect/mpmd/transforms)
++ add_subdirectory(shardy/integrations/python/ir)
++ add_subdirectory(shardy/integrations/c)
++\ No newline at end of file
++diff --git a/shardy/dialect/mpmd/ir/CMakeLists.txt b/shardy/dialect/mpmd/ir/CMakeLists.txt
++new file mode 100644
++index 0000000..83eccc3
++--- /dev/null
+++++ b/shardy/dialect/mpmd/ir/CMakeLists.txt
++@@ -0,0 +1,86 @@
+++# Shardy MLIR MPMD dialect.
+++
+++set(LLVM_TARGET_DEFINITIONS dialect.td)
+++mlir_tablegen(dialect.h.inc -gen-dialect-decls -dialect=mpmd)
+++mlir_tablegen(dialect.cc.inc -gen-dialect-defs -dialect=mpmd)
+++add_public_tablegen_target(MpmdDialectIncGen)
+++add_dependencies(mlir-headers MpmdDialectIncGen)
+++add_mlir_doc(dialect MpmdDialect src/autogen/md/Dialect/ -gen-dialect-doc)
+++
+++set(LLVM_TARGET_DEFINITIONS canonicalization.td)
+++mlir_tablegen(canonicalization.cc.inc -gen-rewriters)
+++add_public_tablegen_target(MpmdCanonicalizationIncGen)
+++add_dependencies(mlir-headers MpmdCanonicalizationIncGen)
+++
+++set(LLVM_TARGET_DEFINITIONS ops.td)
+++mlir_tablegen(ops.h.inc -gen-op-decls)
+++mlir_tablegen(ops.cc.inc -gen-op-defs)
+++add_public_tablegen_target(MpmdOpsIncGen)
+++add_dependencies(mlir-headers MpmdOpsIncGen)
+++
+++set(LLVM_TARGET_DEFINITIONS types.td)
+++mlir_tablegen(types.h.inc -gen-typedef-decls)
+++mlir_tablegen(types.cc.inc -gen-typedef-defs)
+++add_public_tablegen_target(MpmdTypesIncGen)
+++add_dependencies(mlir-headers MpmdTypesIncGen)
+++
+++set(LLVM_TARGET_DEFINITIONS attrs.td)
+++mlir_tablegen(attrs.h.inc -gen-attrdef-decls)
+++mlir_tablegen(attrs.cc.inc -gen-attrdef-defs)
+++add_public_tablegen_target(MpmdAttrsIncGen)
+++add_dependencies(mlir-headers MpmdAttrsIncGen)
+++
+++set(LLVM_TARGET_DEFINITIONS enums.td)
+++mlir_tablegen(enums.h.inc -gen-enum-decls)
+++mlir_tablegen(enums.cc.inc -gen-enum-defs)
+++add_public_tablegen_target(MpmdEnumsIncGen)
+++add_dependencies(mlir-headers MpmdEnumsIncGen)
+++
+++add_mlir_dialect_library(MpmdDialect
+++  dialect.cc
+++  utils.cc
+++
+++  DEPENDS
+++  MpmdDialectIncGen
+++  MpmdOpsIncGen
+++  MpmdAttrsIncGen
+++  MpmdEnumsIncGen
+++  MpmdTypesIncGen
+++  MpmdCanonicalizationIncGen
+++
+++  LINK_LIBS PUBLIC
+++  LLVMSupport
+++  MLIRBytecodeOpInterface
+++  MLIRFuncDialect
+++  MLIRIR
+++  MLIRInferTypeOpInterface
+++  MLIRTransformUtils
+++  MLIRShapeDialect
+++  MLIRSideEffectInterfaces
+++  MLIRSupport
+++  StablehloAssemblyFormat
+++  StablehloBase
+++  StablehloOps
+++  StablehloTypeInference
+++)
+++
+++target_include_directories(MpmdDialect INTERFACE
+++  $<BUILD_INTERFACE:${SHARDY_SOURCE_DIR}>
+++  $<BUILD_INTERFACE:${SHARDY_BINARY_DIR}>
+++)
+++
+++add_mlir_dialect_library(MpmdRegister
+++  register.cc
+++
+++  LINK_LIBS PUBLIC
+++  MpmdDialect
+++  MLIRFuncDialect
+++  MLIRFuncAllExtensions
+++  MLIRIR
+++  StablehloOps
+++)
+++
+++target_include_directories(MpmdRegister INTERFACE
+++  $<BUILD_INTERFACE:${SHARDY_SOURCE_DIR}>
+++  $<BUILD_INTERFACE:${SHARDY_BINARY_DIR}>
+++)
++diff --git a/shardy/dialect/mpmd/ir/dialect.cc b/shardy/dialect/mpmd/ir/dialect.cc
++index af013d6..f125e3c 100644
++--- a/shardy/dialect/mpmd/ir/dialect.cc
+++++ b/shardy/dialect/mpmd/ir/dialect.cc
++@@ -878,9 +878,9 @@ FragmentOp CreateMeshFragmentWithBody(
++   // Only user defined fragments can be assigned to a stage and any fragment
++   // created by the compiler is considered to be an inferred fragment.
++   // Therefore, the created fragment isn't assigned to a stage.
++-  FragmentOp fragment_op = FragmentOp::create(builder, loc, result_types,
++-                                              tensors, origin_attr, mesh_name,
++-                                              /*stage_id=*/IntegerAttr());
+++  FragmentOp fragment_op = builder.create<FragmentOp>(
+++    loc, result_types, tensors, origin_attr, mesh_name,
+++    /*stage_id=*/IntegerAttr());
++   Block& fragment_block = fragment_op.getRegion().emplaceBlock();
++   sdy::MeshAttr mesh_attr = GetMeshOrFail(fragment_op, mesh_name);
++
++@@ -892,8 +892,7 @@ FragmentOp CreateMeshFragmentWithBody(
++                             fragment_block.args_end());
++
++   OpBuilder block_builder = OpBuilder::atBlockBegin(&fragment_block);
++-  ReturnOp::create(block_builder, loc,
++-                   body_populator(arguments, block_builder));
+++  block_builder.create<ReturnOp>(loc, body_populator(arguments, block_builder));
++   return fragment_op;
++ }
++ }  // namespace
++@@ -1345,9 +1344,9 @@ ForOp ForOp::create(Location loc, ValueRange tensors, uint32_t iterations,
++                     OpBuilder& builder, ForOpBodyPopulator body_populator,
++                     uint32_t unroll_factor) {
++   TypeRange result_types = tensors.getTypes();
++-  auto op = ForOp::create(
++-      builder, loc, result_types, tensors, iterations,
++-      unroll_factor == 1 ? nullptr : builder.getUI32IntegerAttr(unroll_factor));
+++  auto op = builder.create<ForOp>(
+++    loc, result_types, tensors, iterations,
+++    unroll_factor == 1 ? nullptr : builder.getUI32IntegerAttr(unroll_factor));
++
++   Block& block = op.getRegion().emplaceBlock();
++   for (Value operand : tensors) {
++@@ -1360,8 +1359,8 @@ ForOp ForOp::create(Location loc, ValueRange tensors, uint32_t iterations,
++   ArrayRef<Value> args(block.args_begin(), block.args_end());
++
++   OpBuilder block_builder = OpBuilder::atBlockBegin(&block);
++-  ReturnOp::create(
++-      block_builder, loc,
+++  block_builder.create<ReturnOp>(
+++    loc,
++       body_populator(args.drop_back(), /*index=*/args.back(), block_builder));
++   return op;
++ }
++diff --git a/shardy/dialect/mpmd/transforms/CMakeLists.txt b/shardy/dialect/mpmd/transforms/CMakeLists.txt
++new file mode 100644
++index 0000000..0728af8
++--- /dev/null
+++++ b/shardy/dialect/mpmd/transforms/CMakeLists.txt
++@@ -0,0 +1,31 @@
+++# Shardy MLIR MPMD Transforms Passes
+++
+++add_subdirectory(common)
+++add_subdirectory(export)
+++add_subdirectory(import)
+++add_subdirectory(optimize)
+++add_subdirectory(sharding_propagation)
+++
+++add_mlir_library(MpmdTransformsPasses
+++  passes.cc
+++
+++  DEPENDS
+++  MpmdTransformsCommonPasses
+++  MpmdTransformsExportPasses
+++  MpmdTransformsImportPasses
+++  MpmdTransformsOptimizePasses
+++  MpmdTransformsShardingPropagationPasses
+++
+++  LINK_LIBS PUBLIC
+++  MLIRPass
+++  MpmdTransformsCommonPasses
+++  MpmdTransformsExportPasses
+++  MpmdTransformsImportPasses
+++  MpmdTransformsOptimizePasses
+++  MpmdTransformsShardingPropagationPasses
+++)
+++
+++target_include_directories(MpmdTransformsPasses INTERFACE
+++  $<BUILD_INTERFACE:${SHARDY_SOURCE_DIR}>
+++  $<BUILD_INTERFACE:${SHARDY_BINARY_DIR}>
+++)
++diff --git a/shardy/dialect/mpmd/transforms/common/CMakeLists.txt b/shardy/dialect/mpmd/transforms/common/CMakeLists.txt
++new file mode 100644
++index 0000000..e26d2aa
++--- /dev/null
+++++ b/shardy/dialect/mpmd/transforms/common/CMakeLists.txt
++@@ -0,0 +1,87 @@
+++# Shardy MLIR MPMD Transforms Common
+++
+++set(LLVM_TARGET_DEFINITIONS passes.td)
+++mlir_tablegen(passes.h.inc -gen-pass-decls -name=MpmdCommon)
+++add_public_tablegen_target(MpmdTransformsCommonPassesIncGen)
+++add_dependencies(mlir-headers MpmdTransformsCommonPassesIncGen)
+++
+++add_mlir_library(MpmdTransformsCommonUtils
+++  utils.cc
+++
+++  DEPENDS
+++  MpmdDialect
+++
+++  LINK_LIBS PUBLIC
+++  MpmdDialect
+++  LLVMSupport
+++  MLIRFuncDialect
+++  MLIRIR
+++  MLIRTransformUtils
+++  MLIRSupport
+++  MLIRPass
+++  MLIRTransforms
+++)
+++
+++add_mlir_library(MpmdTransformsCommonSimplifyRegionOpBase
+++  simplify_region_op_base.cc
+++
+++  DEPENDS
+++  MpmdTransformsCommonUtils
+++
+++  LINK_LIBS PUBLIC
+++  MpmdTransformsCommonUtils
+++  LLVMSupport
+++  MLIRIR
+++  MLIRSideEffectInterfaces
+++  MLIRSupport
+++  MLIRTransformUtils
+++)
+++
+++add_mlir_library(MpmdTransformsCommonDistributedFunctionPass
+++  distributed_function_pass.cc
+++
+++  DEPENDS
+++  MpmdDialect
+++
+++  LINK_LIBS PUBLIC
+++  MpmdDialect
+++  MLIRFuncDialect
+++  MLIRPass
+++)
+++
+++add_mlir_library(MpmdTransformsCommonPasses
+++  absorb_inferred_fragments.cc
+++  call_rewrites.cc
+++  copy_constants.cc
+++  fragment_dce.cc
+++  fragment_dedup.cc
+++  merge_fragments.cc
+++  merge_transfers.cc
+++  remove_transfer_cycles.cc
+++  rule_based_merge.cc
+++  split_bwd_fragments.cc
+++  uniquify_function_inputs_outputs.cc
+++  unroll_for_loops.cc
+++
+++  DEPENDS
+++  MpmdTransformsCommonPassesIncGen
+++  MpmdTransformsCommonDistributedFunctionPass
+++  MpmdTransformsCommonUtils
+++
+++  LINK_LIBS PUBLIC
+++  LLVMSupport
+++  StablehloOps
+++  MpmdTransformsCommonDistributedFunctionPass
+++  MpmdTransformsCommonUtils
+++  MLIRAnalysis
+++  MLIRDataLayoutInterfaces
+++  MLIRFuncDialect
+++  MLIRIR
+++  MLIRTransformUtils
+++  MLIRLoopLikeInterface
+++  MLIRPass
+++  MLIRRewrite
+++  MLIRSideEffectInterfaces
+++  MLIRSupport
+++  MLIRTransforms
+++)
++diff --git a/shardy/dialect/mpmd/transforms/common/call_rewrites.cc b/shardy/dialect/mpmd/transforms/common/call_rewrites.cc
++index 67022ca..d1da0a6 100644
++--- a/shardy/dialect/mpmd/transforms/common/call_rewrites.cc
+++++ b/shardy/dialect/mpmd/transforms/common/call_rewrites.cc
++@@ -277,9 +277,9 @@ class EraseUnusedCalleeBlockArgumentsPass
++       // Alas, we cannot directly erase results of an op, so we need to create
++       // a new call op, and use it to replace the old one.
++       rewriter.setInsertionPoint(call_op);
++-      auto new_call_op =
++-          CallOp::create(rewriter, call_op.getLoc(), result_types,
++-                         call_op->getOperands(), call_op.getCalleeAttr());
+++      auto new_call_op = rewriter.create<CallOp>(call_op.getLoc(), result_types,
+++                                                 call_op->getOperands(),
+++                                                 call_op.getCalleeAttr());
++       new_call_op->setDiscardableAttrs(call_op->getDiscardableAttrDictionary());
++       for (auto [new_result, old_result_index] :
++            llvm::zip_equal(new_call_op.getResults(), kept_results.set_bits())) {
++diff --git a/shardy/dialect/mpmd/transforms/common/merge_fragments.cc b/shardy/dialect/mpmd/transforms/common/merge_fragments.cc
++index 36ed7bb..098c579 100644
++--- a/shardy/dialect/mpmd/transforms/common/merge_fragments.cc
+++++ b/shardy/dialect/mpmd/transforms/common/merge_fragments.cc
++@@ -87,7 +87,7 @@ bool TypeHasOneElement(Type type) {
++
++ // Returns true if `op` is an inter-mesh TransferOp whose global type has only
++ // one element.
++-bool IsNonScalarInterMeshTransfer(Operation* op) {
+++[[ maybe_unused ]] bool IsNonScalarInterMeshTransfer(Operation* op) {
++   TransferOp transfer_op = DynCastInterMeshTransfer(op);
++   return transfer_op &&
++          !TypeHasOneElement(transfer_op.getType().getGlobalTensorType());
++@@ -334,7 +334,7 @@ FailureOr<FragmentOp> MergeFragmentBasePass::MergeFragmentsRewrite(
++       producer_op.getMeshNameAttr(),
++       /*stage_id=*/GetMergedStageIdAttribute(producer_op, mergeable_user));
++
++-  for (const auto [attr_name, attr] : merged_attributes) {
+++  for (const auto &[attr_name, attr] : merged_attributes) {
++     merged_fragment->setAttr(attr_name, attr);
++   }
++
++diff --git a/shardy/dialect/mpmd/transforms/common/uniquify_function_inputs_outputs.cc b/shardy/dialect/mpmd/transforms/common/uniquify_function_inputs_outputs.cc
++index 7aaa133..f76f2e1 100644
++--- a/shardy/dialect/mpmd/transforms/common/uniquify_function_inputs_outputs.cc
+++++ b/shardy/dialect/mpmd/transforms/common/uniquify_function_inputs_outputs.cc
++@@ -71,8 +71,8 @@ void CreateReturnFragmentForMesh(StringRef mesh_name, Operation* return_op,
++   }
++
++   auto loc = return_op->getLoc();
++-  auto fragment_op = FragmentOp::create(
++-      builder, loc, fragment_return_types, fragment_operands,
+++  auto fragment_op = builder.create<FragmentOp>(
+++      loc, fragment_return_types, fragment_operands,
++       /*user_origin=*/ArrayAttr::get(builder.getContext(), {}),
++       /*mesh_name=*/mesh_name, /*stage_id=*/IntegerAttr());
++   Block& fragment_block = fragment_op.getRegion().emplaceBlock();
++@@ -98,7 +98,7 @@ void CreateReturnFragmentForMesh(StringRef mesh_name, Operation* return_op,
++     }
++   }
++   auto block_builder = OpBuilder::atBlockEnd(&fragment_block);
++-  ReturnOp::create(block_builder, loc, returned_values);
+++  block_builder.create<ReturnOp>(loc, returned_values);
++ }
++
++ // Replaces the return values of the function with transfer ops.
++
++diff --git a/shardy/dialect/mpmd/transforms/export/CMakeLists.txt b/shardy/dialect/mpmd/transforms/export/CMakeLists.txt
++new file mode 100644
++index 0000000..a42701e
++--- /dev/null
+++++ b/shardy/dialect/mpmd/transforms/export/CMakeLists.txt
++@@ -0,0 +1,75 @@
+++# Shardy MLIR MPMD Transform Export Passes and Pipeline
+++
+++set(LLVM_TARGET_DEFINITIONS passes.td)
+++mlir_tablegen(passes.h.inc -gen-pass-decls -name=MpmdExport)
+++add_public_tablegen_target(MpmdTransformsExportPassesIncGen)
+++add_dependencies(mlir-headers MpmdTransformsExportPassesIncGen)
+++
+++add_mlir_library(MpmdTransformsExportUtils
+++  utils.cc
+++
+++  DEPENDS
+++  MpmdDialect
+++
+++  LINK_LIBS PUBLIC
+++  MpmdDialect
+++  MLIRAnalysis
+++  MLIRFuncDialect
+++  MLIRIR
+++  MLIRSupport
+++)
+++
+++add_mlir_library(MpmdTransformsExportNamingUtils
+++  naming_utils.cc
+++
+++  DEPENDS
+++  MpmdDialect
+++  MpmdTransformsCommonUtils
+++
+++  LINK_LIBS PUBLIC
+++  MpmdDialect
+++  MpmdTransformsCommonUtils
+++  MLIRFuncDialect
+++  MLIRPass
+++  LLVMSupport
+++  MLIRIR
+++  MLIRSupport
+++)
+++
+++add_mlir_library(MpmdTransformsExportPasses
+++  export_pipeline.cc
+++  lower_to_fragment_calls.cc
+++  mark_aliasing_and_donation.cc
+++  mark_fragment_reserved_memory.cc
+++  mark_input_output_with_layouts.cc
+++  mark_offloaded_input_output.cc
+++  reschedule_ops.cc
+++
+++  DEPENDS
+++  MpmdDialect
+++  MpmdTransformsExportPassesIncGen
+++  MpmdTransformsExportNamingUtils
+++  MpmdTransformsExportUtils
+++  MpmdTransformsCommonDistributedFunctionPass
+++  MpmdTransformsCommonPasses
+++  MpmdTransformsCommonUtils
+++  SdyDialect
+++
+++  LINK_LIBS PUBLIC
+++  MpmdTransformsExportNamingUtils
+++  MpmdTransformsExportUtils
+++  MpmdDialect
+++  MpmdTransformsCommonDistributedFunctionPass
+++  MpmdTransformsCommonPasses
+++  MpmdTransformsCommonUtils
+++  SdyDialect
+++  LLVMSupport
+++  MLIRAnalysis
+++  MLIRFuncDialect
+++  MLIRIR
+++  MLIRPass
+++  MLIRSupport
+++  MLIRTransformUtils
+++  MLIRTransforms
+++  StablehloOps
+++)
++diff --git a/shardy/dialect/mpmd/transforms/import/CMakeLists.txt b/shardy/dialect/mpmd/transforms/import/CMakeLists.txt
++new file mode 100644
++index 0000000..a45baed
++--- /dev/null
+++++ b/shardy/dialect/mpmd/transforms/import/CMakeLists.txt
++@@ -0,0 +1,124 @@
+++# Shardy MLIR MPMD Transforms Import Passes and Pipeline
+++
+++set(LLVM_TARGET_DEFINITIONS passes.td)
+++mlir_tablegen(passes.h.inc -gen-pass-decls -name=MpmdImport)
+++add_public_tablegen_target(MpmdTransformsImportPassesIncGen)
+++add_dependencies(mlir-headers MpmdTransformsImportPassesIncGen)
+++
+++add_mlir_library(MpmdTransformsImportMeshAssignmentMap
+++  mesh_assignment_map.cc
+++
+++  LINK_LIBS PUBLIC
+++  LLVMSupport
+++)
+++
+++add_mlir_library(MpmdTransformsImportMeshInferenceOrigins
+++  mesh_inference_origins.cc
+++
+++  DEPENDS
+++  MpmdDialect
+++
+++  LINK_LIBS PUBLIC
+++  MpmdDialect
+++  LLVMSupport
+++  MLIRIR
+++  MLIRPass
+++  MLIRSupport
+++)
+++
+++add_mlir_library(MpmdTransformsImportMeshesWithOrigins
+++  meshes_with_origins.cc
+++
+++  DEPENDS
+++  MpmdDialect
+++  MpmdTransformsImportMeshInferenceOrigins
+++
+++  LINK_LIBS PUBLIC
+++  MpmdDialect
+++  MpmdTransformsImportMeshInferenceOrigins
+++  LLVMSupport
+++  MLIRIR
+++  MLIRSupport
+++)
+++
+++
+++add_mlir_library(MpmdTransformsImportMeshInferenceUtils
+++  mesh_inference_utils.cc
+++
+++  DEPENDS
+++  MpmdTransformsImportMeshesWithOrigins
+++  MpmdDialect
+++  MpmdTransformsCommonUtils
+++  SdyDialect
+++
+++  LINK_LIBS PUBLIC
+++  MpmdTransformsImportMeshesWithOrigins
+++  MpmdDialect
+++  MpmdTransformsCommonUtils
+++  SdyDialect
+++  LLVMSupport
+++  MLIRFuncDialect
+++  MLIRIR
+++  MLIRPass
+++  MLIRSupport
+++)
+++
+++add_mlir_library(MpmdTransformsImportShardingConstraints
+++  sharding_constraints.cc
+++
+++  LINK_LIBS PUBLIC
+++  LLVMSupport
+++)
+++
+++add_mlir_library(MpmdTransformsImportPasses
+++  copy_topology_from_main.cc
+++  enforce_equisharding.cc
+++  import_pipeline.cc
+++  infer_mesh_assignment.cc
+++  infer_mesh_validation.cc
+++  insert_nameless_clones_of_negligible_ops.cc
+++  introduce_transfers.cc
+++  map_input_output_to_mesh.cc
+++  map_named_ops_to_mpmd_ops.cc
+++  simplify_named_computations.cc
+++  validate_named_ops_in_mpmd_func.cc
+++
+++  DEPENDS
+++  MpmdTransformsImportMeshAssignmentMap
+++  MpmdTransformsImportMeshInferenceOrigins
+++  MpmdTransformsImportMeshInferenceUtils
+++  MpmdTransformsImportMeshesWithOrigins
+++  MpmdTransformsImportPassesIncGen
+++  MpmdTransformsImportShardingConstraints
+++  MpmdDialect
+++  MpmdTransformsCommonDistributedFunctionPass
+++  MpmdTransformsCommonPasses
+++  MpmdTransformsCommonUtils
+++  MpmdTransformsCommonSimplifyRegionOpBase
+++  SdyDialect
+++
+++  LINK_LIBS PUBLIC
+++  MpmdTransformsImportMeshAssignmentMap
+++  MpmdTransformsImportMeshInferenceOrigins
+++  MpmdTransformsImportMeshInferenceUtils
+++  MpmdTransformsImportMeshesWithOrigins
+++  MpmdTransformsImportShardingConstraints
+++  MpmdDialect
+++  MpmdTransformsCommonDistributedFunctionPass
+++  MpmdTransformsCommonPasses
+++  MpmdTransformsCommonUtils
+++  MpmdTransformsCommonSimplifyRegionOpBase
+++  SdyDialect
+++  LLVMSupport
+++  MLIRFuncDialect
+++  MLIRIR
+++  MLIRPass
+++  MLIRRewrite
+++  MLIRSideEffectInterfaces
+++  MLIRSupport
+++  MLIRTransforms
+++  MLIRTransformUtils
+++  StablehloOps
+++  StablehloPasses
+++  StablehloOptimizationPasses
+++)
++\ No newline at end of file
++diff --git a/shardy/dialect/mpmd/transforms/import/infer_mesh_assignment.cc b/shardy/dialect/mpmd/transforms/import/infer_mesh_assignment.cc
++index 45f6523..9ef9270 100644
++--- a/shardy/dialect/mpmd/transforms/import/infer_mesh_assignment.cc
+++++ b/shardy/dialect/mpmd/transforms/import/infer_mesh_assignment.cc
++@@ -462,8 +462,8 @@ class LowerMpmdReducePattern final : public OpRewritePattern<ReduceOp> {
++         if (reduced_val.getType() == user_type) {
++           transferred_intermediates.push_back(reduced_val);
++         } else {
++-          transferred_intermediates.push_back(TransferOp::create(
++-              rewriter, reduced_val.getLoc(), user_type, reduced_val));
+++          transferred_intermediates.push_back(rewriter.create<TransferOp>(
+++            reduced_val.getLoc(), user_type, reduced_val));
++         }
++       }
++
++@@ -1096,8 +1096,7 @@ void AssignInputAndOutputToMesh(FuncOp func, BlockArgument input_arg,
++   // Assign the output to the mesh.
++   if (!isa<MeshTensorType>(return_operand.get().getType())) {
++     rewriter.setInsertionPoint(return_operand.getOwner());
++-    return_operand.set(AssignOp::create(
++-        rewriter,
+++    return_operand.set(rewriter.create<AssignOp>(
++         GetResultInfoLoc(func, return_operand.getOperandNumber())
++             .value_or(return_operand.get().getLoc()),
++         return_operand.get(), mesh_name, mesh_attr, kIoConstraintOutputOrigin));
++@@ -1109,8 +1108,8 @@ void AssignInputAndOutputToMesh(FuncOp func, BlockArgument input_arg,
++     input_arg.setType(MeshTensorType::getFullyReplicated(
++         input_arg.getContext(), mesh_name, mesh_attr,
++         cast<RankedTensorType>(input_arg.getType())));
++-    auto unassign = UnassignOp::create(rewriter, input_arg.getLoc(), input_arg,
++-                                       kIoConstraintInputOrigin);
+++    auto unassign = rewriter.create<UnassignOp>(input_arg.getLoc(), input_arg,
+++        kIoConstraintInputOrigin);
++     rewriter.replaceAllUsesExcept(input_arg, unassign, unassign);
++   }
++ }
++@@ -1293,8 +1292,7 @@ class InferMeshAssignMeshForFuncLeavesPass
++         }
++         mesh_name = first_mesh_name;
++       }
++-      return_op_operand.set(AssignOp::create(
++-          builder,
+++      return_op_operand.set(builder.create<AssignOp>(
++           GetResultInfoLoc(func, return_op_operand.getOperandNumber())
++               .value_or(return_operand.getLoc()),
++           return_operand, *mesh_name, GetMeshByName(meshes_by_name, *mesh_name),
++@@ -1405,8 +1403,8 @@ class InferMeshAssignMeshForFuncLeavesPass
++     rewriter.setInsertionPointAfter(op);
++     sdy::MeshAttr mesh = GetMeshByName(meshes_by_name, mesh_name);
++     for (Value res : op->getResults()) {
++-      AssignOp::create(rewriter, op->getLoc(), res, mesh_name, mesh,
++-                       kInferredUnusedOrigin);
+++      rewriter.create<AssignOp>(op->getLoc(), res, mesh_name, mesh,
+++                                kInferredUnusedOrigin);
++     }
++
++     ClearUseSet(op);
++@@ -1491,10 +1489,10 @@ class InferMeshAssignMeshForFuncLeavesPass
++             preferred_meshes.GetPrioritizedMeshName().value_or(first_mesh_name);
++       }
++       Value operand_val = operand.get();
++-      AssignOp assign = AssignOp::create(
++-          builder, operand_val.getLoc(), operand_val, *mesh_name,
+++      AssignOp assign = builder.create<AssignOp>(
+++        operand_val.getLoc(), operand_val, *mesh_name,
++           GetMeshByName(meshes_by_name, *mesh_name), TerminalNodesOrigin(op));
++-      operand.set(UnassignOp::create(builder, operand_val.getLoc(), assign));
+++          operand.set(builder.create<UnassignOp>(operand_val.getLoc(), assign));
++     }
++   }
++
++@@ -1537,8 +1535,8 @@ void ConvertConcatReduceOp(Operation* op, RewriterBase& rewriter) {
++   SmallVector<Value> reshaped_operands;
++   reshaped_operands.reserve(concat.getOperands().size());
++   for (Value operand : concat.getOperands()) {
++-    auto reshape = stablehlo::ReshapeOp::create(
++-        rewriter, operand.getLoc(), reduce->getResultTypes().front(), operand);
+++    auto reshape = rewriter.create<stablehlo::ReshapeOp>(
+++      operand.getLoc(), reduce->getResultTypes().front(), operand);
++     if (operand.getDefiningOp()) {
++       reshape->setDiscardableAttrs(
++           operand.getDefiningOp()->getDiscardableAttrDictionary());
++@@ -1811,8 +1809,8 @@ void AssignCalleeFuncResultsUsingAnalysis(
++     // meshes, we copy it such that each result corresponds to a single mesh.
++     for (auto [i, mesh_name] : llvm::enumerate(mesh_names.getArrayRef())) {
++       auto assign =
++-          AssignOp::create(rewriter, return_val.getLoc(), return_val, mesh_name,
++-                           GetMeshByName(meshes_by_name, mesh_name));
+++      rewriter.create<AssignOp>(return_val.getLoc(), return_val, mesh_name,
+++      GetMeshByName(meshes_by_name, mesh_name));
++       if (i == 0) {
++         new_operands[res_num] = assign;
++       } else {
++@@ -1891,10 +1889,10 @@ void AssignCalleeFuncArgsToAssignUsers(
++       UnassignOp unassign_op;
++       if (i == 0) {
++         arg.setType(mesh_type);
++-        unassign_op = UnassignOp::create(rewriter, arg.getLoc(), arg);
+++        unassign_op = rewriter.create<UnassignOp>(arg.getLoc(), arg);
++       } else {
++-        unassign_op = UnassignOp::create(
++-            rewriter, arg.getLoc(), body.addArgument(mesh_type, arg.getLoc()));
+++        unassign_op = rewriter.create<UnassignOp>(
+++          arg.getLoc(), body.addArgument(mesh_type, arg.getLoc()));
++       }
++
++       if (auto users_it = assign_users_by_mesh_name.find(mesh_name);
++@@ -1928,25 +1926,24 @@ void RewriteAccordingToUpdatedCallee(CallOp call_op, RewriterBase& rewriter) {
++       continue;
++     }
++     SDY_CHECK(isa<MeshTensorType>(call_body.getArgument(arg_num).getType()));
++-    new_operands[arg_num] =
++-        AssignOp::create(rewriter, operand.getLoc(),
++-                         call_body.getArgument(arg_num).getType(), operand);
+++    new_operands[arg_num] = rewriter.create<AssignOp>(
+++      operand.getLoc(), call_body.getArgument(arg_num).getType(), operand);
++
++     if (auto copies =
++             callee.getArgAttrOfType<DenseI64ArrayAttr>(arg_num, kMpmdCopied)) {
++       for (int64_t cloned_arg_index : copies.asArrayRef()) {
++         SDY_CHECK(isa<MeshTensorType>(
++             call_body.getArgument(cloned_arg_index).getType()));
++-        new_operands[cloned_arg_index] = AssignOp::create(
++-            rewriter, operand.getLoc(),
++-            call_body.getArgument(cloned_arg_index).getType(), operand);
+++            new_operands[cloned_arg_index] = rewriter.create<AssignOp>(
+++              operand.getLoc(), call_body.getArgument(cloned_arg_index).getType(),
+++              operand);
++       }
++     }
++   }
++
++   // Create the new call and copy attrs over.
++-  auto new_call_op = CallOp::create(
++-      rewriter, call_op.getLoc(), call_body.getTerminator()->getOperandTypes(),
+++  auto new_call_op = rewriter.create<CallOp>(
+++    call_op.getLoc(), call_body.getTerminator()->getOperandTypes(),
++       new_operands, call_op.getCalleeAttr());
++   new_call_op->setDiscardableAttrs(call_op->getDiscardableAttrDictionary());
++
++@@ -1972,9 +1969,8 @@ void RewriteAccordingToUpdatedCallee(CallOp call_op, RewriterBase& rewriter) {
++         SDY_CHECK(arg_num_it != type_to_arg_num.end())
++             << "Argument number for type " << debugString(assign_user.getType())
++             << " not found";
++-        assign_user.setOperand(
++-            UnassignOp::create(rewriter, assign_user.getLoc(),
++-                               new_call_op.getResult(arg_num_it->second)));
+++            assign_user.setOperand(rewriter.create<UnassignOp>(
+++              assign_user.getLoc(), new_call_op.getResult(arg_num_it->second)));
++       }
++     }
++   }
++@@ -2061,7 +2057,7 @@ bool AssignEntrypointFuncArgsToAssignUsers(FuncOp entrypoint_func,
++                                     cast<RankedTensorType>(arg.getType()),
++                                     memory_kind));
++
++-    UnassignOp unassign_op = UnassignOp::create(rewriter, arg.getLoc(), arg);
+++                                    UnassignOp unassign_op = rewriter.create<UnassignOp>(arg.getLoc(), arg);
++     rewriter.replaceAllUsesExcept(arg, unassign_op, unassign_op);
++   }
++   return true;
++@@ -2187,12 +2183,12 @@ void AbsorbMeshlessProducer(FragmentOp consumer, Operation* op,
++   }
++   rewriter.setInsertionPoint(consumer);
++   for (Value operand : op_operands_and_free_vars) {
++-    new_consumer_operands.push_back(
++-        AssignOp::create(rewriter, operand.getLoc(),
++-                         MeshTensorType::getFullyReplicated(
++-                             operand.getContext(), mesh_name, mesh_attr,
++-                             cast<RankedTensorType>(operand.getType())),
++-                         operand));
+++    new_consumer_operands.push_back(rewriter.create<AssignOp>(
+++      operand.getLoc(),
+++      MeshTensorType::getFullyReplicated(
+++          operand.getContext(), mesh_name, mesh_attr,
+++          cast<RankedTensorType>(operand.getType())),
+++      operand));
++   }
++   consumer->setOperands(new_consumer_operands);
++ }
++@@ -2316,8 +2312,8 @@ void RewriteForOpTerminator(
++     SDY_CHECK_LE(mesh_names.size(), 1)
++         << "Multiple mesh names found for return value";
++
++-    new_operands.push_back(AssignOp::create(
++-        rewriter, return_val.getLoc(), return_val, mesh_names[0],
+++        new_operands.push_back(rewriter.create<AssignOp>(
+++          return_val.getLoc(), return_val, mesh_names[0],
++         GetMeshByName(meshes_by_name, mesh_names[0])));
++   }
++
++@@ -2382,7 +2378,7 @@ void RewriteForOpArgsAndTypes(
++           arg.getContext(), mesh_names[0],
++           GetMeshByName(meshes_by_name, mesh_names[0]), local_type);
++       arg.setType(mesh_type);
++-      UnassignOp unassign_op = UnassignOp::create(rewriter, arg.getLoc(), arg);
+++      UnassignOp unassign_op = rewriter.create<UnassignOp>(arg.getLoc(), arg);
++
++       if (auto users_it = assign_users_by_mesh_name.find(mesh_names[0]);
++           users_it != assign_users_by_mesh_name.end()) {
++@@ -2414,9 +2410,8 @@ void RewriteForOpOperands(ForOp for_op, RewriterBase& rewriter) {
++       new_operands[arg_num] = operand;
++       continue;
++     }
++-    new_operands[arg_num] =
++-        AssignOp::create(rewriter, operand.getLoc(),
++-                         for_body.getArgument(arg_num).getType(), operand);
+++    new_operands[arg_num] = rewriter.create<AssignOp>(
+++      operand.getLoc(), for_body.getArgument(arg_num).getType(), operand);
++   }
++
++   for_op->setOperands(new_operands);
++@@ -2430,7 +2425,7 @@ void RewriteForOpResults(ForOp for_op, RewriterBase& rewriter) {
++     for (Operation* user : res.getUsers()) {
++       if (auto assign_user = dyn_cast<AssignOp>(user)) {
++         assign_user.setOperand(
++-            UnassignOp::create(rewriter, assign_user.getLoc(), res));
+++          rewriter.create<UnassignOp>(assign_user.getLoc(), res));
++       }
++     }
++   }
++diff --git a/shardy/dialect/mpmd/transforms/optimize/CMakeLists.txt b/shardy/dialect/mpmd/transforms/optimize/CMakeLists.txt
++new file mode 100644
++index 0000000..ecf3d7c
++--- /dev/null
+++++ b/shardy/dialect/mpmd/transforms/optimize/CMakeLists.txt
++@@ -0,0 +1,69 @@
+++# Shardy MLIR MPMD Transforms Optimize
+++
+++set(LLVM_TARGET_DEFINITIONS passes.td)
+++mlir_tablegen(passes.h.inc -gen-pass-decls -name=MpmdOptimize)
+++add_public_tablegen_target(MpmdTransformsOptimizePassesIncGen)
+++add_dependencies(mlir-headers MpmdTransformsOptimizePassesIncGen)
+++
+++add_mlir_library(MpmdTransformsOptimizeUtils
+++  utils.cc
+++
+++  DEPENDS
+++  MpmdDialect
+++  MpmdTransformsCommonUtils
+++
+++  LINK_LIBS PUBLIC
+++  MpmdDialect
+++  MpmdTransformsCommonUtils
+++  LLVMSupport
+++  MLIRIR
+++  MLIRSupport
+++)
+++
+++add_mlir_library(MpmdTransformsOptimizePipelineSchedule
+++  pipeline_schedule.cc
+++
+++  DEPENDS
+++  MpmdTransformsOptimizeUtils
+++  MpmdDialect
+++  MpmdTransformsCommonUtils
+++
+++  LINK_LIBS PUBLIC
+++  MpmdTransformsOptimizeUtils
+++  MpmdDialect
+++  MpmdTransformsCommonUtils
+++  LLVMSupport
+++  MLIRIR
+++  MLIRSupport
+++)
+++
+++add_mlir_library(MpmdTransformsOptimizePasses
+++  optimize_pipeline.cc
+++  remat_fragment.cc
+++  scheduler.cc
+++
+++  DEPENDS
+++  MpmdTransformsOptimizePassesIncGen
+++  MpmdTransformsOptimizePipelineSchedule
+++  MpmdTransformsOptimizeUtils
+++  MpmdDialect
+++  MpmdTransformsCommonDistributedFunctionPass
+++  MpmdTransformsCommonPasses
+++  MpmdTransformsCommonUtils
+++
+++  LINK_LIBS PUBLIC
+++  MpmdTransformsOptimizePipelineSchedule
+++  MpmdTransformsOptimizeUtils
+++  MpmdDialect
+++  MpmdTransformsCommonDistributedFunctionPass
+++  MpmdTransformsCommonPasses
+++  MpmdTransformsCommonUtils
+++  LLVMSupport
+++  MLIRAnalysis
+++  MLIRFuncDialect
+++  MLIRIR
+++  MLIRPass
+++  MLIRSupport
+++  MLIRTransforms
+++  MLIRTransformUtils
+++)
++diff --git a/shardy/dialect/mpmd/transforms/sharding_propagation/CMakeLists.txt b/shardy/dialect/mpmd/transforms/sharding_propagation/CMakeLists.txt
++new file mode 100644
++index 0000000..a8a8b05
++--- /dev/null
+++++ b/shardy/dialect/mpmd/transforms/sharding_propagation/CMakeLists.txt
++@@ -0,0 +1,41 @@
+++# Shardy MLIR MPMD Transforms Sharding Propagation
+++
+++set(LLVM_TARGET_DEFINITIONS passes.td)
+++mlir_tablegen(passes.h.inc -gen-pass-decls -name=MpmdShardingPropagation)
+++add_public_tablegen_target(MpmdTransformsShardingPropagationPassesIncGen)
+++add_dependencies(mlir-headers MpmdTransformsShardingPropagationPassesIncGen)
+++
+++add_mlir_library(MpmdTransformsShardingPropagationPasses
+++  convert_sdy_constants.cc
+++  convert_sdy_shardings_to_mpmd_types.cc
+++  enforce_user_shardings.cc
+++  extract_reshards_from_inter_mesh_transfers.cc
+++  sharding_propagation_pipeline.cc
+++
+++  DEPENDS
+++  MpmdTransformsShardingPropagationPassesIncGen
+++  MpmdDialect
+++  MpmdTransformsCommonDistributedFunctionPass
+++  MpmdTransformsCommonPasses
+++  MpmdTransformsCommonUtils
+++  SdyDialect
+++  SdyExplicitReshardsUtil
+++  SdyTransformsPropagationPasses
+++
+++  LINK_LIBS PUBLIC
+++  MpmdDialect
+++  MpmdTransformsCommonDistributedFunctionPass
+++  MpmdTransformsCommonPasses
+++  MpmdTransformsCommonUtils
+++  SdyDialect
+++  SdyExplicitReshardsUtil
+++  SdyTransformsPropagationPasses
+++  LLVMSupport
+++  MLIRFuncDialect
+++  MLIRIR
+++  MLIRPass
+++  MLIRRewrite
+++  MLIRSupport
+++  MLIRTransformUtils
+++  StablehloOps
+++)
++diff --git a/shardy/integrations/c/CMakeLists.txt b/shardy/integrations/c/CMakeLists.txt
++index fdd50c4..1c3a624 100644
++--- a/shardy/integrations/c/CMakeLists.txt
+++++ b/shardy/integrations/c/CMakeLists.txt
++@@ -1,8 +1,39 @@
++ add_mlir_public_c_api_library(SdyCAPI
++   PARTIAL_SOURCES_INTENDED
++-  attributes.cc
++-  dialect.cc
++-  passes.cc
+++  attributes_sdy.cc
+++  dialect_sdy.cc
+++  passes_sdy.cc
+++
+++  DEPENDS
+++  SdyDialect
+++  SdyTransformsPasses
+++
+++  LINK_LIBS PUBLIC
+++  LLVMSupport
+++  MLIRBytecodeOpInterface
+++  MLIRFuncDialect
+++  MLIRIR
+++  MLIRInferTypeOpInterface
+++  MLIRTransformUtils
+++  MLIRShapeDialect
+++  MLIRSideEffectInterfaces
+++  MLIRSupport
+++  StablehloAssemblyFormat
+++  StablehloOps
+++  StablehloTypeInference
+++  SdyDialect
+++  SdyTransformsPasses
+++)
+++
+++add_mlir_public_c_api_library(MpmdCAPI
+++  PARTIAL_SOURCES_INTENDED
+++  passes_mpmd.cc
+++  dialect_mpmd.cc
+++  attributes_mpmd.cc
+++
+++  DEPENDS
+++  MpmdDialect
+++  MpmdTransformsPasses
++
++   LINK_LIBS PUBLIC
++   LLVMSupport
++@@ -17,4 +48,6 @@ add_mlir_public_c_api_library(SdyCAPI
++   StablehloAssemblyFormat
++   StablehloOps
++   StablehloTypeInference
+++  MpmdDialect
+++  MpmdTransformsPasses
++ )
++diff --git a/shardy/integrations/c/attributes_mpmd.cc b/shardy/integrations/c/attributes_mpmd.cc
++new file mode 100644
++index 0000000..355107f
++--- /dev/null
+++++ b/shardy/integrations/c/attributes_mpmd.cc
++@@ -0,0 +1,126 @@
+++/* Copyright 2025 The Shardy Authors.
+++
+++Licensed under the Apache License, Version 2.0 (the "License");
+++you may not use this file except in compliance with the License.
+++You may obtain a copy of the License at
+++
+++    http://www.apache.org/licenses/LICENSE-2.0
+++
+++Unless required by applicable law or agreed to in writing, software
+++distributed under the License is distributed on an "AS IS" BASIS,
+++WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+++See the License for the specific language governing permissions and
+++limitations under the License.
+++==============================================================================*/
+++
+++#include "shardy/integrations/c/attributes_mpmd.h"
+++
+++#include <cstdint>
+++#include <optional>
+++
+++#include "mlir-c/IR.h"
+++#include "mlir-c/Support.h"
+++#include "mlir/CAPI/IR.h"
+++#include "mlir/CAPI/Support.h"
+++#include "mlir/IR/Attributes.h"
+++#include "mlir/Support/LLVM.h"
+++#include "shardy/dialect/mpmd/ir/dialect.h"
+++
+++namespace {
+++
+++namespace mpmd = ::mlir::mpmd;
+++
+++template <typename AttrTy>
+++AttrTy unwrapAttr(MlirAttribute attr) {
+++  return mlir::cast<AttrTy>(unwrap(attr));
+++}
+++
+++template <typename AttrTy>
+++mlir::ArrayRef<AttrTy> unwrapAttrs(const MlirAttribute* attrs,
+++                                   intptr_t nAttrs) {
+++  return mlir::ArrayRef(reinterpret_cast<const AttrTy*>(attrs), nAttrs);
+++}
+++
+++}  // namespace
+++
+++extern "C" {
+++
+++//===----------------------------------------------------------------------===//
+++// NamedMeshAttr
+++//===----------------------------------------------------------------------===//
+++
+++bool mpmdAttributeIsANamedMeshAttr(MlirAttribute attr) {
+++  return mlir::isa<mpmd::NamedMeshAttr>(unwrap(attr));
+++}
+++
+++MlirAttribute mpmdNamedMeshAttrGet(MlirContext ctx, MlirStringRef name, MlirAttribute mesh) {
+++  return wrap(mpmd::NamedMeshAttr::get(unwrap(ctx), unwrap(name), unwrapAttr<mlir::sdy::MeshAttr>(mesh)));
+++}
+++
+++MlirStringRef mpmdNamedMeshAttrGetName(MlirAttribute attr) {
+++  return wrap(unwrapAttr<mpmd::NamedMeshAttr>(attr).getName());
+++}
+++
+++MlirAttribute mpmdNamedMeshAttrGetMesh(MlirAttribute attr) {
+++  mlir::sdy::MeshAttr mesh = unwrapAttr<mpmd::NamedMeshAttr>(attr).getMesh();
+++  return wrap(mesh);
+++}
+++
+++//===----------------------------------------------------------------------===//
+++// TopologyAttr
+++//===----------------------------------------------------------------------===//
+++
+++bool mpmdAttributeIsATopologyAttr(MlirAttribute attr) {
+++  return mlir::isa<mpmd::TopologyAttr>(unwrap(attr));
+++}
+++
+++MlirAttribute mpmdTopologyAttrGet(MlirContext ctx, intptr_t nMeshes, const MlirAttribute* meshes) {
+++  return wrap(mpmd::TopologyAttr::get(
+++      unwrap(ctx), unwrapAttrs<mpmd::NamedMeshAttr>(meshes, nMeshes)));
+++}
+++
+++int64_t mpmdTopologyAttrGetMeshesSize(MlirAttribute attr) {
+++  return unwrapAttr<mpmd::TopologyAttr>(attr).getMeshes().size();
+++}
+++
+++MlirAttribute mpmdTopologyAttrGetMeshesElem(MlirAttribute attr, int64_t pos) {
+++  return wrap(unwrapAttr<mpmd::TopologyAttr>(attr).getMeshes()[pos]);
+++}
+++
+++//===----------------------------------------------------------------------===//
+++// UserOriginAttr
+++//===----------------------------------------------------------------------===//
+++
+++bool mpmdAttributeIsAUserOriginAttr(MlirAttribute attr) {
+++  return mlir::isa<mpmd::UserOriginAttr>(unwrap(attr));
+++}
+++
+++MlirAttribute mpmdUserOriginAttrGet(MlirContext ctx, MlirAttribute userName, int64_t transposeCount) {
+++  return wrap(mpmd::UserOriginAttr::get(unwrap(ctx), unwrapAttr<mlir::StringAttr>(userName), transposeCount));
+++}
+++
+++MlirStringRef mpmdUserOriginAttrGetUserName(MlirAttribute attr) {
+++  return wrap(unwrapAttr<mpmd::UserOriginAttr>(attr).getUserName().getValue());
+++}
+++
+++int64_t mpmdUserOriginAttrGetTransposeCount(MlirAttribute attr) {
+++  return unwrapAttr<mpmd::UserOriginAttr>(attr).getTransposeCount();
+++}
+++
+++//===----------------------------------------------------------------------===//
+++// OriginAttr
+++//===----------------------------------------------------------------------===//
+++
+++bool mpmdAttributeIsAOriginAttr(MlirAttribute attr) {
+++  return mlir::isa<mpmd::OriginAttr>(unwrap(attr));
+++}
+++
+++MlirAttribute mpmdOriginAttrGet(MlirContext ctx, MlirStringRef originLabel) {
+++  return wrap(mpmd::OriginAttr::get(unwrap(ctx), unwrap(originLabel)));
+++}
+++
+++MlirStringRef mpmdOriginAttrGetOriginLabel(MlirAttribute attr) {
+++  return wrap(unwrapAttr<mpmd::OriginAttr>(attr).getOriginLabel());
+++}
+++
+++}  // extern "C"
++diff --git a/shardy/integrations/c/attributes_mpmd.h b/shardy/integrations/c/attributes_mpmd.h
++new file mode 100644
++index 0000000..0d638fd
++--- /dev/null
+++++ b/shardy/integrations/c/attributes_mpmd.h
++@@ -0,0 +1,84 @@
+++/* Copyright 2025 The Shardy Authors.
+++
+++Licensed under the Apache License, Version 2.0 (the "License");
+++you may not use this file except in compliance with the License.
+++You may obtain a copy of the License at
+++
+++    http://www.apache.org/licenses/LICENSE-2.0
+++
+++Unless required by applicable law or agreed to in writing, software
+++distributed under the License is distributed on an "AS IS" BASIS,
+++WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+++See the License for the specific language governing permissions and
+++limitations under the License.
+++==============================================================================*/
+++
+++#ifndef SHARDY_INTEGRATIONS_C_ATTRIBUTES_MPMD_H_
+++#define SHARDY_INTEGRATIONS_C_ATTRIBUTES_MPMD_H_
+++
+++#include <stdint.h>
+++#include <sys/types.h>
+++
+++#include "mlir-c/IR.h"
+++#include "mlir-c/Support.h"
+++
+++#ifdef __cplusplus
+++extern "C" {
+++#endif
+++
+++//===----------------------------------------------------------------------===//
+++// NamedMeshAttr
+++//===----------------------------------------------------------------------===//
+++
+++MLIR_CAPI_EXPORTED bool mpmdAttributeIsANamedMeshAttr(MlirAttribute attr);
+++
+++MLIR_CAPI_EXPORTED MlirAttribute mpmdNamedMeshAttrGet(MlirContext ctx,
+++                                                    MlirStringRef name,
+++                                                    MlirAttribute mesh);
+++
+++MLIR_CAPI_EXPORTED MlirStringRef mpmdNamedMeshAttrGetName(MlirAttribute attr);
+++
+++MLIR_CAPI_EXPORTED MlirAttribute mpmdNamedMeshAttrGetMesh(MlirAttribute attr);
+++
+++//===----------------------------------------------------------------------===//
+++// TopologyAttr
+++//===----------------------------------------------------------------------===//
+++
+++MLIR_CAPI_EXPORTED bool mpmdAttributeIsATopologyAttr(MlirAttribute attr);
+++
+++MLIR_CAPI_EXPORTED MlirAttribute mpmdTopologyAttrGet(MlirContext ctx,
+++                                                    intptr_t nMeshes,
+++                                                    const MlirAttribute* meshes);
+++
+++MLIR_CAPI_EXPORTED int64_t mpmdTopologyAttrGetMeshesSize(MlirAttribute attr);
+++
+++MLIR_CAPI_EXPORTED MlirAttribute mpmdTopologyAttrGetMeshesElem(MlirAttribute attr,
+++                                                              int64_t pos);
+++
+++//===----------------------------------------------------------------------===//
+++// UserOriginAttr
+++//===----------------------------------------------------------------------===//
+++
+++MLIR_CAPI_EXPORTED bool mpmdAttributeIsAUserOriginAttr(MlirAttribute attr);
+++
+++MLIR_CAPI_EXPORTED MlirAttribute mpmdUserOriginAttrGet(MlirContext ctx, MlirAttribute userName, int64_t transposeCount);
+++
+++MLIR_CAPI_EXPORTED MlirStringRef mpmdUserOriginAttrGetUserName(MlirAttribute attr);
+++
+++MLIR_CAPI_EXPORTED int64_t mpmdUserOriginAttrGetTransposeCount(MlirAttribute attr);
+++
+++//===----------------------------------------------------------------------===//
+++// OriginAttr
+++//===----------------------------------------------------------------------===//
+++
+++MLIR_CAPI_EXPORTED bool mpmdAttributeIsAOriginAttr(MlirAttribute attr);
+++
+++MLIR_CAPI_EXPORTED MlirAttribute mpmdOriginAttrGet(MlirContext ctx, MlirStringRef originLabel);
+++
+++MLIR_CAPI_EXPORTED MlirStringRef mpmdOriginAttrGetOriginLabel(MlirAttribute attr);
+++
+++#ifdef __cplusplus
+++}
+++#endif
+++
+++#endif  // SHARDY_INTEGRATIONS_C_ATTRIBUTES_MPMD_H_
++diff --git a/shardy/integrations/c/attributes.cc b/shardy/integrations/c/attributes_sdy.cc
++similarity index 99%
++rename from shardy/integrations/c/attributes.cc
++rename to shardy/integrations/c/attributes_sdy.cc
++index b683d09..417ed66 100644
++--- a/shardy/integrations/c/attributes.cc
+++++ b/shardy/integrations/c/attributes_sdy.cc
++@@ -13,7 +13,7 @@ See the License for the specific language governing permissions and
++ limitations under the License.
++ ==============================================================================*/
++
++-#include "shardy/integrations/c/attributes.h"
+++#include "shardy/integrations/c/attributes_sdy.h"
++
++ #include <cstdint>
++ #include <optional>
++diff --git a/shardy/integrations/c/attributes.h b/shardy/integrations/c/attributes_sdy.h
++similarity index 98%
++rename from shardy/integrations/c/attributes.h
++rename to shardy/integrations/c/attributes_sdy.h
++index b6e77c9..d2c5c72 100644
++--- a/shardy/integrations/c/attributes.h
+++++ b/shardy/integrations/c/attributes_sdy.h
++@@ -13,8 +13,8 @@ See the License for the specific language governing permissions and
++ limitations under the License.
++ ==============================================================================*/
++
++-#ifndef SHARDY_INTEGRATIONS_C_ATTRIBUTES_H_
++-#define SHARDY_INTEGRATIONS_C_ATTRIBUTES_H_
+++#ifndef SHARDY_INTEGRATIONS_C_ATTRIBUTES_SDY_H_
+++#define SHARDY_INTEGRATIONS_C_ATTRIBUTES_SDY_H_
++
++ #include <stdint.h>
++ #include <sys/types.h>
++@@ -276,4 +276,4 @@ MLIR_CAPI_EXPORTED MlirStringRef sdyManualAxesAttrGetAxesElem(
++ }
++ #endif
++
++-#endif  // SHARDY_INTEGRATIONS_C_ATTRIBUTES_H_
+++#endif  // SHARDY_INTEGRATIONS_C_ATTRIBUTES_SDY_H_
++diff --git a/shardy/integrations/c/dialect_mpmd.cc b/shardy/integrations/c/dialect_mpmd.cc
++new file mode 100644
++index 0000000..d311822
++--- /dev/null
+++++ b/shardy/integrations/c/dialect_mpmd.cc
++@@ -0,0 +1,21 @@
+++/* Copyright 2025 The Shardy Authors.
+++
+++Licensed under the Apache License, Version 2.0 (the "License");
+++you may not use this file except in compliance with the License.
+++You may obtain a copy of the License at
+++
+++    http://www.apache.org/licenses/LICENSE-2.0
+++
+++Unless required by applicable law or agreed to in writing, software
+++distributed under the License is distributed on an "AS IS" BASIS,
+++WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+++See the License for the specific language governing permissions and
+++limitations under the License.
+++==============================================================================*/
+++
+++#include "shardy/integrations/c/dialect_mpmd.h"  // IWYU pragma: keep
+++
+++#include "mlir/CAPI/Registration.h"
+++#include "shardy/dialect/mpmd/ir/dialect.h"
+++
+++MLIR_DEFINE_CAPI_DIALECT_REGISTRATION(Mpmd, mpmd, mlir::mpmd::MpmdDialect);
++diff --git a/shardy/integrations/c/dialect_mpmd.h b/shardy/integrations/c/dialect_mpmd.h
++new file mode 100644
++index 0000000..6d699bb
++--- /dev/null
+++++ b/shardy/integrations/c/dialect_mpmd.h
++@@ -0,0 +1,31 @@
+++/* Copyright 2025 The Shardy Authors.
+++
+++Licensed under the Apache License, Version 2.0 (the "License");
+++you may not use this file except in compliance with the License.
+++You may obtain a copy of the License at
+++
+++    http://www.apache.org/licenses/LICENSE-2.0
+++
+++Unless required by applicable law or agreed to in writing, software
+++distributed under the License is distributed on an "AS IS" BASIS,
+++WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+++See the License for the specific language governing permissions and
+++limitations under the License.
+++==============================================================================*/
+++
+++#ifndef SHARDY_DIALECT_MPMD_IR_C_DIALECT_H_
+++#define SHARDY_DIALECT_MPMD_IR_C_DIALECT_H_
+++
+++#include "mlir-c/IR.h"
+++
+++#ifdef __cplusplus
+++extern "C" {
+++#endif
+++
+++MLIR_DECLARE_CAPI_DIALECT_REGISTRATION(Mpmd, mpmd);
+++
+++#ifdef __cplusplus
+++}
+++#endif
+++
+++#endif  // SHARDY_DIALECT_MPMD_IR_C_DIALECT_H_
++diff --git a/shardy/integrations/c/dialect.cc b/shardy/integrations/c/dialect_sdy.cc
++similarity index 92%
++rename from shardy/integrations/c/dialect.cc
++rename to shardy/integrations/c/dialect_sdy.cc
++index 1408631..5e3dfe3 100644
++--- a/shardy/integrations/c/dialect.cc
+++++ b/shardy/integrations/c/dialect_sdy.cc
++@@ -13,7 +13,7 @@ See the License for the specific language governing permissions and
++ limitations under the License.
++ ==============================================================================*/
++
++-#include "shardy/integrations/c/dialect.h"  // IWYU pragma: keep
+++#include "shardy/integrations/c/dialect_sdy.h"  // IWYU pragma: keep
++
++ #include "mlir/CAPI/Registration.h"
++ #include "shardy/dialect/sdy/ir/dialect.h"
++diff --git a/shardy/integrations/c/dialect.h b/shardy/integrations/c/dialect_sdy.h
++similarity index 100%
++rename from shardy/integrations/c/dialect.h
++rename to shardy/integrations/c/dialect_sdy.h
++diff --git a/shardy/integrations/c/passes_mpmd.cc b/shardy/integrations/c/passes_mpmd.cc
++new file mode 100644
++index 0000000..e843a16
++--- /dev/null
+++++ b/shardy/integrations/c/passes_mpmd.cc
++@@ -0,0 +1,22 @@
+++/* Copyright 2025 The Shardy Authors.
+++
+++Licensed under the Apache License, Version 2.0 (the "License");
+++you may not use this file except in compliance with the License.
+++You may obtain a copy of the License at
+++
+++    http://www.apache.org/licenses/LICENSE-2.0
+++
+++Unless required by applicable law or agreed to in writing, software
+++distributed under the License is distributed on an "AS IS" BASIS,
+++WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+++See the License for the specific language governing permissions and
+++limitations under the License.
+++==============================================================================*/
+++
+++#include "shardy/integrations/c/passes_mpmd.h"
+++
+++#include "shardy/dialect/mpmd/transforms/passes.h"
+++
+++void mlirRegisterAllMpmdPassesAndPipelines() {
+++  mlir::mpmd::registerAllMpmdPassesAndPipelines();
+++}
++diff --git a/shardy/integrations/c/passes_mpmd.h b/shardy/integrations/c/passes_mpmd.h
++new file mode 100644
++index 0000000..2125752
++--- /dev/null
+++++ b/shardy/integrations/c/passes_mpmd.h
++@@ -0,0 +1,33 @@
+++/* Copyright 2025 The Shardy Authors.
+++
+++Licensed under the Apache License, Version 2.0 (the "License");
+++you may not use this file except in compliance with the License.
+++You may obtain a copy of the License at
+++
+++    http://www.apache.org/licenses/LICENSE-2.0
+++
+++Unless required by applicable law or agreed to in writing, software
+++distributed under the License is distributed on an "AS IS" BASIS,
+++WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+++See the License for the specific language governing permissions and
+++limitations under the License.
+++==============================================================================*/
+++
+++#ifndef SHARDY_INTEGRATIONS_C_PASSES_MPMD_H_
+++#define SHARDY_INTEGRATIONS_C_PASSES_MPMD_H_
+++
+++#include "mlir-c/Support.h"
+++
+++#ifdef __cplusplus
+++extern "C" {
+++#endif
+++
+++/// Register all compiler passes and pipelines of Shardy.
+++MLIR_CAPI_EXPORTED void mlirRegisterAllMpmdPassesAndPipelines();
+++
+++#ifdef __cplusplus
+++}
+++#endif
+++
+++
+++#endif  // SHARDY_INTEGRATIONS_C_PASSES_MPMD_H_
++diff --git a/shardy/integrations/c/passes.cc b/shardy/integrations/c/passes_sdy.cc
++similarity index 94%
++rename from shardy/integrations/c/passes.cc
++rename to shardy/integrations/c/passes_sdy.cc
++index 063c1cf..f10b199 100644
++--- a/shardy/integrations/c/passes.cc
+++++ b/shardy/integrations/c/passes_sdy.cc
++@@ -13,7 +13,7 @@ See the License for the specific language governing permissions and
++ limitations under the License.
++ ==============================================================================*/
++
++-#include "shardy/integrations/c/passes.h"
+++#include "shardy/integrations/c/passes_sdy.h"
++
++ #include "shardy/dialect/sdy/transforms/passes.h"
++
++diff --git a/shardy/integrations/c/passes.h b/shardy/integrations/c/passes_sdy.h
++similarity index 86%
++rename from shardy/integrations/c/passes.h
++rename to shardy/integrations/c/passes_sdy.h
++index 6863333..6ffd052 100644
++--- a/shardy/integrations/c/passes.h
+++++ b/shardy/integrations/c/passes_sdy.h
++@@ -13,8 +13,8 @@ See the License for the specific language governing permissions and
++ limitations under the License.
++ ==============================================================================*/
++
++-#ifndef SHARDY_INTEGRATIONS_C_PASSES_H_
++-#define SHARDY_INTEGRATIONS_C_PASSES_H_
+++#ifndef SHARDY_INTEGRATIONS_C_PASSES_SDY_H_
+++#define SHARDY_INTEGRATIONS_C_PASSES_SDY_H_
++
++ #include "mlir-c/Support.h"
++
++@@ -30,4 +30,4 @@ MLIR_CAPI_EXPORTED void mlirRegisterAllSdyPassesAndPipelines();
++ #endif
++
++
++-#endif  // SHARDY_INTEGRATIONS_C_PASSES_H_
+++#endif  // SHARDY_INTEGRATIONS_C_PASSES_SDY_H_
++diff --git a/shardy/integrations/python/ir/CMakeLists.txt b/shardy/integrations/python/ir/CMakeLists.txt
++index cbb4d66..1e8d7bd 100644
++--- a/shardy/integrations/python/ir/CMakeLists.txt
+++++ b/shardy/integrations/python/ir/CMakeLists.txt
++@@ -28,3 +28,32 @@ declare_mlir_python_extension(SdyPythonExtensions.Main
++     SdyCAPI
++     LLVMSupport
++ )
+++
+++declare_mlir_python_sources(MpmdPythonSources)
+++declare_mlir_python_sources(MpmdPythonSources.Dialects
+++  ADD_TO_PARENT MpmdPythonSources
+++)
+++
+++declare_mlir_dialect_python_bindings(
+++  ADD_TO_PARENT MpmdPythonSources.Dialects
+++  ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}"
+++  TD_FILE dialects/mpmd_ops.td
+++  GEN_ENUM_BINDINGS ON
+++  GEN_ENUM_BINDINGS_TD_FILE dialects/mpmd_enums.td
+++  SOURCES dialects/mpmd.py
+++  DIALECT_NAME mpmd
+++)
+++
+++declare_mlir_python_sources(MpmdPythonExtensions)
+++declare_mlir_python_extension(MpmdPythonExtensions.Main
+++  MODULE_NAME _mpmd
+++  ADD_TO_PARENT MpmdPythonExtensions
+++  PYTHON_BINDINGS_LIBRARY nanobind
+++  SOURCES
+++    mpmd_module.cc
+++  EMBED_CAPI_LINK_LIBS
+++    MpmdCAPI
+++  PRIVATE_LINK_LIBS
+++    MpmdCAPI
+++    LLVMSupport
+++)
++diff --git a/shardy/integrations/python/ir/__init__.py b/shardy/integrations/python/ir/__init__.py
++index 7373840..ce9d4ca 100644
++--- a/shardy/integrations/python/ir/__init__.py
+++++ b/shardy/integrations/python/ir/__init__.py
++@@ -12,7 +12,7 @@
++ # See the License for the specific language governing permissions and
++ # limitations under the License.
++ # ==============================================================================
++-"""Python bindings for the SDY dialect."""
+++"""Python bindings for the SDY and MPMD dialect."""
++
++ # pylint: disable=g-multiple-import,g-importing-member,unused-import,useless-import-alias
++ from ._sdy import (
++@@ -36,3 +36,27 @@ from ._sdy_ops_gen import (
++     ReturnOp as ReturnOp,
++     ShardingConstraintOp as ShardingConstraintOp,
++ )
+++
+++# pylint: disable=g-multiple-import,g-importing-member,unused-import,useless-import-alias
+++from ._mpmd import (
+++    register_dialect as register_dialect,
+++    NamedMeshAttr as NamedMeshAttr,
+++    TopologyAttr as TopologyAttr,
+++)
+++
+++from ._mpmd_enums_gen import ReductionType as ReductionType
+++
+++from ._mpmd_ops_gen import (
+++    ReturnOp as ReturnOp,
+++    NamedComputationOp as NamedComputationOp,
+++    NamedTensorOp as NamedTensorOp,
+++    FragmentOp as FragmentOp,
+++    FragmentCallOp as FragmentCallOp,
+++    TransferOp as TransferOp,
+++    AssignOp as AssignOp,
+++    UnassignOp as UnassignOp,
+++    CallOp as CallOp,
+++    ForOp as ForOp,
+++    BroadcastOp as BroadcastOp,
+++    ReduceOp as ReduceOp,
+++)
++diff --git a/shardy/integrations/python/ir/dialects/mpmd.py b/shardy/integrations/python/ir/dialects/mpmd.py
++new file mode 100644
++index 0000000..ab22061
++--- /dev/null
+++++ b/shardy/integrations/python/ir/dialects/mpmd.py
++@@ -0,0 +1,20 @@
+++# Copyright 2025 The Shardy Authors.
+++#
+++# Licensed under the Apache License, Version 2.0 (the "License");
+++# you may not use this file except in compliance with the License.
+++# You may obtain a copy of the License at
+++#
+++#     http://www.apache.org/licenses/LICENSE-2.0
+++#
+++# Unless required by applicable law or agreed to in writing, software
+++# distributed under the License is distributed on an "AS IS" BASIS,
+++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+++# See the License for the specific language governing permissions and
+++# limitations under the License.
+++# ==============================================================================
+++"""Python bindings for the MPMD dialect."""
+++
+++# pylint: disable=wildcard-import
+++from .._mlir_libs._mpmd import *
+++from ._mpmd_enum_gen import *
+++from ._mpmd_ops_gen import *
++diff --git a/shardy/integrations/python/ir/dialects/mpmd_enums.td b/shardy/integrations/python/ir/dialects/mpmd_enums.td
++new file mode 100644
++index 0000000..0dfad9b
++--- /dev/null
+++++ b/shardy/integrations/python/ir/dialects/mpmd_enums.td
++@@ -0,0 +1,21 @@
+++/* Copyright 2025 The Shardy Authors.
+++
+++Licensed under the Apache License, Version 2.0 (the "License");
+++you may not use this file except in compliance with the License.
+++You may obtain a copy of the License at
+++
+++    http://www.apache.org/licenses/LICENSE-2.0
+++
+++Unless required by applicable law or agreed to in writing, software
+++distributed under the License is distributed on an "AS IS" BASIS,
+++WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+++See the License for the specific language governing permissions and
+++limitations under the License.
+++==============================================================================*/
+++
+++#ifndef SHARDY_INTEGRATIONS_PYTHON_MPMD_ENUMS
+++#define SHARDY_INTEGRATIONS_PYTHON_MPMD_ENUMS
+++
+++include "shardy/dialect/mpmd/ir/enums.td"
+++
+++#endif // SHARDY_INTEGRATIONS_PYTHON_MPMD_ENUMS
++diff --git a/shardy/integrations/python/ir/dialects/mpmd_ops.td b/shardy/integrations/python/ir/dialects/mpmd_ops.td
++new file mode 100644
++index 0000000..86d6dcf
++--- /dev/null
+++++ b/shardy/integrations/python/ir/dialects/mpmd_ops.td
++@@ -0,0 +1,21 @@
+++/* Copyright 2025 The Shardy Authors.
+++
+++Licensed under the Apache License, Version 2.0 (the "License");
+++you may not use this file except in compliance with the License.
+++You may obtain a copy of the License at
+++
+++    http://www.apache.org/licenses/LICENSE-2.0
+++
+++Unless required by applicable law or agreed to in writing, software
+++distributed under the License is distributed on an "AS IS" BASIS,
+++WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+++See the License for the specific language governing permissions and
+++limitations under the License.
+++==============================================================================*/
+++
+++#ifndef SHARDY_INTEGRATIONS_PYTHON_MPMD_OPS
+++#define SHARDY_INTEGRATIONS_PYTHON_MPMD_OPS
+++
+++include "shardy/dialect/mpmd/ir/ops.td"
+++
+++#endif
++diff --git a/shardy/integrations/python/ir/mpmd.py b/shardy/integrations/python/ir/mpmd.py
++new file mode 100644
++index 0000000..2524fe2
++--- /dev/null
+++++ b/shardy/integrations/python/ir/mpmd.py
++@@ -0,0 +1,20 @@
+++# Copyright 2025 The Shardy Authors.
+++#
+++# Licensed under the Apache License, Version 2.0 (the "License");
+++# you may not use this file except in compliance with the License.
+++# You may obtain a copy of the License at
+++#
+++#     http://www.apache.org/licenses/LICENSE-2.0
+++#
+++# Unless required by applicable law or agreed to in writing, software
+++# distributed under the License is distributed on an "AS IS" BASIS,
+++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+++# See the License for the specific language governing permissions and
+++# limitations under the License.
+++# ==============================================================================
+++"""Python bindings for the MPMD dialect."""
+++
+++# pylint: disable=wildcard-import
+++from .._mlir_libs._mpmd import *
+++from ._mpmd_enums_gen import *
+++from ._mpmd_ops_gen import *
++diff --git a/shardy/integrations/python/ir/mpmd_enums.td b/shardy/integrations/python/ir/mpmd_enums.td
++new file mode 100644
++index 0000000..0dfad9b
++--- /dev/null
+++++ b/shardy/integrations/python/ir/mpmd_enums.td
++@@ -0,0 +1,21 @@
+++/* Copyright 2025 The Shardy Authors.
+++
+++Licensed under the Apache License, Version 2.0 (the "License");
+++you may not use this file except in compliance with the License.
+++You may obtain a copy of the License at
+++
+++    http://www.apache.org/licenses/LICENSE-2.0
+++
+++Unless required by applicable law or agreed to in writing, software
+++distributed under the License is distributed on an "AS IS" BASIS,
+++WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+++See the License for the specific language governing permissions and
+++limitations under the License.
+++==============================================================================*/
+++
+++#ifndef SHARDY_INTEGRATIONS_PYTHON_MPMD_ENUMS
+++#define SHARDY_INTEGRATIONS_PYTHON_MPMD_ENUMS
+++
+++include "shardy/dialect/mpmd/ir/enums.td"
+++
+++#endif // SHARDY_INTEGRATIONS_PYTHON_MPMD_ENUMS
++diff --git a/shardy/integrations/python/ir/mpmd_module.cc b/shardy/integrations/python/ir/mpmd_module.cc
++new file mode 100644
++index 0000000..9bcab92
++--- /dev/null
+++++ b/shardy/integrations/python/ir/mpmd_module.cc
++@@ -0,0 +1,165 @@
+++/* Copyright 2025 The Shardy Authors.
+++
+++Licensed under the Apache License, Version 2.0 (the "License");
+++you may not use this file except in compliance with the License.
+++You may obtain a copy of the License at
+++
+++    http://www.apache.org/licenses/LICENSE-2.0
+++
+++Unless required by applicable law or agreed to in writing, software
+++distributed under the License is distributed on an "AS IS" BASIS,
+++WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+++See the License for the specific language governing permissions and
+++limitations under the License.
+++==============================================================================*/
+++
+++#include <cstdint>
+++#include <optional>
+++#include <string>
+++#include <variant>
+++#include <vector>
+++
+++#include "mlir-c/BuiltinAttributes.h"
+++#include "mlir-c/IR.h"
+++#include "mlir-c/Support.h"
+++#include "mlir/Bindings/Python/NanobindAdaptors.h"  // IWYU pragma: keep
+++#include "nanobind/nanobind.h"
+++#include "nanobind/stl/optional.h"  // IWYU pragma: keep
+++#include "nanobind/stl/string.h"    // IWYU pragma: keep
+++#include "nanobind/stl/variant.h"   // IWYU pragma: keep
+++#include "nanobind/stl/vector.h"    // IWYU pragma: keep
+++#include "shardy/integrations/c/attributes_mpmd.h"
+++#include "shardy/integrations/c/dialect_mpmd.h"
+++
+++namespace mlir {
+++namespace mpmd {
+++
+++namespace {
+++
+++namespace nb = nanobind;
+++
+++// Returns a vector containing elements with type T extracted from an attribute
+++// using the two provided callbacks.
+++template <typename T>
+++std::vector<T> propertyVector(
+++    MlirAttribute attr, llvm::function_ref<intptr_t(MlirAttribute)> sizeFn,
+++    llvm::function_ref<T(MlirAttribute, intptr_t)> getFn) {
+++  std::vector<T> result;
+++  intptr_t size = sizeFn(attr);
+++  result.reserve(size);
+++  for (intptr_t i = 0; i < size; ++i) {
+++    result.push_back(getFn(attr, i));
+++  }
+++  return result;
+++}
+++
+++nb::str toPyString(MlirStringRef mlirStringRef) {
+++  return nb::str(mlirStringRef.data, mlirStringRef.length);
+++}
+++
+++MlirStringRef toStringRef(const std::string& s) {
+++  return mlirStringRefCreate(s.c_str(), s.size());
+++}
+++
+++NB_MODULE(_mpmd, m) {
+++  m.doc() = "MPMD main Python extension";
+++
+++  //
+++  // Dialects.
+++  //
+++
+++  m.def(
+++      "register_dialect",
+++      [](MlirContext context, bool load) {
+++        MlirDialectHandle dialect = mlirGetDialectHandle__mpmd__();
+++        mlirDialectHandleRegisterDialect(dialect, context);
+++        if (load) {
+++          mlirDialectHandleLoadDialect(dialect, context);
+++        }
+++      },
+++      nb::arg("context"), nb::arg("load") = true);
+++
+++  //
+++  // Attributes.
+++  //
+++
+++  mlir::python::nanobind_adaptors::mlir_attribute_subclass(
+++      m, "NamedMeshAttr", mpmdAttributeIsANamedMeshAttr)
+++      .def_classmethod(
+++          "get",
+++          [](nb::object cls, const std::string& name,
+++            MlirAttribute meshAttr, MlirContext ctx) {
+++            return cls(mpmdNamedMeshAttrGet(ctx, toStringRef(name), meshAttr));
+++          },
+++          nb::arg("cls"), nb::arg("name"),
+++          nb::arg("mesh").none() = nb::none(),
+++          nb::arg("context").none() = nb::none(),
+++          "Creates an NamedMeshAttr with the given name and MeshAttr.")
+++      .def_property_readonly("name",
+++                             [](MlirAttribute self) {
+++                               return toPyString(mpmdNamedMeshAttrGetName(self));
+++                             })
+++      .def_property_readonly("mesh", [](MlirAttribute self) {
+++        return mpmdNamedMeshAttrGetMesh(self);
+++      });
+++
+++  mlir::python::nanobind_adaptors::mlir_attribute_subclass(
+++      m, "TopologyAttr", mpmdAttributeIsATopologyAttr)
+++      .def_classmethod(
+++          "get",
+++          [](nb::object cls, const std::vector<MlirAttribute>& meshes,
+++             MlirContext ctx) {
+++            return cls(mpmdTopologyAttrGet(ctx, meshes.size(), meshes.data()));
+++          },
+++          nb::arg("cls"), nb::arg("meshes"),
+++          nb::arg("context").none() = nb::none(),
+++          "Creates a TopologyAttr with the given meshes.")
+++      .def_property_readonly("meshes",
+++                             [](MlirAttribute self) {
+++                               return propertyVector<MlirAttribute>(
+++                                   self, mpmdTopologyAttrGetMeshesSize,
+++                                   mpmdTopologyAttrGetMeshesElem);
+++                             })
+++      .def_property_readonly("size", [](MlirAttribute self) {
+++        return mpmdTopologyAttrGetMeshesSize(self);
+++      });
+++
+++  mlir::python::nanobind_adaptors::mlir_attribute_subclass(
+++      m, "UserOriginAttr", mpmdAttributeIsAUserOriginAttr)
+++      .def_classmethod(
+++          "get",
+++          [](nb::object cls, MlirAttribute& userName, int64_t transposeCount,
+++             MlirContext ctx) {
+++            return cls(mpmdUserOriginAttrGet(ctx, userName, transposeCount));
+++          },
+++          nb::arg("cls"), nb::arg("user_name"),
+++          nb::arg("transpose_count") = 0,
+++          nb::arg("context").none() = nb::none(),
+++          "Creates a UserOriginAttr with the given user name and transpose count.")
+++      .def_property_readonly("user_name",
+++                             [](MlirAttribute self) {
+++                               return toPyString(mpmdUserOriginAttrGetUserName(self));
+++                             })
+++      .def_property_readonly("transpose_count", [](MlirAttribute self) {
+++        return mpmdUserOriginAttrGetTransposeCount(self);
+++      });
+++
+++  mlir::python::nanobind_adaptors::mlir_attribute_subclass(
+++      m, "OriginAttr", mpmdAttributeIsAOriginAttr)
+++      .def_classmethod(
+++          "get",
+++          [](nb::object cls, const std::string& originLabel, MlirContext ctx) {
+++            return cls(mpmdOriginAttrGet(ctx, toStringRef(originLabel)));
+++          },
+++          nb::arg("cls"), nb::arg("origin_label"),
+++          nb::arg("context").none() = nb::none(),
+++          "Creates an OriginAttr with the given origin label.")
+++      .def_property_readonly("origin_label",
+++                             [](MlirAttribute self) {
+++                               return toPyString(mpmdOriginAttrGetOriginLabel(self));
+++                             });
+++}
+++
+++}  // namespace
+++}  // namespace mpmd
+++}  // namespace mlir
++diff --git a/shardy/integrations/python/ir/mpmd_ops.td b/shardy/integrations/python/ir/mpmd_ops.td
++new file mode 100644
++index 0000000..86d6dcf
++--- /dev/null
+++++ b/shardy/integrations/python/ir/mpmd_ops.td
++@@ -0,0 +1,21 @@
+++/* Copyright 2025 The Shardy Authors.
+++
+++Licensed under the Apache License, Version 2.0 (the "License");
+++you may not use this file except in compliance with the License.
+++You may obtain a copy of the License at
+++
+++    http://www.apache.org/licenses/LICENSE-2.0
+++
+++Unless required by applicable law or agreed to in writing, software
+++distributed under the License is distributed on an "AS IS" BASIS,
+++WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+++See the License for the specific language governing permissions and
+++limitations under the License.
+++==============================================================================*/
+++
+++#ifndef SHARDY_INTEGRATIONS_PYTHON_MPMD_OPS
+++#define SHARDY_INTEGRATIONS_PYTHON_MPMD_OPS
+++
+++include "shardy/dialect/mpmd/ir/ops.td"
+++
+++#endif
++diff --git a/shardy/integrations/python/ir/sdy_module.cc b/shardy/integrations/python/ir/sdy_module.cc
++index da451fa..318e14f 100644
++--- a/shardy/integrations/python/ir/sdy_module.cc
+++++ b/shardy/integrations/python/ir/sdy_module.cc
++@@ -28,8 +28,8 @@ limitations under the License.
++ #include "nanobind/stl/string.h"    // IWYU pragma: keep
++ #include "nanobind/stl/variant.h"   // IWYU pragma: keep
++ #include "nanobind/stl/vector.h"    // IWYU pragma: keep
++-#include "shardy/integrations/c/attributes.h"
++-#include "shardy/integrations/c/dialect.h"
+++#include "shardy/integrations/c/attributes_sdy.h"
+++#include "shardy/integrations/c/dialect_sdy.h"
++
++ namespace mlir {
++ namespace sdy {
++--
++2.34.1
