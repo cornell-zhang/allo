@@ -21,7 +21,6 @@ from ._mlir.passmanager import PassManager as mlir_pass_manager
 from .customize import customize as _customize, Schedule
 from .utils import parse_kernel_name, construct_kernel_name
 from .ir.utils import (
-    MockBuffer,
     get_all_df_kernels,
     get_global_vars,
 )
@@ -385,7 +384,7 @@ def move_stream_to_interface(
                 callee_streams = stream_info[callee_name]
 
                 # Build new operands list - need to properly extract values from operands
-                new_operands = [operand for operand in old_call.operands_]
+                new_operands = list(old_call.operands_)
                 for stream_name, _ in callee_streams:
                     if stream_name in parent_stream_map:
                         new_operands.append(parent_stream_map[stream_name].result)

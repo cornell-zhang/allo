@@ -789,6 +789,7 @@ def build_dataflow_simulator(module: Module, top_func_name: str):
                 [IntegerType.get_signless(32, module.context)],
                 [],
             )
+            # pylint: disable=unexpected-keyword-arg
             usleep_op = func_d.FuncOp(
                 name="usleep",
                 type=usleep_type,
