@@ -5,57 +5,51 @@ import tempfile
 
 import pytest
 import allo
-from allo.ir.types import int8, Stream, UInt
+from allo.ir.types import int8, int32, Stream, UInt, ConstExpr
 from allo.utils import get_np_struct_type
 import allo.dataflow as df
 import allo.backend.hls as hls
 import allo.dsl as dsl
 import numpy as np
 
-# M, N, K = 64, 64, 64
-# M, N, K = 128, 128, 128
-# M, N, K = 256, 256, 256
-# M, N, K = 512, 512, 512
-M, N, K = 1024, 1024, 1024
-Rt, Ct = 16, 16
-# Rt, Ct = 8, 8
-# Rt, Ct = 4, 4
-# Rt, Ct = 2, 2
-P0, P1 = Rt + 2, Ct + 2
-
 
 @df.region()
-def top(
-    A_Packed: UInt(Rt * 8)[M * K // Rt],
-    B_Packed: UInt(Ct * 8)[K * N // Ct],
-    C_Packed: UInt(Rt * 8)[M * N // Rt],
+def MXU[
+    Rt, Ct, M, N, K
+](
+    A_Packed: "UInt(Rt * 8)[M * K // Rt]",
+    B_Packed: "UInt(Ct * 8)[K * N // Ct]",
+    C_Packed: "UInt(Rt * 8)[M * N // Rt]",
 ):
-    L3_A: Stream[UInt(Rt * 8), 4]
-    L3_B: Stream[UInt(Ct * 8), 4]
-    L3_C: Stream[UInt(Rt * 8), 4]
+    P0: ConstExpr[int32] = Rt + 2
+    P1: ConstExpr[int32] = Ct + 2
 
-    L2_A: Stream[UInt(Rt * 8), 4][P0 - 1]
-    L2_B: Stream[UInt(Ct * 8), 4][P1 - 1]
+    L3_A: Stream[UInt(Rt * 8), 1024]
+    L3_B: Stream[UInt(Ct * 8), 1024]
+    L3_C: Stream[UInt(Rt * 8), 1024]
 
-    L1_C: Stream[UInt(Rt * 8), 4][Rt, Ct]
-    L2_C: Stream[UInt(Rt * 8), 4][Ct]
+    L2_A: Stream[UInt(Rt * 8), 1024][P0 - 1]
+    L2_B: Stream[UInt(Ct * 8), 1024][P1 - 1]
 
-    fifo_A: Stream[int8, 4][Rt, Ct]
-    fifo_B: Stream[int8, 4][Rt, Ct]
+    L1_C: Stream[UInt(Rt * 8), 1024][Rt, Ct]
+    L2_C: Stream[UInt(Rt * 8), 1024][Ct]
+
+    fifo_A: Stream[int8, 1024][Rt, Ct]
+    fifo_B: Stream[int8, 1024][Rt, Ct]
 
     @df.kernel(mapping=[1], args=[A_Packed])
-    def offchip_loadA(local_A_Packed: UInt(Rt * 8)[M * K // Rt]):
+    def offchip_loadA(A_Packed_in: "UInt(Rt * 8)[M * K // Rt]"):
         for mt, nt in dsl.grid(M // Rt, N // Ct):
             for k in range(K):
-                L3_A.put(local_A_Packed[mt * K + k])
+                L3_A.put(A_Packed_in[mt * K + k])
 
     @df.kernel(mapping=[1], args=[B_Packed])
-    def offchip_loadB(local_B_Packed: UInt(Ct * 8)[K * N // Ct]):
+    def offchip_loadB(B_Packed_in: "UInt(Ct * 8)[K * N // Ct]"):
         for mt, nt in dsl.grid(M // Rt, N // Ct):
             for k in range(K):
-                L3_B.put(local_B_Packed[nt * K + k])
+                L3_B.put(B_Packed_in[nt * K + k])
 
-    @df.kernel(mapping=[P0, P1], args=[])
+    @df.kernel(mapping=[P0, P1])
     def gemm():
         i, j = df.get_pid()
         # peripheral kernels
@@ -131,15 +125,31 @@ def top(
                 L1_C[i - 1, j - 1].put(packed_c)
 
     @df.kernel(mapping=[1], args=[C_Packed])
-    def offchip_store(local_C_Packed: UInt(Rt * 8)[M * N // Rt]):
+    def offchip_store(C_Packed_out: "UInt(Rt * 8)[M * N // Rt]"):
         for mt, nt in dsl.grid(M // Rt, N // Ct):
             for n in range(Ct):
-                local_C_Packed[mt * N + nt * Ct + n] = L3_C.get()
+                C_Packed_out[mt * N + nt * Ct + n] = L3_C.get()
 
 
-@pytest.mark.skip(
-    reason="Hang when using large sizes. Raise error when using small sizes (seems like something wrong with data types)."
-)
+Rt, Ct = 2, 2
+M, N, K = 16, 16, 16
+
+
+@df.region()
+def top(
+    A: "UInt(Rt * 8)[M * K // Rt]",
+    B: "UInt(Ct * 8)[K * N // Ct]",
+    C: "UInt(Rt * 8)[M * N // Rt]",
+):
+    @df.kernel(mapping=[1], args=[A, B, C])
+    def wrapper(
+        A_Packed: "UInt(Rt * 8)[M * K // Rt]",
+        B_Packed: "UInt(Ct * 8)[K * N // Ct]",
+        C_Packed: "UInt(Rt * 8)[M * N // Rt]",
+    ):
+        MXU[Rt, Ct, M, N, K](A_Packed, B_Packed, C_Packed)
+
+
 def test_large_scale_gemm():
     def serialize_A(matrix_A):
         A_ser = np.zeros((M * K), dtype=np.int8)
@@ -165,14 +175,9 @@ def test_large_scale_gemm():
                     matrix_C[mt * Rt + m, n] = C_ser[mt * (N * Rt) + n * Rt + m]
         return matrix_C
 
-    # # TODO: Fix the packing-related issue!
-    np_type_A = get_np_struct_type(Rt * 8)
-    np_type_B = get_np_struct_type(Ct * 8)
-    np_type_C = get_np_struct_type(Rt * 8)
-
-    # np_type_A = np.int64
-    # np_type_B = np.int64
-    # np_type_C = np.int64
+    np_type_A = np.uint16
+    np_type_B = np.uint16
+    np_type_C = np.uint16
 
     A = np.random.randint(-2, 2, (M, K), dtype=np.int8)
     B = np.random.randint(-2, 2, (K, N), dtype=np.int8)
@@ -183,6 +188,7 @@ def test_large_scale_gemm():
     C_packed = np.zeros((M * N // Rt), dtype=np_type_C)
 
     sim_mod = df.build(top, target="simulator")
+    print("Start Dataflow Simulator")
     sim_mod(A_packed, B_packed, C_packed)
     C = deserialize_C(C_packed.view(np.int8))
     np.testing.assert_allclose(C, np.dot(A, B), atol=1e-5)
