@@ -14,7 +14,9 @@ import numpy as np
 
 
 @df.region()
-def MXU[Rt, Ct, M, N, K](
+def MXU[
+    Rt, Ct, M, N, K
+](
     A_Packed: "UInt(Rt * 8)[M * K // Rt]",
     B_Packed: "UInt(Ct * 8)[K * N // Ct]",
     C_Packed: "UInt(Rt * 8)[M * N // Rt]",
