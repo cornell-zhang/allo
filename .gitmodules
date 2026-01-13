@@ -8,8 +8,11 @@
 
 [submodule "externals/stablehlo"]
 	path = externals/stablehlo
-	url = https://github.com/openxla/stablehlo.git
+	url = https://github.com/Fangtangtang/stablehlo.git
+	branch = dev
 
 [submodule "externals/shardy"]
 	path = externals/shardy
-	url = https://github.com/openxla/shardy.git
+	url = https://github.com/Fangtangtang/shardy.git
+	branch = dev
+
