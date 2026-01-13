@@ -22,18 +22,18 @@ def MXU[Rt, Ct, M, N, K](
     P0: ConstExpr[int32] = Rt + 2
     P1: ConstExpr[int32] = Ct + 2
 
-    L3_A: Stream[UInt(Rt * 8), 4]
-    L3_B: Stream[UInt(Ct * 8), 4]
-    L3_C: Stream[UInt(Rt * 8), 4]
+    L3_A: Stream[UInt(Rt * 8), 1024]
+    L3_B: Stream[UInt(Ct * 8), 1024]
+    L3_C: Stream[UInt(Rt * 8), 1024]
 
-    L2_A: Stream[UInt(Rt * 8), 4][P0 - 1]
-    L2_B: Stream[UInt(Ct * 8), 4][P1 - 1]
+    L2_A: Stream[UInt(Rt * 8), 1024][P0 - 1]
+    L2_B: Stream[UInt(Ct * 8), 1024][P1 - 1]
 
-    L1_C: Stream[UInt(Rt * 8), 4][Rt, Ct]
-    L2_C: Stream[UInt(Rt * 8), 4][Ct]
+    L1_C: Stream[UInt(Rt * 8), 1024][Rt, Ct]
+    L2_C: Stream[UInt(Rt * 8), 1024][Ct]
 
-    fifo_A: Stream[int8, 4][Rt, Ct]
-    fifo_B: Stream[int8, 4][Rt, Ct]
+    fifo_A: Stream[int8, 1024][Rt, Ct]
+    fifo_B: Stream[int8, 1024][Rt, Ct]
 
     @df.kernel(mapping=[1], args=[A_Packed])
     def offchip_loadA(A_Packed_in: "UInt(Rt * 8)[M * K // Rt]"):
@@ -130,7 +130,7 @@ def MXU[Rt, Ct, M, N, K](
 
 
 Rt, Ct = 2, 2
-M, N, K = 32, 32, 32
+M, N, K = 16, 16, 16
 
 
 @df.region()
@@ -148,9 +148,6 @@ def top(
         MXU[Rt, Ct, M, N, K](A_Packed, B_Packed, C_Packed)
 
 
-@pytest.mark.skip(
-    reason="Hang when using large sizes. Raise error when using small sizes (seems like something wrong with data types)."
-)
 def test_large_scale_gemm():
     def serialize_A(matrix_A):
         A_ser = np.zeros((M * K), dtype=np.int8)
@@ -176,14 +173,9 @@ def test_large_scale_gemm():
                     matrix_C[mt * Rt + m, n] = C_ser[mt * (N * Rt) + n * Rt + m]
         return matrix_C
 
-    # # TODO: Fix the packing-related issue!
-    np_type_A = get_np_struct_type(Rt * 8)
-    np_type_B = get_np_struct_type(Ct * 8)
-    np_type_C = get_np_struct_type(Rt * 8)
-
-    # np_type_A = np.int64
-    # np_type_B = np.int64
-    # np_type_C = np.int64
+    np_type_A = np.uint16
+    np_type_B = np.uint16
+    np_type_C = np.uint16
 
     A = np.random.randint(-2, 2, (M, K), dtype=np.int8)
     B = np.random.randint(-2, 2, (K, N), dtype=np.int8)
@@ -194,6 +186,7 @@ def test_large_scale_gemm():
     C_packed = np.zeros((M * N // Rt), dtype=np_type_C)
 
     sim_mod = df.build(top, target="simulator")
+    print("Start Dataflow Simulator")
     sim_mod(A_packed, B_packed, C_packed)
     C = deserialize_C(C_packed.view(np.int8))
     np.testing.assert_allclose(C, np.dot(A, B), atol=1e-5)
