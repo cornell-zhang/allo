@@ -5,6 +5,7 @@
 import io
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -56,13 +57,10 @@ template <int WIDTH, int FRAC> using UFixed = Fixed<WIDTH, FRAC, false>;
 """
 
 
-#  Check if g++ is available for sw_emu compilation
+#  Check if g++ (for sw_emu) or XLS toolchain is available
 def is_available():
-    try:
-        result = subprocess.run(["g++", "--version"], capture_output=True, check=False)
-        return result.returncode == 0
-    except FileNotFoundError:
-        return False
+    """Check if g++ (for sw_emu) or XLS toolchain is available."""
+    return shutil.which("g++") is not None or shutil.which("xlscc") is not None
 
 
 def _validate_xls_ir(mlir_text, project=None):
@@ -656,7 +654,7 @@ help:
         return makefile
 
     def _build_sw_emu(self):
-        if not is_available():
+        if shutil.which("g++") is None:
             raise RuntimeError("g++ not found. Cannot build sw_emu.")
 
         project_dir = self.project or tempfile.mkdtemp(prefix="xls_sw_emu_")
