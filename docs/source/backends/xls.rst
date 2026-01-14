@@ -90,7 +90,7 @@ If you are using the software emulation mode, you will also obtain the following
 
 - **test_harness.cpp**: The host-side (CPU) code that invokes the accelerator.
 - **Makefile**: Build scripts to compile the project.
-- **input*.txt**: The input data files for the design.
+- **input*.data**: The binary input data files for the design.
 
 To run the design, prepare the input matrices using NumPy and allocate an output array for the result:
 
