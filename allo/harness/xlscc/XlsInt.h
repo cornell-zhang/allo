@@ -153,12 +153,16 @@ class XlsInt {
   int64_t value_;
 
   static int64_t Mask(int64_t val) {
+    // For Width >= 64, use the full 64-bit range and avoid computing (1ULL << Width),
+    // which would be undefined behavior when Width equals the bit-width of uint64_t.
     if (Width >= 64) return val;
     uint64_t mask = (1ULL << Width) - 1;
     return val & mask;
   }
 
   static int64_t SignExtend(int64_t val) {
+    // For Width >= 64, value_ already fits in int64_t and we avoid any (1ULL << Width)
+    // computations that would be undefined when Width equals the bit-width of uint64_t.
     if (Width >= 64) return val;
     int64_t sign_bit = 1LL << (Width - 1);
     if (val & sign_bit) {
