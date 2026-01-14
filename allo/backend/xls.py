@@ -285,7 +285,7 @@ def _gen_textproto(mems):
   to_name_prefix: "{name}_"
 }}
 """
-            )
+        )
     return "\n".join(lines)
 
 
