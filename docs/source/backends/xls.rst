@@ -92,15 +92,14 @@ If you are using the software emulation mode, you will also obtain the following
 - **Makefile**: Build scripts to compile the project.
 - **input*.data**: The binary input data files for the design.
 
-To run the design, prepare the input matrices using NumPy and allocate an output array for the result:
+To run the design, prepare the input matrices using NumPy and invoke the generated module to obtain the result:
 
 .. code-block:: python
 
    np_A = np.random.random((M, K)).astype(np.int32)
    np_B = np.random.random((K, N)).astype(np.int32)
-   allo_C = np.zeros((M, N), dtype=np.int32)
-   mod(np_A, np_B, allo_C)
-   np.testing.assert_allclose(allo_C, np.matmul(np_A, np_B), rtol=1e-5, atol=1e-5)
+   result = mod(np_A, np_B)
+   np.testing.assert_allclose(result, np.matmul(np_A, np_B), rtol=1e-5, atol=1e-5)
    
 Note:
   The XLS backend only supports integer and fixed-point types. Floating-point types (f16, f32, f64) are not supported.
