@@ -4,7 +4,7 @@
 
 import ast
 from .._mlir import InsertionPoint
-from .._mlir.dialects import allo as allo_d
+from .._mlir.dialects import allo as allo_d, sdy as sdy_d
 
 
 class BlockScopeGuard:
@@ -70,6 +70,7 @@ class ASTContext:
         self.mlir_ctx = mlir_ctx
         self.file_name = None
         allo_d.register_dialect(mlir_ctx)
+        sdy_d.register_dialect(mlir_ctx)
         # map from function name to function arguments
         self.func_args = {} if func_args is None else func_args
         self.func_id = None

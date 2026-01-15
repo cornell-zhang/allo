@@ -73,6 +73,10 @@ set(_source_components
   AlloMLIRPythonExtensions
   MLIRPythonSources
   MLIRPythonExtension.RegisterEverything
+  SdyPythonSources
+  SdyPythonExtensions
+  MpmdPythonSources
+  MpmdPythonExtensions
 )
 
 add_mlir_python_common_capi_library(AlloMLIRAggregateCAPI

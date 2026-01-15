@@ -34,6 +34,9 @@ include_directories(${LLVM_INCLUDE_DIRS})
 include_directories(${MLIR_INCLUDE_DIRS})
 include_directories(${PROJECT_SOURCE_DIR}/include)
 include_directories(${PROJECT_BINARY_DIR}/include)
+include_directories(SYSTEM ${PROJECT_SOURCE_DIR}/../externals/shardy)
+include_directories(SYSTEM ${PROJECT_SOURCE_DIR}/../externals/stablehlo)
+
 link_directories(${LLVM_BUILD_LIBRARY_DIR})
 add_definitions(${LLVM_DEFINITIONS})
 
@@ -41,5 +44,8 @@ message(STATUS "Using Python binding")
 include(MLIRDetectPythonEnv)
 mlir_configure_python_dev_packages()
 
+add_subdirectory(../externals/stablehlo ${CMAKE_BINARY_DIR}/stablehlo_build EXCLUDE_FROM_ALL)
+add_subdirectory(../externals/shardy ${CMAKE_BINARY_DIR}/shardy_build EXCLUDE_FROM_ALL)
 add_subdirectory(include)
 add_subdirectory(lib)
+
