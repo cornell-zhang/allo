@@ -51,7 +51,6 @@ from .._mlir.dialects import (
     arith as arith_d,
     math as math_d,
     linalg as linalg_d,
-    sdy as sdy_d,
 )
 from .._mlir.exceptions import DTypeError
 from .utils import (
@@ -2074,66 +2073,7 @@ class ASTTransformer(ASTBuilder):
                                     ] = func_op
                                 # Restore original name for next iteration
                                 node.name = orig_name
-                            # FIXME: only works for pure SPMD now
-                            if (
-                                not ctx.unroll
-                                and len(ctx.func_tag2instance[orig_name]) == 1
-                            ):
-                                axis = []
-                                with ctx.get_ip():
-                                    for i, dim in enumerate(mapping):
-                                        axis.append(
-                                            sdy_d.MeshAxisAttr.get(f"axis_{i}", dim)
-                                        )
-                                    mesh = sdy_d.mesh(
-                                        sym_name=f"{orig_name}_mesh",
-                                        mesh=sdy_d.MeshAttr.get(axis),
-                                        ip=ctx.get_ip(),
-                                    )
-                                inputs = []
-                                local_types = []
-                                for arg in node.args.args:
-                                    inputs.append(
-                                        ctx.get_symbol(arg.dtensor.top_name).result
-                                    )
-                                    print(inputs[-1].type, type(inputs[-1].type))
-                                    local_types.append(inputs[-1].type)
 
-                                with InsertionPoint.at_block_begin(
-                                    new_ctx.top_func.entry_block
-                                ):
-                                    dim_sharding = sdy_d.DimensionShardingAttr.get([sdy_d.AxisRefAttr.get("axis_0")], is_closed=False)
-                                    sharding_attr = sdy_d.TensorShardingAttr.get(
-                                        mesh_or_ref=f"{orig_name}_mesh",
-                                        dimension_shardings=[dim_sharding],
-                                        replicated_axes=[],
-                                        unreduced_axes=[],
-                                    )
-                                    op = sdy_d.manual_computation(
-                                        results_=[],
-                                        tensors=inputs,
-                                        in_shardings=sdy_d.TensorShardingPerValueAttr.get(
-                                            [sharding_attr] * len(inputs)
-                                        ),
-                                        out_shardings=sdy_d.TensorShardingPerValueAttr.get(
-                                            []
-                                        ),
-                                        manual_axes=sdy_d.ManualAxesAttr.get(
-                                            [StringAttr.get("axis_0")]
-                                        ),
-                                    )
-                                    local_memref = MemRefType.get((4,), IntegerType.get_signless(32))
-                                    print(local_memref,type(local_memref))
-                                    block = Block.create_at_start(op.body, arg_types=[])
-                                    with InsertionPoint(block):
-                                        # op = func_d.CallOp(
-                                        #     [],
-                                        #     func_op.name,
-                                        #     block.arguments,
-                                        # )
-                                        sdy_d.ReturnOp([])
-                                    print(new_ctx.top_func)
-                                    
                             return
 
                         if decorator.func.attr == "region":

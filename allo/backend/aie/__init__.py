@@ -18,7 +18,6 @@ import allo._mlir._mlir_libs._mlir as allo_ir
 from allo._mlir.exceptions import AlloWarning
 from ..._mlir.dialects import (
     allo as allo_d,
-    sdy as sdy_d,
     func as allo_func_d,
     _memref_ops_gen as allo_memref_d,
 )
@@ -784,7 +783,6 @@ class AIE_MLIRModule:
         # ------------------------- mlir-aie code generation -------------------------
         with allo_ir.ir.Context() as ctx, allo_ir.ir.Location.unknown():
             allo_d.register_dialect(ctx)
-            sdy_d.register_dialect(ctx)
             pattern = re.compile(r"memref<([\dx]+)xi4>")
             module_str = str(self.allo_module)
 
