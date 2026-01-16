@@ -269,28 +269,24 @@ Another example is shown below:</p>
     %1 = affine.load %alloc[] {from = &quot;b&quot;} : memref&lt;f32&gt;
     %c2_i32 = arith.constant 2 : i32
     %c2_i32_0 = arith.constant 2 : i32
-    %c2_i32_1 = arith.constant 2 : i32
-    %c2_i32_2 = arith.constant 2 : i32
-    %2 = arith.sitofp %c2_i32_2 : i32 to f32
+    %2 = arith.sitofp %c2_i32_0 : i32 to f32
     %3 = arith.mulf %1, %2 : f32
-    %alloc_3 = memref.alloc() {name = &quot;c&quot;} : memref&lt;f32&gt;
-    affine.store %3, %alloc_3[] {to = &quot;c&quot;} : memref&lt;f32&gt;
+    %alloc_1 = memref.alloc() {name = &quot;c&quot;} : memref&lt;f32&gt;
+    affine.store %3, %alloc_1[] {to = &quot;c&quot;} : memref&lt;f32&gt;
     %4 = arith.sitofp %arg0 : i32 to f32
-    %c2_i32_4 = arith.constant 2 : i32
-    %c2_i32_5 = arith.constant 2 : i32
-    %c2_i32_6 = arith.constant 2 : i32
-    %c2_i32_7 = arith.constant 2 : i32
-    %5 = arith.sitofp %c2_i32_7 : i32 to f32
+    %c2_i32_2 = arith.constant 2 : i32
+    %c2_i32_3 = arith.constant 2 : i32
+    %5 = arith.sitofp %c2_i32_3 : i32 to f32
     %6 = arith.mulf %4, %5 : f32
-    %alloc_8 = memref.alloc() {name = &quot;d&quot;} : memref&lt;f32&gt;
-    affine.store %6, %alloc_8[] {to = &quot;d&quot;} : memref&lt;f32&gt;
-    %7 = affine.load %alloc_3[] {from = &quot;c&quot;} : memref&lt;f32&gt;
-    %8 = affine.load %alloc_8[] {from = &quot;d&quot;} : memref&lt;f32&gt;
+    %alloc_4 = memref.alloc() {name = &quot;d&quot;} : memref&lt;f32&gt;
+    affine.store %6, %alloc_4[] {to = &quot;d&quot;} : memref&lt;f32&gt;
+    %7 = affine.load %alloc_1[] {from = &quot;c&quot;} : memref&lt;f32&gt;
+    %8 = affine.load %alloc_4[] {from = &quot;d&quot;} : memref&lt;f32&gt;
     %9 = arith.addf %7, %8 : f32
     %10 = arith.fptosi %9 : f32 to i16
-    %alloc_9 = memref.alloc() {name = &quot;e&quot;} : memref&lt;i16&gt;
-    affine.store %10, %alloc_9[] {to = &quot;e&quot;} : memref&lt;i16&gt;
-    %11 = affine.load %alloc_9[] {from = &quot;e&quot;} : memref&lt;i16&gt;
+    %alloc_5 = memref.alloc() {name = &quot;e&quot;} : memref&lt;i16&gt;
+    affine.store %10, %alloc_5[] {to = &quot;e&quot;} : memref&lt;i16&gt;
+    %11 = affine.load %alloc_5[] {from = &quot;e&quot;} : memref&lt;i16&gt;
     return %11 : i16
   }
 }
@@ -322,7 +318,7 @@ extracting the first 16 bits, which is different from the Xilinx HLS convention 
 to indicate the first 16 bits.</p>
 </div>
 <p>Not only constant values are supported, but also variables can be used as the index or the slice range.</p>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 0.069 seconds)</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 0.075 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-gallery-dive-01-data-types-py">
 <div class="sphx-glr-download sphx-glr-download-jupyter docutils container">
 <p><a class="reference download internal" download="" href="../_downloads/68e0932078b39343e70c899a03d3ae7c/dive_01_data_types.ipynb"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Jupyter</span> <span class="pre">notebook:</span> <span class="pre">dive_01_data_types.ipynb</span></code></a></p>

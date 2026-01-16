@@ -223,9 +223,7 @@ To invoke the kernel with a specific data type, we can use the <code class="docu
       %1 = arith.extsi %0 : i32 to i33
       %c1_i32 = arith.constant 1 : i32
       %c1_i32_0 = arith.constant 1 : i32
-      %c1_i32_1 = arith.constant 1 : i32
-      %c1_i32_2 = arith.constant 1 : i32
-      %2 = arith.extsi %c1_i32_2 : i32 to i33
+      %2 = arith.extsi %c1_i32_0 : i32 to i33
       %3 = arith.addi %1, %2 : i33
       %4 = arith.trunci %3 : i33 to i32
       affine.store %4, %alloc[%arg1] {to = &quot;B&quot;} : memref&lt;10xi32&gt;
@@ -248,9 +246,7 @@ Similarly, we can directly declare a new kernel by specifying <code class="docut
       %0 = affine.load %arg0[%arg1] {from = &quot;A&quot;} : memref&lt;10xf32&gt;
       %c1_i32 = arith.constant 1 : i32
       %c1_i32_0 = arith.constant 1 : i32
-      %c1_i32_1 = arith.constant 1 : i32
-      %c1_i32_2 = arith.constant 1 : i32
-      %1 = arith.sitofp %c1_i32_2 : i32 to f32
+      %1 = arith.sitofp %c1_i32_0 : i32 to f32
       %2 = arith.addf %0, %1 : f32
       affine.store %2, %alloc[%arg1] {to = &quot;B&quot;} : memref&lt;10xf32&gt;
     } {loop_name = &quot;i&quot;, op_name = &quot;S_i_0&quot;}
@@ -280,9 +276,7 @@ Note that here we also use the <code class="docutils literal notranslate"><span 
       %1 = arith.extsi %0 : i32 to i33
       %c1_i32 = arith.constant 1 : i32
       %c1_i32_0 = arith.constant 1 : i32
-      %c1_i32_1 = arith.constant 1 : i32
-      %c1_i32_2 = arith.constant 1 : i32
-      %2 = arith.extsi %c1_i32_2 : i32 to i33
+      %2 = arith.extsi %c1_i32_0 : i32 to i33
       %3 = arith.addi %1, %2 : i33
       %4 = arith.trunci %3 : i33 to i32
       affine.store %4, %alloc[%arg1] {to = &quot;B&quot;} : memref&lt;20xi32&gt;
@@ -320,9 +314,7 @@ Just to make sure the conditions can be determined at compile time.</p>
       %1 = arith.extsi %0 : i32 to i33
       %c1_i32 = arith.constant 1 : i32
       %c1_i32_0 = arith.constant 1 : i32
-      %c1_i32_1 = arith.constant 1 : i32
-      %c1_i32_2 = arith.constant 1 : i32
-      %2 = arith.extsi %c1_i32_2 : i32 to i33
+      %2 = arith.extsi %c1_i32_0 : i32 to i33
       %3 = arith.addi %1, %2 : i33
       %4 = arith.trunci %3 : i33 to i32
       affine.store %4, %alloc[%arg1] {to = &quot;B&quot;} : memref&lt;20xi32&gt;
@@ -338,9 +330,7 @@ module {
       %0 = affine.load %arg0[%arg1] {from = &quot;A&quot;} : memref&lt;20xf32&gt;
       %c1_i32 = arith.constant 1 : i32
       %c1_i32_0 = arith.constant 1 : i32
-      %c1_i32_1 = arith.constant 1 : i32
-      %c1_i32_2 = arith.constant 1 : i32
-      %1 = arith.sitofp %c1_i32_2 : i32 to f32
+      %1 = arith.sitofp %c1_i32_0 : i32 to f32
       %2 = arith.subf %0, %1 : f32
       affine.store %2, %alloc[%arg1] {to = &quot;B&quot;} : memref&lt;20xf32&gt;
     } {loop_name = &quot;i&quot;, op_name = &quot;S_i_0&quot;}
@@ -349,7 +339,7 @@ module {
 }
 </pre></div>
 </div>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 0.336 seconds)</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 0.329 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-gallery-dive-02-template-py">
 <div class="sphx-glr-download sphx-glr-download-jupyter docutils container">
 <p><a class="reference download internal" download="" href="../_downloads/de72dcd3242a3c85b41c9c54a3424409/dive_02_template.ipynb"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Jupyter</span> <span class="pre">notebook:</span> <span class="pre">dive_02_template.ipynb</span></code></a></p>

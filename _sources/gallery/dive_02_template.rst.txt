@@ -84,9 +84,7 @@ To invoke the kernel with a specific data type, we can use the ``instantiate`` a
           %1 = arith.extsi %0 : i32 to i33
           %c1_i32 = arith.constant 1 : i32
           %c1_i32_0 = arith.constant 1 : i32
-          %c1_i32_1 = arith.constant 1 : i32
-          %c1_i32_2 = arith.constant 1 : i32
-          %2 = arith.extsi %c1_i32_2 : i32 to i33
+          %2 = arith.extsi %c1_i32_0 : i32 to i33
           %3 = arith.addi %1, %2 : i33
           %4 = arith.trunci %3 : i33 to i32
           affine.store %4, %alloc[%arg1] {to = "B"} : memref<10xi32>
@@ -127,9 +125,7 @@ Similarly, we can directly declare a new kernel by specifying ``float32`` as the
           %0 = affine.load %arg0[%arg1] {from = "A"} : memref<10xf32>
           %c1_i32 = arith.constant 1 : i32
           %c1_i32_0 = arith.constant 1 : i32
-          %c1_i32_1 = arith.constant 1 : i32
-          %c1_i32_2 = arith.constant 1 : i32
-          %1 = arith.sitofp %c1_i32_2 : i32 to f32
+          %1 = arith.sitofp %c1_i32_0 : i32 to f32
           %2 = arith.addf %0, %1 : f32
           affine.store %2, %alloc[%arg1] {to = "B"} : memref<10xf32>
         } {loop_name = "i", op_name = "S_i_0"}
@@ -178,9 +174,7 @@ Note that here we also use the ``<type_var>: base_type`` notation to constrain t
           %1 = arith.extsi %0 : i32 to i33
           %c1_i32 = arith.constant 1 : i32
           %c1_i32_0 = arith.constant 1 : i32
-          %c1_i32_1 = arith.constant 1 : i32
-          %c1_i32_2 = arith.constant 1 : i32
-          %2 = arith.extsi %c1_i32_2 : i32 to i33
+          %2 = arith.extsi %c1_i32_0 : i32 to i33
           %3 = arith.addi %1, %2 : i33
           %4 = arith.trunci %3 : i33 to i32
           affine.store %4, %alloc[%arg1] {to = "B"} : memref<20xi32>
@@ -251,9 +245,7 @@ In final generated code, we can see that only a single branch is generated based
           %1 = arith.extsi %0 : i32 to i33
           %c1_i32 = arith.constant 1 : i32
           %c1_i32_0 = arith.constant 1 : i32
-          %c1_i32_1 = arith.constant 1 : i32
-          %c1_i32_2 = arith.constant 1 : i32
-          %2 = arith.extsi %c1_i32_2 : i32 to i33
+          %2 = arith.extsi %c1_i32_0 : i32 to i33
           %3 = arith.addi %1, %2 : i33
           %4 = arith.trunci %3 : i33 to i32
           affine.store %4, %alloc[%arg1] {to = "B"} : memref<20xi32>
@@ -269,9 +261,7 @@ In final generated code, we can see that only a single branch is generated based
           %0 = affine.load %arg0[%arg1] {from = "A"} : memref<20xf32>
           %c1_i32 = arith.constant 1 : i32
           %c1_i32_0 = arith.constant 1 : i32
-          %c1_i32_1 = arith.constant 1 : i32
-          %c1_i32_2 = arith.constant 1 : i32
-          %1 = arith.sitofp %c1_i32_2 : i32 to f32
+          %1 = arith.sitofp %c1_i32_0 : i32 to f32
           %2 = arith.subf %0, %1 : f32
           affine.store %2, %alloc[%arg1] {to = "B"} : memref<20xf32>
         } {loop_name = "i", op_name = "S_i_0"}
@@ -286,7 +276,7 @@ In final generated code, we can see that only a single branch is generated based
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.336 seconds)
+   **Total running time of the script:** (0 minutes 0.329 seconds)
 
 
 .. _sphx_glr_download_gallery_dive_02_template.py:

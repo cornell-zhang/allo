@@ -229,9 +229,7 @@ Notice that now we only optimize the separate kernels but do not incorporate the
             %1 = arith.extsi %0 : i32 to i33
             %c1_i32 = arith.constant 1 : i32
             %c1_i32_0 = arith.constant 1 : i32
-            %c1_i32_1 = arith.constant 1 : i32
-            %c1_i32_2 = arith.constant 1 : i32
-            %2 = arith.extsi %c1_i32_2 : i32 to i33
+            %2 = arith.extsi %c1_i32_0 : i32 to i33
             %3 = arith.addi %1, %2 : i33
             %4 = arith.trunci %3 : i33 to i32
             affine.store %4, %alloc[%arg1, %arg2] {to = "B"} : memref<32x32xi32>
@@ -509,7 +507,7 @@ We can see from the printed module that the loop in the first kernel is unrolled
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.590 seconds)
+   **Total running time of the script:** (0 minutes 0.615 seconds)
 
 
 .. _sphx_glr_download_gallery_dive_03_composition.py:

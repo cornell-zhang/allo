@@ -68,15 +68,11 @@ but we can still run the LLVM module with arbitrary shapes of NumPy arrays.
       func.func @kernel(%arg0: memref<?xf32>, %arg1: memref<?xf32>, %arg2: i32) attributes {itypes = "__s", otypes = ""} {
         %c0_i32 = arith.constant 0 : i32
         %c0_i32_0 = arith.constant 0 : i32
-        %c0_i32_1 = arith.constant 0 : i32
-        %c0_i32_2 = arith.constant 0 : i32
-        %0 = arith.index_cast %c0_i32_2 : i32 to index
+        %0 = arith.index_cast %c0_i32_0 : i32 to index
         %1 = arith.index_cast %arg2 : i32 to index
         %c1_i32 = arith.constant 1 : i32
-        %c1_i32_3 = arith.constant 1 : i32
-        %c1_i32_4 = arith.constant 1 : i32
-        %c1_i32_5 = arith.constant 1 : i32
-        %2 = arith.index_cast %c1_i32_5 : i32 to index
+        %c1_i32_1 = arith.constant 1 : i32
+        %2 = arith.index_cast %c1_i32_1 : i32 to index
         scf.for %arg3 = %0 to %1 step %2 {
           %3 = memref.load %arg0[%arg3] {from = "A"} : memref<?xf32>
           memref.store %3, %arg1[%arg3] {to = "B"} : memref<?xf32>
@@ -125,15 +121,16 @@ We can also check the generated HLS code that the arguments are declared as poin
     #include <math.h>
     #include <stdint.h>
     using namespace std;
+    /// This is top function.
     void kernel(
       float *v0,
       float *v1,
       int32_t v2
     ) {     // L2
-      int v3 = v2;  // L8
-      for (int v4 = 0; v4 < v3; v4 += 1) {  // L14
-        float v5 = *v0[v4]; // L15
-        *v1[v4] = v5;       // L16
+      int v3 = v2;  // L6
+      for (int v4 = 0; v4 < v3; v4 += 1) {  // L10
+        float v5 = *v0[v4]; // L11
+        *v1[v4] = v5;       // L12
       }
     }
 
@@ -204,26 +201,22 @@ also supports this by explicitly specifying the return type as a tuple.
       func.func @kernel(%arg0: memref<10xf32>, %arg1: memref<10xf32>) -> (memref<10xf32>, memref<10xf32>) attributes {itypes = "__", otypes = "__"} {
         %c0_i32 = arith.constant 0 : i32
         %c0_i32_0 = arith.constant 0 : i32
-        %c0_i32_1 = arith.constant 0 : i32
-        %c0_i32_2 = arith.constant 0 : i32
-        %0 = arith.sitofp %c0_i32_2 : i32 to f32
+        %0 = arith.sitofp %c0_i32_0 : i32 to f32
         %alloc = memref.alloc() {name = "C"} : memref<10xf32>
         linalg.fill ins(%0 : f32) outs(%alloc : memref<10xf32>)
-        %c0_i32_3 = arith.constant 0 : i32
-        %c0_i32_4 = arith.constant 0 : i32
-        %c0_i32_5 = arith.constant 0 : i32
-        %c0_i32_6 = arith.constant 0 : i32
-        %1 = arith.sitofp %c0_i32_6 : i32 to f32
-        %alloc_7 = memref.alloc() {name = "D"} : memref<10xf32>
-        linalg.fill ins(%1 : f32) outs(%alloc_7 : memref<10xf32>)
+        %c0_i32_1 = arith.constant 0 : i32
+        %c0_i32_2 = arith.constant 0 : i32
+        %1 = arith.sitofp %c0_i32_2 : i32 to f32
+        %alloc_3 = memref.alloc() {name = "D"} : memref<10xf32>
+        linalg.fill ins(%1 : f32) outs(%alloc_3 : memref<10xf32>)
         affine.for %arg2 = 0 to 10 {
           %2 = affine.load %arg0[%arg2] {from = "A"} : memref<10xf32>
           %3 = affine.load %arg1[%arg2] {from = "B"} : memref<10xf32>
           %4:2 = func.call @callee(%2, %3) : (f32, f32) -> (f32, f32)
           affine.store %4#0, %alloc[%arg2] {to = "C"} : memref<10xf32>
-          affine.store %4#1, %alloc_7[%arg2] {to = "D"} : memref<10xf32>
+          affine.store %4#1, %alloc_3[%arg2] {to = "D"} : memref<10xf32>
         } {loop_name = "i", op_name = "S_i_0"}
-        return %alloc, %alloc_7 : memref<10xf32>, memref<10xf32>
+        return %alloc, %alloc_3 : memref<10xf32>, memref<10xf32>
       }
     }
 
@@ -234,7 +227,7 @@ also supports this by explicitly specifying the return type as a tuple.
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.216 seconds)
+   **Total running time of the script:** (0 minutes 0.215 seconds)
 
 
 .. _sphx_glr_download_gallery_dive_04_features.py:

@@ -225,6 +225,18 @@ Google XLS synthesis. We expose a <cite>use_memory</cite> flag to control whethe
 <p>When <cite>use_memory</cite> is set to <cite>True</cite>, the generated code will use the memory API in the XLS backend. When <cite>use_memory</cite> is set to <cite>False</cite>,
 the generated code will use the C-style arrays which become registers clusters in the XLS backend.</p>
 </li>
+<li><p><strong>HLS Emulation, Synthesis, and Execution</strong>:
+Users may also specify the target as <cite>“xlscc”</cite> but run the designs in our software emulation mode:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">sw_emu</span></code>: Software emulation mode, which is similar to C simulation that compiles the program using C compiler</p></li>
+</ul>
+<p>and runs it on the CPU. Depending on the size of your input data, this mode may take within one minute.</p>
+<blockquote>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">mod</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">&quot;xlscc&quot;</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;sw_emu&quot;</span><span class="p">,</span> <span class="n">project</span><span class="o">=</span><span class="s2">&quot;gemm.prj&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div></blockquote>
+</li>
 </ol>
 </section>
 <section id="project-structure-and-execution">
@@ -239,6 +251,19 @@ the generated code will use the C-style arrays which become registers clusters i
 </ul>
 <p>backend to map any memory arrays to the hardware. Without this file or if this file is
 configured wrong, the XLS backend will error out during its IR optimization pass.</p>
+<p>If you are using the software emulation mode, you will also obtain the following files:</p>
+<ul class="simple">
+<li><p><strong>test_harness.cpp</strong>: The host-side (CPU) code that invokes the accelerator.</p></li>
+<li><p><strong>Makefile</strong>: Build scripts to compile the project.</p></li>
+<li><p><strong>input*.data</strong>: The binary input data files for the design.</p></li>
+</ul>
+<p>To run the design, prepare the input matrices using NumPy and invoke the generated module to obtain the result:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">np_A</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">random</span><span class="p">((</span><span class="n">M</span><span class="p">,</span> <span class="n">K</span><span class="p">))</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
+<span class="n">np_B</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">random</span><span class="p">((</span><span class="n">K</span><span class="p">,</span> <span class="n">N</span><span class="p">))</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
+<span class="n">result</span> <span class="o">=</span> <span class="n">mod</span><span class="p">(</span><span class="n">np_A</span><span class="p">,</span> <span class="n">np_B</span><span class="p">)</span>
+<span class="n">np</span><span class="o">.</span><span class="n">testing</span><span class="o">.</span><span class="n">assert_allclose</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">matmul</span><span class="p">(</span><span class="n">np_A</span><span class="p">,</span> <span class="n">np_B</span><span class="p">),</span> <span class="n">rtol</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">,</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
+</pre></div>
+</div>
 <dl class="simple">
 <dt>Note:</dt><dd><p>The XLS backend only supports integer and fixed-point types. Floating-point types (f16, f32, f64) are not supported.</p>
 </dd>

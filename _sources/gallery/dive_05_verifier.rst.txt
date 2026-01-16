@@ -256,9 +256,7 @@ should not be equivalent to **s1**.
       func.func @gemm_wrong(%arg0: memref<32x32xf32>, %arg1: memref<32x32xf32>) -> memref<32x32xf32> attributes {itypes = "__", otypes = "_"} {
         %c0_i32 = arith.constant 0 : i32
         %c0_i32_0 = arith.constant 0 : i32
-        %c0_i32_1 = arith.constant 0 : i32
-        %c0_i32_2 = arith.constant 0 : i32
-        %0 = arith.sitofp %c0_i32_2 : i32 to f32
+        %0 = arith.sitofp %c0_i32_0 : i32 to f32
         %alloc = memref.alloc() {name = "C"} : memref<32x32xf32>
         linalg.fill ins(%0 : f32) outs(%alloc : memref<32x32xf32>)
         affine.for %arg2 = 0 to 32 {
@@ -279,12 +277,12 @@ should not be equivalent to **s1**.
     Differences between generated programs:
     --- Program A (Schedule A)
     +++ Program B (Schedule B)
-    @@ -14,26 +14,24 @@
-     #include <math.h>
-
+    @@ -15,26 +15,24 @@
      #include <stdint.h>
 
      using namespace std;
+
+     /// This is top function.
 
     -void gemm(
 
@@ -306,11 +304,11 @@ should not be equivalent to **s1**.
 
     -      v2[v3][v4] = 0.000000;   // L6
 
-    +  for (int v3 = 0; v3 < 32; v3++) {    // L9
+    +  for (int v3 = 0; v3 < 32; v3++) {    // L7
 
-    +    for (int v4 = 0; v4 < 32; v4++) {  // L9
+    +    for (int v4 = 0; v4 < 32; v4++) {  // L7
 
-    +      v2[v3][v4] = 0.000000;   // L9
+    +      v2[v3][v4] = 0.000000;   // L7
 
          }
 
@@ -334,19 +332,19 @@ should not be equivalent to **s1**.
 
     -        v2[i][j] = v12;        // L15
 
-    +  l_S_i_j_0_i: for (int i = 0; i < 32; i++) {  // L10
+    +  l_S_i_j_0_i: for (int i = 0; i < 32; i++) {  // L8
 
-    +    l_j: for (int j = 0; j < 32; j++) {        // L11
+    +    l_j: for (int j = 0; j < 32; j++) {        // L9
 
-    +      l_S_k_0_k: for (int k = 0; k < 32; k++) {        // L12
+    +      l_S_k_0_k: for (int k = 0; k < 32; k++) {        // L10
 
-    +        float v8 = v0[i][k];   // L13
+    +        float v8 = v0[i][k];   // L11
 
-    +        float v9 = v1[k][j];   // L14
+    +        float v9 = v1[k][j];   // L12
 
-    +        float v10 = v8 * v9;   // L15
+    +        float v10 = v8 * v9;   // L13
 
-    +        v2[i][j] = v10;        // L16
+    +        v2[i][j] = v10;        // L14
 
            }
 
@@ -376,7 +374,7 @@ functional correctness of your algorithms.
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 1.650 seconds)
+   **Total running time of the script:** (0 minutes 1.708 seconds)
 
 
 .. _sphx_glr_download_gallery_dive_05_verifier.py:

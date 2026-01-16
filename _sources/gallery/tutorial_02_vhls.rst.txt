@@ -353,6 +353,7 @@ Vivado/Vitis HLS code, which will directly returns the generated code as a strin
     #include <math.h>
     #include <stdint.h>
     using namespace std;
+    /// This is top function.
     void gemm(
       float v0[32][32],
       float v1[32][32],
@@ -532,7 +533,7 @@ you can check the following files:
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.129 seconds)
+   **Total running time of the script:** (0 minutes 0.134 seconds)
 
 
 .. _sphx_glr_download_gallery_tutorial_02_vhls.py:
