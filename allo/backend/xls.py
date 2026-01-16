@@ -5,6 +5,12 @@
 import io
 import os
 import re
+import shutil
+import subprocess
+import tempfile
+from pathlib import Path
+
+import numpy as np
 
 from .._mlir.dialects import allo as allo_d
 from .._mlir.ir import Context, Location, Module, UnitAttr
@@ -49,6 +55,12 @@ struct Fixed {
 };
 template <int WIDTH, int FRAC> using UFixed = Fixed<WIDTH, FRAC, false>;
 """
+
+
+#  Check if g++ (for sw_emu) or XLS toolchain is available
+def is_available():
+    """Check if g++ (for sw_emu) or XLS toolchain is available."""
+    return shutil.which("g++") is not None or shutil.which("xlscc") is not None
 
 
 def _validate_xls_ir(mlir_text, project=None):
@@ -340,17 +352,24 @@ def _wrap_xlscc(core_code, top_name, func_name, inputs, use_memory):
     return headers + testblock, textproto
 
 
-class XLSCCModule:
+class XLSCCModule:  # pylint: disable=too-many-instance-attributes
     def __init__(
         self,
         mlir_text_or_module,
         top_func_name,
         project=None,
         use_memory=False,
+        mode=None,
     ):
         self.top_func_name = top_func_name
         self.project = project
         self.use_memory = use_memory
+        self.mode = mode
+        self._binary_path = None
+        self._project_dir = project
+        self._arg_info = []
+        self._has_arrays = False
+        self._output_info = None
 
         # Parse MLIR + run minimal lowering
         with Context() as ctx, Location.unknown():
@@ -383,6 +402,9 @@ class XLSCCModule:
         buf.seek(0)
         self.core_code = buf.read()
 
+        # Extract argument info for sw_emu
+        self._extract_arg_info()
+
         # Get array parameter names
         param_names = []
         if self.func:
@@ -411,6 +433,324 @@ class XLSCCModule:
             if use_memory and self.rewrites_textproto:
                 with open(f"{project}/rewrites.textproto", "w", encoding="utf-8") as f:
                     f.write(self.rewrites_textproto)
+
+        # Build sw_emu binary if requested
+        if mode == "sw_emu":
+            self._build_sw_emu()
+
+    def _extract_arg_info(self):
+        if not self.func:
+            return
+
+        for i, arg in enumerate(self.func.arguments):
+            t = str(arg.type)
+            info = {"index": i, "type_str": t, "is_array": False}
+
+            if "memref" in t or "tensor" in t:
+                info["is_array"] = True
+                self._has_arrays = True
+                match = re.search(r"<([^>]+)>", t)
+                if match:
+                    parts = match.group(1).split("x")
+                    if len(parts) >= 2:
+                        info["shape"] = [int(p) for p in parts[:-1]]
+                        info["dtype"] = parts[-1]
+                        info["size"] = 1
+                        for dim in info["shape"]:
+                            info["size"] *= dim
+            else:
+                info["dtype"] = t
+
+            self._arg_info.append(info)
+
+        # Extract output info from function return type
+        self._extract_output_info()
+
+    # Extract output shape and dtype from function return type.
+    def _extract_output_info(self):
+        if not self.func:
+            return
+        result_types = list(self.func.type.results)
+        if not result_types:
+            return
+        ret_t = str(result_types[0])
+        if "memref" not in ret_t and "tensor" not in ret_t:
+            return
+        match = re.search(r"<([^>]+)>", ret_t)
+        if not match:
+            return
+        parts = match.group(1).split("x")
+        if len(parts) < 2:
+            return
+        self._output_info = {
+            "shape": [int(p) for p in parts[:-1]],
+            "dtype": parts[-1],
+        }
+        self._output_info["size"] = 1
+        for dim in self._output_info["shape"]:
+            self._output_info["size"] *= dim
+
+    def _get_harness_path(self):
+        return Path(__file__).parent.parent / "harness" / "xlscc"
+
+    def _preprocess_cpp(self, code):
+        lines = []
+        all_lines = code.split("\n")
+        skip_next = False
+        for i, line in enumerate(all_lines):
+            if skip_next:
+                skip_next = False
+                continue
+            # Skip XLS-specific includes
+            if "#include" in line and (
+                "xls" in line.lower() or "ac_int" in line or "ac_channel" in line
+            ):
+                continue
+            # Skip template line if next line is using ac_int (they come as a pair)
+            if line.strip().startswith("template") and i + 1 < len(all_lines):
+                next_line = all_lines[i + 1]
+                if "using ac_int" in next_line or "using ac_uint" in next_line:
+                    skip_next = True
+                    continue
+            # Skip using ac_int/ac_uint lines
+            if "using ac_int" in line or "using ac_uint" in line:
+                continue
+            lines.append(line)
+        return "\n".join(lines)
+
+    def _generate_harness_scalar(self):
+        harness_path = self._get_harness_path()
+        processed = self._preprocess_cpp(self.final_cpp)
+
+        harness = f"""// Auto-generated sw_emu harness (scalar)
+#include "{harness_path}/XlsInt.h"
+#include "{harness_path}/Channel.h"
+#include "{harness_path}/Memory.h"
+#include <iostream>
+#include <cstdlib>
+
+{processed}
+
+int main(int argc, char** argv) {{
+    if (argc < 2) {{
+        std::cerr << "Usage: " << argv[0] << " <inputs...>" << std::endl;
+        return 1;
+    }}
+
+"""
+        args = []
+        for i, info in enumerate(self._arg_info):
+            if not info["is_array"]:
+                harness += f"    int arg{i} = std::atoi(argv[{i + 1}]);\n"
+                args.append(f"arg{i}")
+
+        if args:
+            harness += f"\n    auto result = {self.top_func_name}({', '.join(args)});\n"
+            harness += '    std::cout << "RESULT:" << result << std::endl;\n'
+        else:
+            harness += f"\n    {self.top_func_name}();\n"
+            harness += '    std::cout << "RESULT:OK" << std::endl;\n'
+
+        harness += "    return 0;\n}\n"
+        return harness
+
+    def _generate_harness_array(self):
+        harness_path = self._get_harness_path()
+        processed = self._preprocess_cpp(self.final_cpp)
+        output_size = self._output_info["size"] if self._output_info else 1
+
+        harness = f"""// Auto-generated sw_emu harness (array)
+#include "{harness_path}/XlsInt.h"
+#include "{harness_path}/Channel.h"
+#include "{harness_path}/Memory.h"
+#include <iostream>
+#include <fstream>
+#include <cstdlib>
+#include <vector>
+
+{processed}
+
+int main(int argc, char** argv) {{
+    if (argc < 2) {{
+        std::cerr << "Usage: " << argv[0] << " <project_dir>" << std::endl;
+        return 1;
+    }}
+    std::string project_dir = argv[1];
+    TestBlock block;
+
+"""
+        for i, info in enumerate(self._arg_info):
+            if info["is_array"]:
+                size = info.get("size", 1)
+                harness += f"""
+    std::ifstream in{i}(project_dir + "/input{i}.data", std::ios::binary);
+    if (!in{i}.is_open()) {{
+        std::cerr << "Failed to open input{i}.data" << std::endl;
+        return 1;
+    }}
+    std::vector<int32_t> input{i}({size});
+    in{i}.read(reinterpret_cast<char*>(input{i}.data()), {size} * sizeof(int32_t));
+    in{i}.close();
+    for (int j = 0; j < {size}; ++j) block.v{i}_in.write(input{i}[j]);
+"""
+
+        harness += f"""
+    block.{self.top_func_name}();
+
+    std::cout << "RESULT:";
+    for (int j = 0; j < {output_size}; ++j) {{
+        int32_t val = block.out.read();
+        std::cout << val;
+        if (j < {output_size} - 1) std::cout << ",";
+    }}
+    std::cout << std::endl;
+    return 0;
+}}
+"""
+        return harness
+
+    def _generate_makefile(self):
+        """Generate a Makefile for the sw_emu project."""
+        harness_path = self._get_harness_path()
+        makefile = f"""# Auto-generated Makefile for XLS sw_emu
+# Generated by Allo XLS [CC] Backend
+
+CXX = g++
+CXXFLAGS = -std=c++17 -O2
+INCLUDES = -I{harness_path}
+
+TARGET = test_binary
+SRCS = test_harness.cpp
+OBJS = $(SRCS:.cpp=.o)
+
+.PHONY: all clean run
+
+all: $(TARGET)
+
+$(TARGET): $(SRCS)
+\t$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $<
+
+%.o: %.cpp
+\t$(CXX) $(CXXFLAGS) $(INCLUDES) -c -o $@ $<
+
+run: $(TARGET)
+"""
+        if self._has_arrays:
+            makefile += "\t./$(TARGET) .\n"
+        else:
+            makefile += "\t./$(TARGET)\n"
+
+        makefile += """
+clean:
+\trm -f $(TARGET) $(OBJS)
+
+help:
+\t@echo "Makefile targets:"
+\t@echo "  all   - Build the test binary (default)"
+\t@echo "  run   - Build and run the test binary"
+\t@echo "  clean - Remove build artifacts"
+\t@echo "  help  - Show this help message"
+"""
+        return makefile
+
+    def _build_sw_emu(self):
+        if shutil.which("g++") is None:
+            raise RuntimeError("g++ not found. Cannot build sw_emu.")
+
+        project_dir = self.project or tempfile.mkdtemp(prefix="xls_sw_emu_")
+        self._project_dir = project_dir
+        os.makedirs(project_dir, exist_ok=True)
+
+        harness = (
+            self._generate_harness_array()
+            if self._has_arrays
+            else self._generate_harness_scalar()
+        )
+        harness_path = os.path.join(project_dir, "test_harness.cpp")
+        binary_path = os.path.join(project_dir, "test_binary")
+
+        with open(harness_path, "w", encoding="utf-8") as f:
+            f.write(harness)
+
+        # Generate Makefile
+        makefile = self._generate_makefile()
+        makefile_path = os.path.join(project_dir, "Makefile")
+        with open(makefile_path, "w", encoding="utf-8") as f:
+            f.write(makefile)
+
+        result = subprocess.run(
+            ["g++", "-std=c++17", "-O2", "-o", binary_path, harness_path],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"sw_emu compilation failed:\n{result.stderr}\n{result.stdout}"
+            )
+
+        self._binary_path = binary_path
+
+    def __call__(self, *args):
+        if self.mode != "sw_emu":
+            raise RuntimeError("__call__ only supported in sw_emu mode")
+        if not self._binary_path or not os.path.exists(self._binary_path):
+            raise RuntimeError("sw_emu binary not built")
+
+        if self._has_arrays:
+            return self._call_array(*args)
+        return self._call_scalar(*args)
+
+    def _call_scalar(self, *args):
+        str_args = [str(a) for a in args]
+        result = subprocess.run(
+            [self._binary_path] + str_args, capture_output=True, text=True, check=False
+        )
+
+        if result.returncode != 0:
+            raise RuntimeError(f"sw_emu execution failed:\n{result.stderr}")
+
+        for line in result.stdout.strip().split("\n"):
+            if line.startswith("RESULT:"):
+                val = line[7:]
+                if val == "OK":
+                    return None
+                try:
+                    return int(val)
+                except ValueError:
+                    return val
+        return None
+
+    def _call_array(self, *args):
+        for i, (arg, info) in enumerate(zip(args, self._arg_info)):
+            if info["is_array"]:
+                arr = np.asarray(arg, dtype=np.int32).flatten()
+                with open(f"{self._project_dir}/input{i}.data", "wb") as f:
+                    f.write(arr.tobytes())
+
+        result = subprocess.run(
+            [self._binary_path, self._project_dir],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        if result.returncode != 0:
+            raise RuntimeError(f"sw_emu execution failed:\n{result.stderr}")
+
+        for line in result.stdout.strip().split("\n"):
+            if line.startswith("RESULT:"):
+                val = line[7:]
+                if val == "OK":
+                    return None
+                vals = [int(v) for v in val.split(",")]
+                if self._output_info:
+                    return np.array(vals, dtype=np.int32).reshape(
+                        self._output_info["shape"]
+                    )
+                return np.array(vals, dtype=np.int32)
+        return None
 
     def __repr__(self):
         return self.final_cpp
