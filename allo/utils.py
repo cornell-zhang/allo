@@ -5,6 +5,7 @@
 import re
 import ctypes
 import numpy as np
+import numpy.typing as npt
 import ml_dtypes
 from ._mlir.ir import (
     MemRefType,
@@ -15,15 +16,16 @@ from ._mlir.ir import (
     F32Type,
     F64Type,
     BF16Type,
-    OpResultList,
 )
 from ._mlir.exceptions import DTypeWarning
 from ._mlir.runtime import to_numpy
 from ._mlir.dialects import allo as allo_d
 from .ir.types import (
+    AlloType,
     Int,
     UInt,
     Index,
+    Float,
     Fixed,
     UFixed,
     bfloat16,
@@ -421,9 +423,15 @@ def handle_overflow(np_array, bitwidth, dtype):
         # Round to nearest integer towards zero
         np_dtype = np.int64 if dtype.startswith("fixed") else np.uint64
         np_array = np.fix(np_array).astype(np_dtype)
+
     sb = 1 << bitwidth
     sb_limit = 1 << (bitwidth - 1)
-    np_array = np_array % sb
+    if bitwidth < 64:
+        # since numpy array only supports up to 64-bit integers
+        # we only need to do modulo operation if bitwidth is less than 64
+        # for larger bitwidth, it's handled already with np.fix(np_array).astype(np_dtype)
+        # this is to avoid the numpy OverflowError: Python int too large to convert to C long
+        np_array = np_array % sb
 
     if dtype.startswith("fixed") or dtype.startswith("i"):
 
@@ -505,8 +513,70 @@ def parse_kernel_name(name: str):
     return prefix, ids
 
 
-def get_mlir_op_result(op):
-    if isinstance(op.result, OpResultList):
-        assert len(op.result) == 1
-        return op.result[0]
-    return op.result
+def allo_to_numpy_dtype(allo_type: AlloType) -> npt.DTypeLike:
+    """
+    Convert AlloType to corresponding numpy dtype.
+
+    Parameters
+    ----------
+    allo_type : AlloType
+        The Allo type to convert to
+
+    Returns
+    -------
+    numpy dtype
+        Corresponding numpy data type
+    """
+
+    dtype = np.float32
+
+    if isinstance(allo_type, Int):
+        if allo_type.bits <= 8:
+            dtype = np.int8
+        elif allo_type.bits <= 16:
+            dtype = np.int16
+        elif allo_type.bits <= 32:
+            dtype = np.int32
+        elif allo_type.bits <= 64:
+            dtype = np.int64
+        # For arbitrary precision, use int64 as fallback
+        else:
+            dtype = np.int64
+
+    elif isinstance(allo_type, UInt):
+        if allo_type.bits <= 8:
+            dtype = np.uint8
+        elif allo_type.bits <= 16:
+            dtype = np.uint16
+        elif allo_type.bits <= 32:
+            dtype = np.uint32
+        elif allo_type.bits <= 64:
+            dtype = np.uint64
+        else:
+            dtype = np.uint64
+
+    elif isinstance(allo_type, Float):
+        if allo_type.bits == 16:
+            dtype = np.float16
+        elif allo_type.bits == 32:
+            dtype = np.float32
+        elif allo_type.bits == 64:
+            dtype = np.float64
+        else:
+            dtype = np.float32
+
+    elif isinstance(allo_type, Index):
+        dtype = np.int32
+
+    elif isinstance(allo_type, (Fixed, UFixed)):
+        # Fixed point: use integer type of same bitwidth
+        if allo_type.bits <= 8:
+            dtype = np.int8 if isinstance(allo_type, Fixed) else np.uint8
+        elif allo_type.bits <= 16:
+            dtype = np.int16 if isinstance(allo_type, Fixed) else np.uint16
+        elif allo_type.bits <= 32:
+            dtype = np.int32 if isinstance(allo_type, Fixed) else np.uint32
+        else:
+            dtype = np.int64 if isinstance(allo_type, Fixed) else np.uint64
+
+    return dtype

@@ -1,6 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=c-extension-no-member, too-many-instance-attributes, too-many-nested-blocks, no-name-in-module, too-many-arguments, unsupported-binary-operation
+# pylint: disable=c-extension-no-member, too-many-instance-attributes, too-many-nested-blocks, no-name-in-module, unsupported-binary-operation
 
 import os
 import re
@@ -15,6 +15,7 @@ except ImportError:
     pass
 
 import allo._mlir._mlir_libs._mlir as allo_ir
+from allo._mlir.exceptions import AlloWarning
 from ..._mlir.dialects import (
     allo as allo_d,
     func as allo_func_d,
@@ -66,7 +67,6 @@ class AIE_MLIRModule:
         self,
         module: allo_ir.ir.Module,
         top_func_name: str,
-        parameter_list: dict[str, int],
         func_args: dict,
         project_dir: str,
         stream_info: dict,
@@ -85,9 +85,6 @@ class AIE_MLIRModule:
         self.project_dir: str = project_dir
         self.allo_module: allo_ir.ir.Module = module
         self.top_func_name: str = top_func_name
-        self.module_parameter_list = [
-            k for k, _ in sorted(parameter_list.items(), key=lambda item: item[1])
-        ]
         self.func_instances = func_instances
 
         self.external_kernel_lib: dict[str, ExternalModule] = {}
@@ -233,6 +230,7 @@ class AIE_MLIRModule:
             - self.core_func_args: function name -> (argument index -> (argument, is_input))
             - self.global_tensors: global argument index -> DTensor
         """
+        top_func_args = [arg.dtensor.name for arg in self.func_args[self.top_func_name]]
         tag_to_read_write_pattern: dict[str, tuple[list, list]] = {}
         # init
         self.core_func_args = {}
@@ -272,9 +270,7 @@ class AIE_MLIRModule:
                             argument.dtensor.type_as_param = kernel.arguments[
                                 io_idx
                             ].type.shape
-                            global_idx = self.func_args[self.top_func_name].index(
-                                argument
-                            )
+                            global_idx = top_func_args.index(argument.dtensor.top_name)
                             argument.dtensor.set_global_info(
                                 global_idx, io_type == "in"
                             )
@@ -340,6 +336,29 @@ class AIE_MLIRModule:
                             (dtype_a, dtype_b, out_dtype)
                         ]["aie2"]
                 else:
+                    continue
+                # validity test
+                if self.device == "npu2" or dtype_a == "i16":
+                    factor_m, factor_n = m * 2, n * 2
+                elif dtype_a == "bf16":
+                    factor_m, factor_n = m * 4, n * 4
+                else:
+                    factor_m, factor_n = m * 4, n * 2
+                valid = K % k == 0 and M % factor_m == 0 and N % factor_n == 0
+                if not valid:
+                    warn = AlloWarning(
+                        "Detected a vectorized matmul kernel, but it cannot be used because the tiling constraints are not met."
+                        f"Ensure that tile_K % {k} == 0, tile_M % {factor_m} == 0, and tile_N % {factor_n} == 0 to enable this optimization."
+                    )
+                    if (
+                        dtype_a == "i4"
+                        or dtype_b == "i4"
+                        or os.environ.get("ALLO_EXTERNAL_KERNEL_DIR") is None
+                    ):
+                        # - we do not provide scalar kernel for i4
+                        # - mlir-aie external kernels instantiate both vector and scalar versions and fail compilation when tiling constraints are not satisfied. Our library is safe to use.
+                        raise warn
+                    warn.warn()
                     continue
                 with function.context, allo_ir.ir.Location.unknown():
                     new_input_0 = allo_d.transform_layout(
@@ -459,7 +478,7 @@ class AIE_MLIRModule:
                 ):
                     excuse_operands.add(op.operands[0])
                     return
-                if op.name == "allo.transform_layout":
+                if getattr(op, "name", None) == "allo.transform_layout":
                     if op.operands[0] in excuse_operands:
                         op.result.replace_all_uses_with(op.operands[0])
                         excuse_operands.remove(op.operands[0])
@@ -483,7 +502,7 @@ class AIE_MLIRModule:
                                         dead_ops.append(next_use_op)
                                 # memcpy to another memref
                                 elif (
-                                    next_use_op.name == "memref.copy"
+                                    getattr(next_use_op, "name", None) == "memref.copy"
                                     and op.result == next_use_op.operands[0]
                                 ):
                                     memcpy_op = next_use_op
@@ -497,11 +516,15 @@ class AIE_MLIRModule:
                                     ):
                                         if is_inverse_transform_layout(op, next_use_op):
                                             if (
-                                                allo_d.get_next_use_in_function(
-                                                    memcpy_op.operands[1],
-                                                    next_use_op,
-                                                    function,
-                                                ).name
+                                                getattr(
+                                                    allo_d.get_next_use_in_function(
+                                                        memcpy_op.operands[1],
+                                                        next_use_op,
+                                                        function,
+                                                    ),
+                                                    "name",
+                                                    None,
+                                                )
                                                 == "memref.copy"
                                             ):
                                                 next_use_op.result.replace_all_uses_with(
@@ -539,7 +562,10 @@ class AIE_MLIRModule:
                             var = list(arg.uses)[0].owner.result
                         op = None
                         for use in var.uses:
-                            if use.owner.name == "allo.transform_layout":
+                            if (
+                                getattr(use.owner, "name", None)
+                                == "allo.transform_layout"
+                            ):
                                 if op is not None:
                                     if (
                                         op.attributes["offsets"]
@@ -581,12 +607,12 @@ class AIE_MLIRModule:
                         operand_idx = 0 if is_dtensor else 1
                         if (
                             (
-                                op.name == "memref.copy"
+                                getattr(op, "name", None) == "memref.copy"
                                 if is_dtensor
-                                else op.name == "allo.stream_put"
+                                else getattr(op, "name", None) == "allo.stream_put"
                             )
                             and op.operands[operand_idx] not in func.arguments
-                            and op.operands[operand_idx].owner.name
+                            and getattr(op.operands[operand_idx].owner, "name", None)
                             == "allo.transform_layout"
                         ):
                             transform_layout_op = op.operands[operand_idx].owner
@@ -723,7 +749,9 @@ class AIE_MLIRModule:
                     assert len(arg_list) == 2
                     self.virtual_computation_graph.chain(arg_list[0], arg_list[1])
                 if primitive == "bundle":
-                    self.virtual_computation_graph.bundle(arg_list)
+                    if isinstance(arg_list[0], str):
+                        arg_list = [(x,) for x in arg_list]
+                    self.virtual_computation_graph.bundle_multi(arg_list)
             if os.getenv("DEBUG") == "1":
                 self.virtual_computation_graph.dump(self.project_dir, "after_mapping")
 
@@ -868,7 +896,20 @@ class AIE_MLIRModule:
         with subprocess.Popen(cmd, shell=True) as process:
             process.wait()
         if process.returncode != 0:
-            raise RuntimeError("Failed to compile the MLIR-AIE code")
+            raise RuntimeError(
+                "Failed to compile the MLIR-AIE code.\n"
+                "Possible causes include:\n"
+                "\n"
+                "  \033[93m1. Program memory overflow:\033[0m\n"
+                "     If you see errors like \033[96m[AIE ERROR] _XAie_LoadProgMemSection():231: Overflow of program memory\033[0m\n"
+                "     it means the generated program is too large for the AIE program memory.\n"
+                "     Consider reducing program size or adjusting virtual mapping primitives (e.g., reducing excessive chaining).\n"
+                "\n"
+                "  \033[93m2. Data memory allocation failure:\033[0m\n"
+                "     If you see errors like \033[96merror: \"-\":13:17: 'aie.tile' op allocated buffers exceeded available memory\033[0m\n"
+                "     it means the total buffer allocation requested in AIE data memory exceeds its capacity.\n"
+                "     Consider adjusting the tiling strategy or using smaller tile sizes.\n"
+            )
         # generate host code
         path = os.path.dirname(__file__)
         path = os.path.join(path, "../../harness/aie")
@@ -892,10 +933,6 @@ class AIE_MLIRModule:
             process.wait()
         if process.returncode != 0:
             raise RuntimeError("Failed to build AIE project.")
-
-    def help(self):
-        # print the parameter list of the module
-        print("Parameter reference:", self.module_parameter_list)
 
     def __call__(self, *args):
         for idx, dtensor in self.global_tensors.items():

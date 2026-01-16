@@ -30,12 +30,14 @@ def conv2D_lb(A: float32[IR, IC], B: float32[FR, FC]) -> float32[OR, OC]:
 
 # Convolution kernel with systolic array (basic)
 @df.region()
-def top():
+def top(A: float32[IR, IC], B: float32[FR, FC], C: float32[OR, OC]):
     fifo_A: Stream[float32, FR * FC][P0, P1]
     fifo_B: Stream[float32, FR * FC][P0, P1]
 
-    @df.kernel(mapping=[P0, P1])
-    def conv_kernel(A: float32[IR, IC], B: float32[FR, FC], C: float32[OR, OC]):
+    @df.kernel(mapping=[P0, P1], args=[A, B, C])
+    def conv_kernel(
+        local_A: float32[IR, IC], local_B: float32[FR, FC], local_C: float32[OR, OC]
+    ):
         pi, pj = df.get_pid()
 
         # We do not use these PEs
@@ -52,12 +54,12 @@ def top():
                     output_row = r
                     output_col = pi - (r * OC) - 1
             for row, col in allo.grid(FR, FC):
-                fifo_A[pi, pj + 1].put(A[row + output_row, col + output_col])
+                fifo_A[pi, pj + 1].put(local_A[row + output_row, col + output_col])
 
         # This meta_elif loads the filter matrix into the PEs
         with allo.meta_elif(pi == 0):
             for row, col in allo.grid(FR, FC):
-                fifo_B[pi + 1, pj].put(B[FR - row - 1, FC - col - 1])
+                fifo_B[pi + 1, pj].put(local_B[FR - row - 1, FC - col - 1])
                 # We do this because we want the last entry of the filter matrix to go first into the PE
 
         # These next two meta_elif load the partial sums into the drain PEs
@@ -85,7 +87,7 @@ def top():
                 if (pi > r * OC) and (pi <= (r + 1) * OC):
                     out_row = r
                     out_col = pi - r * OC - 1
-            C[out_row, out_col] += partial_sum
+            local_C[out_row, out_col] += partial_sum
 
 
 # Testing the systolic convolution kernel

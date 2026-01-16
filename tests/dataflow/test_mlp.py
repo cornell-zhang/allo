@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import os
-import pytest
+import tempfile
+
 from allo.ir.types import float32, Stream
 from allo.ir.utils import MockBuffer
 import allo.dataflow as df
@@ -43,12 +44,12 @@ else:
 
 
 @df.region()
-def top():
+def top(X: Ty[BS, M0], Z2: Ty[BS, NUM_CLASSES]):
     Z0: Stream[Ty, BS * M1]
     Z1: Stream[Ty, BS * M2]
 
-    @df.kernel(mapping=[1])
-    def linear1(X: Ty[BS, M0]):
+    @df.kernel(mapping=[1], args=[X])
+    def linear1(local_X: Ty[BS, M0]):
         # BS*M0 * M0*M1 = BS*M1
         W0: Ty[M0, M1] = np_W0
         buf: Ty[M1]
@@ -57,14 +58,14 @@ def top():
                 buf[j_init] = 0
             for k in range(M0):
                 # reorder reduction loop outside, and pipeline
-                x: Ty = X[i, k]
+                x: Ty = local_X[i, k]
                 for j in range(M1):
                     buf[j] += x * W0[k, j]
             for j_back in range(M1):
                 # relu
                 Z0.put(max(buf[j_back], 0))
 
-    @df.kernel(mapping=[1])
+    @df.kernel(mapping=[1], args=[])
     def linear2():
         # BS*M1 * M1*M2 = BS*M2
         W1: Ty[M1, M2] = np_W1
@@ -80,8 +81,8 @@ def top():
             for j_back in range(M2):
                 Z1.put(max(buf[j_back], 0))
 
-    @df.kernel(mapping=[1])
-    def linear3(Z2: Ty[BS, NUM_CLASSES]):
+    @df.kernel(mapping=[1], args=[Z2])
+    def linear3(local_Z2: Ty[BS, NUM_CLASSES]):
         # BS*M2 * M2*NUM_CLASSES = BS*NUM_CLASSES
         W2: Ty[M2, NUM_CLASSES] = np_W2
         buf: Ty[NUM_CLASSES]
@@ -94,7 +95,7 @@ def top():
                 for j in range(NUM_CLASSES):
                     buf[j] += x * W2[k, j]
             for j_back in range(NUM_CLASSES):
-                Z2[i, j_back] = max(buf[j_back], 0)
+                local_Z2[i, j_back] = max(buf[j_back], 0)
 
 
 def schedule_linear(s, lid, factor=4):
@@ -128,17 +129,17 @@ def test_mlp():
 
     if hls.is_available("vitis_hls"):
         allo_final_Y = np.zeros((BS, NUM_CLASSES), dtype=np.float32)
-        mod = s.build(target="vitis_hls", mode="csim", project="top.prj")
-        mod(X, allo_final_Y)
-        np.testing.assert_allclose(Y, allo_final_Y, rtol=1e-5)
-        print("PASSED CSIM!")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mod = s.build(target="vitis_hls", mode="csim", project=tmpdir)
+            mod(X, allo_final_Y)
+            np.testing.assert_allclose(Y, allo_final_Y, rtol=1e-5)
+            print("PASSED CSIM!")
         # hls
-        mod = s.build(
-            target="vitis_hls", mode="hw", project="df-mlp3-relu-unroll-new.prj"
-        )
-        mod(X, allo_final_Y)
-        np.testing.assert_allclose(Y, allo_final_Y, rtol=1e-5)
-        print("PASSED HW!")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mod = s.build(target="vitis_hls", mode="hw", project=tmpdir)
+            mod(X, allo_final_Y)
+            np.testing.assert_allclose(Y, allo_final_Y, rtol=1e-5)
+            print("PASSED HW!")
 
 
 if __name__ == "__main__":

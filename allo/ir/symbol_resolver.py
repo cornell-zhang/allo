@@ -8,6 +8,7 @@ import ast
 class ASTResolver:
     """Provides helper methods to resolve AST nodes."""
 
+    # pylint: disable=too-many-return-statements
     @staticmethod
     def resolve(node, scope):
         """resolve a given AST node to a Python object.
@@ -30,6 +31,41 @@ class ASTResolver:
         if isinstance(node, ast.BinOp):
             # pylint: disable=eval-used
             return eval(compile(ast.Expression(node), "", "eval"), scope)
+
+        if isinstance(node, ast.Call):
+            # Handle function/constructor calls like Memory(resource="URAM")
+            func_obj = ASTResolver.resolve(node.func, scope)
+            if func_obj is None:
+                return None
+            # Resolve positional arguments
+            args = []
+            for arg in node.args:
+                if isinstance(arg, ast.Constant):
+                    args.append(arg.value)
+                else:
+                    resolved = ASTResolver.resolve(arg, scope)
+                    if resolved is None:
+                        return None
+                    args.append(resolved)
+            # Resolve keyword arguments
+            kwargs = {}
+            for kw in node.keywords:
+                if isinstance(kw.value, ast.Constant):
+                    kwargs[kw.arg] = kw.value.value
+                else:
+                    resolved = ASTResolver.resolve(kw.value, scope)
+                    if resolved is None:
+                        return None
+                    kwargs[kw.arg] = resolved
+            try:
+                return func_obj(*args, **kwargs)
+            # pylint: disable=broad-exception-caught
+            except Exception:
+                return None
+
+        if isinstance(node, ast.List):
+            values = [ASTResolver.resolve(v, scope) for v in node.elts]
+            return values
 
         if isinstance(node, ast.Dict):
             # Resolve dictionary literals to struct types

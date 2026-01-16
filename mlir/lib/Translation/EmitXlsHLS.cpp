@@ -5,9 +5,9 @@
  */
 
 #include "allo/Translation/EmitXlsHLS.h"
-#include "allo/Translation/EmitVivadoHLS.h"  // Include Vivado emitter
 #include "allo/Dialect/Visitor.h"
 #include "allo/Support/Utils.h"
+#include "allo/Translation/EmitVivadoHLS.h" // Include Vivado emitter
 #include "allo/Translation/Utils.h"
 #include "mlir/Dialect/Affine/IR/AffineValueMap.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -30,7 +30,7 @@ using namespace allo;
 // Utils
 //===----------------------------------------------------------------------===//
 
-// used for determine whether to generate C++ default types or ac_(u)int
+// used to determine whether to generate C++ default types or ac_(u)int
 static bool BIT_FLAG = false;
 
 // Flag to control whether arrays are emitted as __xls_memory<T, size> (true)
@@ -38,74 +38,80 @@ static bool BIT_FLAG = false;
 static bool USE_MEMORY_FLAG = false;
 
 static SmallString<16> getXLSTypeName(Type valType) {
-  if (auto arrayType = valType.dyn_cast<ShapedType>())
+  // Extract element type if valType is a ShapedType
+  if (auto arrayType = llvm::dyn_cast<ShapedType>(valType))
     valType = arrayType.getElementType();
 
   // Handle integer types.
-  else if (valType.isa<IndexType>())
+  if (llvm::isa<IndexType>(valType))
     return SmallString<16>("int");
-  else if (auto intType = valType.dyn_cast<IntegerType>()) {
+  else if (auto intType = llvm::dyn_cast<IntegerType>(valType)) {
     if (intType.getWidth() == 1) {
-        return SmallString<16>("ac_int<1, false>");
+      return SmallString<16>("ac_int<1, false>");
     } else {
       switch (intType.getWidth()) {
       case 16:
-        if (intType.getSignedness() == IntegerType::SignednessSemantics::Unsigned)
+        if (intType.getSignedness() ==
+            IntegerType::SignednessSemantics::Unsigned)
           return SmallString<16>("uint16_t");
         else
           return SmallString<16>("short");
+        break;
       case 32:
-        if (intType.getSignedness() == IntegerType::SignednessSemantics::Unsigned)
+        if (intType.getSignedness() ==
+            IntegerType::SignednessSemantics::Unsigned)
           return SmallString<16>("uint32_t");
         else
           return SmallString<16>("int");
         break;
       case 64:
-        if (intType.getSignedness() == IntegerType::SignednessSemantics::Unsigned)
+        if (intType.getSignedness() ==
+            IntegerType::SignednessSemantics::Unsigned)
           return SmallString<16>("uint64_t");
         else
           return SmallString<16>("long long");
         break;
       default:
-        return SmallString<16>("ac_int<" + std::to_string(intType.getWidth()) + ", " +
-                                (intType.getSignedness() == IntegerType::SignednessSemantics::Unsigned ? "false" : "true") + ">");
+        return SmallString<16>(
+            "ac_int<" + std::to_string(intType.getWidth()) + ", " +
+            (intType.getSignedness() ==
+                     IntegerType::SignednessSemantics::Unsigned
+                 ? "false"
+                 : "true") +
+            ">");
       }
-    
     }
   }
 
-  else if (auto streamType = valType.dyn_cast<StreamType>())
+  else if (auto streamType = llvm::dyn_cast<StreamType>(valType))
     return SmallString<16>(
         "__xls_channel< " +
-        std::string(getXLSTypeName(streamType.getBaseType()).c_str()) + ", "
-        + "__XLS_IO_PLACEHOLDER__" + ">");
+        std::string(getXLSTypeName(streamType.getBaseType()).c_str()) + ", " +
+        "__XLS_IO_PLACEHOLDER__" + ">");
 
   // Check for unsupported types and provide clear error message
-  else if (valType.isa<Float16Type>() || valType.isa<Float32Type>() || 
-           valType.isa<Float64Type>()) {
-    assert(1 == 0 && "XLS[cc] backend does not currently support floating-point types. Please use integer or fixed-point types instead.");
+  else if (llvm::isa<Float16Type>(valType) || llvm::isa<Float32Type>(valType) ||
+           llvm::isa<Float64Type>(valType)) {
+    assert(1 == 0 &&
+           "XLS[cc] backend does not currently support floating-point types. "
+           "Please use integer or fixed-point types instead.");
   }
   // Replace the fixed-point assertion with actual type emission
-  else if (auto fixedType = valType.dyn_cast<allo::FixedType>()) {
+  else if (auto fixedType = llvm::dyn_cast<allo::FixedType>(valType)) {
     // Emit Fixed<WIDTH, FRAC, true> for signed fixed-point
-    return SmallString<16>("Fixed<" + std::to_string(fixedType.getWidth()) + ", " +
-                           std::to_string(fixedType.getFrac()) + ", true>");
-  }
-  else if (auto ufixedType = valType.dyn_cast<allo::UFixedType>()) {
+    return SmallString<16>("Fixed<" + std::to_string(fixedType.getWidth()) +
+                           ", " + std::to_string(fixedType.getFrac()) +
+                           ", true>");
+  } else if (auto ufixedType = llvm::dyn_cast<allo::UFixedType>(valType)) {
     // Emit UFixed<WIDTH, FRAC> (alias for Fixed<WIDTH, FRAC, false>)
-    return SmallString<16>("UFixed<" + std::to_string(ufixedType.getWidth()) + ", " +
-                           std::to_string(ufixedType.getFrac()) + ">");
-  }
-  else {
-    assert(1 == 0 && "XLS[cc] backend encountered unsupported type. Only integer types and streams are currently supported.");
+    return SmallString<16>("UFixed<" + std::to_string(ufixedType.getWidth()) +
+                           ", " + std::to_string(ufixedType.getFrac()) + ">");
+  } else {
+    assert(1 == 0 && "XLS[cc] backend encountered unsupported type. Only "
+                     "integer types and streams are currently supported.");
   }
 
   return SmallString<16>();
-}
-
-// Forward declare the Vivado ModuleEmitter from the Vivado namespace
-namespace vhls {
-  class ModuleEmitter;
 }
 
 namespace {
@@ -147,7 +153,7 @@ public:
   /// Affine expression emitters.
   void emitAffineBinary(AffineBinaryOpExpr expr, const char *syntax) {
     os << "(";
-    if (auto constRHS = expr.getRHS().dyn_cast<AffineConstantExpr>()) {
+    if (auto constRHS = llvm::dyn_cast<AffineConstantExpr>(expr.getRHS())) {
       if ((unsigned)*syntax == (unsigned)*"*" && constRHS.getValue() == -1) {
         os << "-";
         visit(expr.getLHS());
@@ -162,8 +168,9 @@ public:
         return;
       }
     }
-    if (auto binaryRHS = expr.getRHS().dyn_cast<AffineBinaryOpExpr>()) {
-      if (auto constRHS = binaryRHS.getRHS().dyn_cast<AffineConstantExpr>()) {
+    if (auto binaryRHS = llvm::dyn_cast<AffineBinaryOpExpr>(expr.getRHS())) {
+      if (auto constRHS =
+              llvm::dyn_cast<AffineConstantExpr>(binaryRHS.getRHS())) {
         if ((unsigned)*syntax == (unsigned)*"+" && constRHS.getValue() == -1 &&
             binaryRHS.getKind() == AffineExprKind::Mul) {
           visit(expr.getLHS());
@@ -187,59 +194,62 @@ private:
   operand_range operands;
 };
 
-// XLS ModuleEmitter that inherits from Vivado ModuleEmitter
-class XLSModuleEmitter : public allo::vhls::ModuleEmitter {
-public:
-  using operand_range = Operation::operand_range;
-  explicit XLSModuleEmitter(AlloEmitterState &state) : allo::vhls::ModuleEmitter(state) {}
+/// Local helper to emit flattened affine index.
+static void emitFlattenedAffineIndexHelper(raw_ostream &os,
+                                           MemRefType memrefType,
+                                           AffineMap affineMap,
+                                           AffineExprEmitter &affineEmitter) {
+  // For __xls_memory (flattened), compute linear index from affine expressions
+  auto shape = memrefType.getShape();
+  auto results = affineMap.getResults();
+  bool first = true;
 
-  // Override methods that need XLS-specific behavior
-  void emitModule(ModuleOp module) override;
-  void emitFunctionDirectives(func::FuncOp func,
-                              ArrayRef<Value> portList) override;
-  void emitArrayDecl(Value array, bool isFunc = false,
-                     std::string name = "") override;
-  void emitLoopDirectives(Operation *op) override;
-  void emitStreamConstruct(allo::StreamConstructOp op) override;
-  void emitArrayDirectives(Value memref) override;
-  void emitFunction(func::FuncOp func) override;
-  void emitAffineFor(AffineForOp op) override;
-  void emitScfFor(scf::ForOp op) override;
-  void emitLoad(memref::LoadOp op) override;
-  void emitStore(memref::StoreOp op) override;
-  void emitAffineLoad(AffineLoadOp op) override;
-  void emitAffineStore(AffineStoreOp op) override;
+  for (unsigned i = 0; i < results.size(); ++i) {
+    // Calculate stride (product of all dimensions after this one)
+    int64_t stride = 1;
+    for (unsigned j = i + 1; j < shape.size(); ++j) {
+      stride *= shape[j];
+    }
 
-protected:
-  // Helper to emit flattened index for multi-dimensional array access
-  void emitFlattenedIndex(MemRefType memrefType, Operation::operand_range indices);
-  // Helper to emit flattened affine index
-  void emitFlattenedAffineIndex(MemRefType memrefType, AffineMap affineMap, 
-                                 AffineExprEmitter &affineEmitter);
-  void emitValue(Value val, unsigned rank = 0, bool isPtr = false,
-                 std::string name = "");
-  // Helper method to get XLS-specific type names
-  SmallString<16> getTypeName(Type valType) { return getXLSTypeName(valType); }
-  SmallString<16> getTypeName(Value val) { return getXLSTypeName(val.getType()); }
-  
-  // Track array arguments that should become local arrays populated from channels
-  bool inArrayFunction = false;
-  DenseMap<Value, std::string> arrayArgToLocalName;  // Maps function arg -> local array name (e.g., "v0")
-  DenseMap<Value, std::string> arrayArgToChannelName; // Maps function arg -> channel name (e.g., "v0_in")
-  Value returnArray = nullptr;
-  std::string outputChannelName = "out";
-};
-} // namespace
+    if (!first) {
+      os << " + ";
+    }
+    first = false;
+
+    if (stride == 1) {
+      os << "(";
+      affineEmitter.emitAffineExpr(results[i]);
+      os << ")";
+    } else {
+      os << "(";
+      affineEmitter.emitAffineExpr(results[i]);
+      os << ") * " << stride;
+    }
+  }
+}
+
+} // anonymous namespace
+
+namespace mlir {
+namespace allo {
+namespace hls {
 
 //===----------------------------------------------------------------------===//
 // XLS-specific implementations
 //===----------------------------------------------------------------------===//
 
-void XLSModuleEmitter::emitValue(Value val,
-                                 unsigned rank,  
-                                 bool isPtr, 
-                                 std::string name) {
-  (void)rank; (void)isPtr;
+SmallString<16> allo::hls::XlsModuleEmitter::getTypeName(Type valType) {
+  return getXLSTypeName(valType);
+}
+
+SmallString<16> allo::hls::XlsModuleEmitter::getTypeName(Value val) {
+  return getXLSTypeName(val.getType());
+}
+
+void allo::hls::XlsModuleEmitter::emitValue(Value val, unsigned rank,
+                                            bool isPtr, std::string name) {
+  (void)rank;
+  (void)isPtr;
 
   // already assigned name
   if (isDeclared(val)) {
@@ -256,32 +266,34 @@ void XLSModuleEmitter::emitValue(Value val,
   }
 }
 
-void XLSModuleEmitter::emitFunctionDirectives(func::FuncOp func,
-                                                   ArrayRef<Value> portList) {
+void allo::hls::XlsModuleEmitter::emitFunctionDirectives(
+    func::FuncOp func, ArrayRef<Value> portList) {
   // Note: #pragma hls_top is emitted at function definition level, not here
   // This function handles array directives for function ports
   for (auto &port : portList)
-    if (port.getType().isa<MemRefType>())
+    if (llvm::isa<MemRefType>(port.getType()))
       emitArrayDirectives(port);
 }
 
-void XLSModuleEmitter::emitArrayDecl(Value array, bool isFunc, std::string name) {
+void allo::hls::XlsModuleEmitter::emitArrayDecl(Value array, bool isFunc,
+                                                std::string name) {
   assert(!isDeclared(array) && "has been declared before.");
 
-  auto shapedType = array.getType().dyn_cast<ShapedType>();
+  auto shapedType = llvm::dyn_cast<ShapedType>(array.getType());
   if (!shapedType || !shapedType.hasStaticShape()) {
     // XLS[cc] only supports fixed-size arrays here.
-    assert(1 == 0 && "XLS[cc] backend only supports statically-sized arrays/memories");
+    assert(1 == 0 &&
+           "XLS[cc] backend only supports statically-sized arrays/memories");
   }
 
   auto elemType = shapedType.getElementType();
   auto shape = shapedType.getShape();
 
-  if (auto memref = array.getType().dyn_cast<MemRefType>()) {
-    auto attr = memref.getMemorySpace().dyn_cast_or_null<StringAttr>();
+  if (auto memref = llvm::dyn_cast<MemRefType>(array.getType())) {
+    auto attr = llvm::dyn_cast_or_null<StringAttr>(memref.getMemorySpace());
     std::string memspace = attr ? attr.getValue().str() : "";
 
-    // 1) STREAM CASE -> channel, not array/memory
+    // STREAM CASE -> channel, not array/memory
     if (!memspace.empty() && memspace.rfind("stream", 0) == 0) {
       // Delegate to stream emission (ac_channel / __xls_channel)
       os << getXLSTypeName(elemType) << " ";
@@ -289,23 +301,24 @@ void XLSModuleEmitter::emitArrayDecl(Value array, bool isFunc, std::string name)
       return;
     }
 
-    // 2) MEMORY CASE -> __xls_memory< T, Size >
+    // MEMORY CASE -> __xls_memory< T, Size >
     if (!memspace.empty() && memspace.rfind("memory", 0) == 0) {
       // For now, flatten all dims into a single size.
       int64_t totalSize = 1;
-      for (int64_t dim : shape) totalSize *= dim;
+      for (int64_t dim : shape)
+        totalSize *= dim;
 
       // You can use __xls_memory directly, or your alias:
       // template<typename T, int Size> using Memory = __xls_memory<T, Size>;
       // If you're using the alias, emit "Memory<...>" instead.
-      os << "__xls_memory<"
-         << getXLSTypeName(elemType) << ", "
-         << totalSize << "> ";
+      os << "__xls_memory<" << getXLSTypeName(elemType) << ", " << totalSize
+         << "> ";
 
-      std::string varName = std::string(addName(array, /*isPtr=*/false, name).str());
+      std::string varName =
+          std::string(addName(array, /*isPtr=*/false, name).str());
       os << varName;
 
-      // Optional: keep original multidim shape as a comment
+      // We can optionally keep original multidim shape as a comment
       os << " /* original shape: ";
       os << getXLSTypeName(elemType) << " " << varName;
       for (int64_t dim : shape)
@@ -315,17 +328,27 @@ void XLSModuleEmitter::emitArrayDecl(Value array, bool isFunc, std::string name)
       return;
     }
 
-    // 3) DEFAULT MEMREF -> either skip (if USE_MEMORY_FLAG, wrapper handles it)
-    //    or plain C array: T name[d0][d1]...
+    // DEFAULT MEMREF -> either skip (if USE_MEMORY_FLAG, wrapper handles it)
+    // or plain C array: T name[d0][d1]...
     if (USE_MEMORY_FLAG) {
-      // Memory mode: Don't emit declaration here - wrapper will add __xls_memory at class level
-      // Just register the name so subsequent uses work
+      // Memory mode: Don't emit declaration here - wrapper will add
+      // __xls_memory at class level Just register the name so subsequent uses
+      // work
       addName(array, /*isPtr=*/false, name);
       // Emit a comment placeholder so the wrapper knows about this array
       int64_t totalSize = 1;
-      for (int64_t dim : shape) totalSize *= dim;
-      os << "// __xls_memory_decl__: " << getXLSTypeName(elemType) << ", " << totalSize << ", ";
+      for (int64_t dim : shape)
+        totalSize *= dim;
+      // Get memory_space as integer (0 if not specified)
+      int64_t memorySpace = 0;
+      if (auto intAttr =
+              llvm::dyn_cast_or_null<IntegerAttr>(memref.getMemorySpace())) {
+        memorySpace = intAttr.getInt();
+      }
+      os << "// __xls_memory_decl__: " << getXLSTypeName(elemType) << ", "
+         << totalSize << ", ";
       os << (name.empty() ? std::string(getName(array).c_str()) : name);
+      os << ", " << memorySpace;
       for (int64_t dim : shape)
         os << ", " << dim;
       return;
@@ -333,10 +356,11 @@ void XLSModuleEmitter::emitArrayDecl(Value array, bool isFunc, std::string name)
 
     // Register mode (default): plain C array
     if (isFunc)
-      os << "const ";   // or drop const if you need writes
+      os << "const "; // or drop const if you need writes
 
     os << getXLSTypeName(elemType) << " ";
-    std::string varName = std::string(addName(array, /*isPtr=*/false, name).str());
+    std::string varName =
+        std::string(addName(array, /*isPtr=*/false, name).str());
     os << varName;
 
     for (int64_t dim : shape)
@@ -357,7 +381,8 @@ void XLSModuleEmitter::emitArrayDecl(Value array, bool isFunc, std::string name)
     os << "const ";
 
   os << getXLSTypeName(elemType) << " ";
-  std::string varName = std::string(addName(array, /*isPtr=*/false, name).str());
+  std::string varName =
+      std::string(addName(array, /*isPtr=*/false, name).str());
   os << varName;
   for (int64_t dim : shape)
     os << "[" << dim << "]";
@@ -366,7 +391,8 @@ void XLSModuleEmitter::emitArrayDecl(Value array, bool isFunc, std::string name)
 }
 
 /// Helper function to check if a region contains channel operations.
-/// Returns true if any operation in the region reads from or writes to a channel.
+/// Returns true if any operation in the region reads from or writes to a
+/// channel.
 static bool containsChannelOperations(Region &region) {
   bool hasChannelOps = false;
   region.walk([&](Operation *op) {
@@ -383,9 +409,9 @@ static bool containsChannelOperations(Region &region) {
     // Check for memref::LoadOp on stream memory space
     if (auto loadOp = dyn_cast<memref::LoadOp>(op)) {
       auto memref = loadOp.getMemRef();
-      if (auto memrefType = memref.getType().dyn_cast<MemRefType>()) {
+      if (auto memrefType = llvm::dyn_cast<MemRefType>(memref.getType())) {
         if (auto attr = memrefType.getMemorySpace()) {
-          if (auto strAttr = attr.dyn_cast<StringAttr>()) {
+          if (auto strAttr = llvm::dyn_cast<StringAttr>(attr)) {
             if (strAttr.getValue().str().rfind("stream", 0) == 0) {
               hasChannelOps = true;
               return WalkResult::interrupt();
@@ -397,9 +423,9 @@ static bool containsChannelOperations(Region &region) {
     // Check for memref::StoreOp on stream memory space
     if (auto storeOp = dyn_cast<memref::StoreOp>(op)) {
       auto memref = storeOp.getMemRef();
-      if (auto memrefType = memref.getType().dyn_cast<MemRefType>()) {
+      if (auto memrefType = llvm::dyn_cast<MemRefType>(memref.getType())) {
         if (auto attr = memrefType.getMemorySpace()) {
-          if (auto strAttr = attr.dyn_cast<StringAttr>()) {
+          if (auto strAttr = llvm::dyn_cast<StringAttr>(attr)) {
             if (strAttr.getValue().str().rfind("stream", 0) == 0) {
               hasChannelOps = true;
               return WalkResult::interrupt();
@@ -413,23 +439,24 @@ static bool containsChannelOperations(Region &region) {
   return hasChannelOps;
 }
 
-void XLSModuleEmitter::emitLoopDirectives(Operation *op) {
+void allo::hls::XlsModuleEmitter::emitLoopDirectives(Operation *op) {
   // Check for pipeline attributes first - if pipeline is present, don't unroll
-  // Check for pipeline attributes (could be "allo.pipeline" unit attr or "pipeline_ii" with value)
+  // Check for pipeline attributes (could be "allo.pipeline" unit attr or
+  // "pipeline_ii" with value)
   if (op->hasAttr("allo.pipeline")) {
     indent();
     os << "#pragma hls_pipeline_init_interval 1\n";
-    return;  // Pipeline takes precedence, don't unroll
+    return; // Pipeline takes precedence, don't unroll
   } else if (auto ii = getLoopDirective(op, "pipeline_ii")) {
     indent();
     os << "#pragma hls_pipeline_init_interval 1\n";
-    return;  // Pipeline takes precedence, don't unroll
+    return; // Pipeline takes precedence, don't unroll
   }
 
   // Check if loop body contains channel operations.
   // If it does, we cannot unroll because multiple unrolled iterations
-  // would all read/write from the same channel simultaneously, which is not allowed.
-  // In this case, use pipelining with init interval 1 instead.
+  // would all read/write from the same channel simultaneously, which is not
+  // allowed. In this case, use pipelining with init interval 1 instead.
   bool hasChannelOps = false;
   if (auto affineFor = dyn_cast<AffineForOp>(op)) {
     hasChannelOps = containsChannelOperations(affineFor.getRegion());
@@ -444,12 +471,19 @@ void XLSModuleEmitter::emitLoopDirectives(Operation *op) {
     return;
   }
 
+  // In memory mode, use pipelining instead of unrolling by default
+  if (USE_MEMORY_FLAG) {
+    indent();
+    os << "#pragma hls_pipeline_init_interval 1\n";
+    return;
+  }
+
   // By default, unroll all loops unless they have a pipeline pragma
   // Check if explicit unroll directive is present (with optional factor)
   if (auto factor = getLoopDirective(op, "unroll")) {
     indent();
     os << "#pragma hls_unroll yes";
-    auto val = factor.cast<IntegerAttr>().getValue();
+    auto val = llvm::cast<IntegerAttr>(factor).getValue();
     if (val != 0) {
       os << " factor=" << val;
     }
@@ -461,11 +495,12 @@ void XLSModuleEmitter::emitLoopDirectives(Operation *op) {
   }
 }
 
-void XLSModuleEmitter::emitAffineFor(AffineForOp op) {
+void allo::hls::XlsModuleEmitter::emitAffineFor(AffineForOp op) {
   auto iterVar = op.getInductionVar();
   std::string loop_name = "";
   if (op->hasAttr("loop_name")) {
-    loop_name = op->getAttr("loop_name").cast<StringAttr>().getValue().str();
+    loop_name =
+        llvm::dyn_cast<StringAttr>(op->getAttr("loop_name")).getValue().str();
   }
 
   // Memory mode compute state: emit normal for loops with local declarations
@@ -477,7 +512,7 @@ void XLSModuleEmitter::emitAffineFor(AffineForOp op) {
   // Emit the for loop WITHOUT label
   indent();
   os << "for (";
-  
+
   // Emit lower bound - first declare the loop variable
   os << getXLSTypeName(iterVar.getType()) << " ";
   // Add the name to the table without re-emitting type
@@ -538,7 +573,7 @@ void XLSModuleEmitter::emitAffineFor(AffineForOp op) {
   os << "}\n";
 }
 
-void XLSModuleEmitter::emitScfFor(scf::ForOp op) {
+void allo::hls::XlsModuleEmitter::emitScfFor(scf::ForOp op) {
   auto iterVar = op.getInductionVar();
 
   // Memory mode compute state: emit normal for loops with local declarations
@@ -580,7 +615,8 @@ void XLSModuleEmitter::emitScfFor(scf::ForOp op) {
   os << "}\n";
 }
 
-void XLSModuleEmitter::emitStreamConstruct(allo::StreamConstructOp op) {
+void allo::hls::XlsModuleEmitter::emitStreamConstruct(
+    allo::StreamConstructOp op) {
   indent();
   Value result = op.getResult();
 
@@ -590,63 +626,75 @@ void XLSModuleEmitter::emitStreamConstruct(allo::StreamConstructOp op) {
   Type ty = result.getType();
 
   // Reject arrays of channels.
-  if (auto shaped = ty.dyn_cast<ShapedType>()) {
-    if (shaped.getElementType().isa<StreamType>()) {
-      emitError(op, "XLS[cc] backend does not support arrays-of-streams; flatten or convert to separate streams/memory before EmitXLSHLS.");
+  if (auto shaped = llvm::dyn_cast<ShapedType>(ty)) {
+    if (llvm::isa<StreamType>(shaped.getElementType())) {
+      emitError(op,
+                "XLS[cc] backend does not support arrays-of-streams; flatten "
+                "or convert to separate streams/memory before EmitXLSHLS.");
       return;
     }
   }
 
   // We expect plain StreamType.
-  if (!ty.isa<StreamType>()) {
-    emitError(op, "emitStreamConstruct expected a StreamType result for XLS backend.");
+  if (!llvm::isa<StreamType>(ty)) {
+    emitError(
+        op,
+        "emitStreamConstruct expected a StreamType result for XLS backend.");
     return;
   }
 
-  // This uses your getXLSTypeName(StreamType) → __xls_channel<..., __XLS_IO_PLACEHOLDER__>
+  // This uses your getXLSTypeName(StreamType) → __xls_channel<...,
+  // __XLS_IO_PLACEHOLDER__>
   emitValue(result);
   os << ";\n";
 
-  // No depth pragmas for XLS; buffering is via __xls_channel or synthesis settings.
+  // No depth pragmas for XLS; buffering is via __xls_channel or synthesis
+  // settings.
   emitInfoAndNewLine(op);
 }
 
-void XLSModuleEmitter::emitArrayDirectives(Value memref) {
+void allo::hls::XlsModuleEmitter::emitArrayDirectives(Value memref) {
   bool emitPragmaFlag = false;
-  auto type = memref.getType().cast<MemRefType>();
+  auto type = llvm::cast<MemRefType>(memref.getType());
 
-  // streaming
+  // streaming - check if memory space is a StringAttr with "stream" prefix
   auto attr = type.getMemorySpace();
   if (attr) {
-    std::string attr_str = attr.cast<StringAttr>().getValue().str();
-    if (attr_str.substr(0, 6) == "stream") {
-      // Note: XLS HLS doesn't need explicit stream pragmas like Vivado HLS
-      return;
+    // Handle StringAttr (stream annotations)
+    if (auto strAttr = llvm::dyn_cast<StringAttr>(attr)) {
+      std::string attr_str = strAttr.getValue().str();
+      if (attr_str.substr(0, 6) == "stream") {
+        // Note: XLS HLS doesn't need explicit stream pragmas like Vivado HLS
+        return;
+      }
     }
+    // IntegerAttr (Memory annotations) - no special handling needed for XLS
   }
 
   // For other array directives, delegate to the parent implementation
   // but we need to call the parent method explicitly
-  allo::vhls::ModuleEmitter::emitArrayDirectives(memref);
+  VhlsModuleEmitter::emitArrayDirectives(memref);
 }
 
-void XLSModuleEmitter::emitFlattenedIndex(MemRefType memrefType, Operation::operand_range indices) {
-  // For __xls_memory (flattened), compute linear index: i * d1 * d2 + j * d2 + k
+void allo::hls::XlsModuleEmitter::emitFlattenedIndex(
+    MemRefType memrefType, Operation::operand_range indices) {
+  // For __xls_memory (flattened), compute linear index: i * d1 * d2 + j * d2 +
+  // k
   auto shape = memrefType.getShape();
   bool first = true;
-  
+
   for (unsigned i = 0; i < indices.size(); ++i) {
     // Calculate stride (product of all dimensions after this one)
     int64_t stride = 1;
     for (unsigned j = i + 1; j < shape.size(); ++j) {
       stride *= shape[j];
     }
-    
+
     if (!first) {
       os << " + ";
     }
     first = false;
-    
+
     if (stride == 1) {
       emitValue(indices[i]);
     } else {
@@ -656,25 +704,30 @@ void XLSModuleEmitter::emitFlattenedIndex(MemRefType memrefType, Operation::oper
   }
 }
 
-void XLSModuleEmitter::emitLoad(memref::LoadOp op) {
+void allo::hls::XlsModuleEmitter::emitLoad(memref::LoadOp op) {
   indent();
   Value result = op.getResult();
   fixUnsignedType(result, op->hasAttr("unsigned"));
   emitValue(result);
   os << " = ";
-  
+
   auto memref = op.getMemRef();
-  auto memrefType = memref.getType().cast<MemRefType>();
+  auto memrefType = llvm::cast<MemRefType>(memref.getType());
   emitValue(memref);
-  
-  // Check for stream memory space
+
+  // Check for stream memory space (StringAttr with "stream" prefix)
   auto attr = memrefType.getMemorySpace();
-  if (attr && attr.cast<StringAttr>().getValue().str().substr(0, 6) == "stream") {
-    // Stream case - use parent's implementation
-    allo::vhls::ModuleEmitter::emitLoad(op);
-    return;
+  if (attr) {
+    if (auto strAttr = llvm::dyn_cast<StringAttr>(attr)) {
+      if (strAttr.getValue().str().substr(0, 6) == "stream") {
+        // Stream case - use parent's implementation
+        VhlsModuleEmitter::emitLoad(op);
+        return;
+      }
+    }
+    // IntegerAttr (Memory annotations) - continue with normal handling
   }
-  
+
   // For regular memref, handle memory mode vs register mode
   if (USE_MEMORY_FLAG && memrefType.getRank() > 1) {
     // Memory mode with multi-dimensional array: use flattened index
@@ -693,21 +746,26 @@ void XLSModuleEmitter::emitLoad(memref::LoadOp op) {
   emitInfoAndNewLine(op);
 }
 
-void XLSModuleEmitter::emitStore(memref::StoreOp op) {
+void allo::hls::XlsModuleEmitter::emitStore(memref::StoreOp op) {
   indent();
-  
+
   auto memref = op.getMemRef();
-  auto memrefType = memref.getType().cast<MemRefType>();
+  auto memrefType = llvm::cast<MemRefType>(memref.getType());
   emitValue(memref);
-  
-  // Check for stream memory space
+
+  // Check for stream memory space (StringAttr with "stream" prefix)
   auto attr = memrefType.getMemorySpace();
-  if (attr && attr.cast<StringAttr>().getValue().str().substr(0, 6) == "stream") {
-    // Stream case - use parent's implementation
-    allo::vhls::ModuleEmitter::emitStore(op);
-    return;
+  if (attr) {
+    if (auto strAttr = llvm::dyn_cast<StringAttr>(attr)) {
+      if (strAttr.getValue().str().substr(0, 6) == "stream") {
+        // Stream case - use parent's implementation
+        VhlsModuleEmitter::emitStore(op);
+        return;
+      }
+    }
+    // IntegerAttr (Memory annotations) - continue with normal handling
   }
-  
+
   // For regular memref, handle memory mode vs register mode
   if (USE_MEMORY_FLAG && memrefType.getRank() > 1) {
     // Memory mode with multi-dimensional array: use flattened index
@@ -722,75 +780,51 @@ void XLSModuleEmitter::emitStore(memref::StoreOp op) {
       os << "]";
     }
   }
-  
+
   os << " = ";
   emitValue(op.getValueToStore());
   os << ";";
   emitInfoAndNewLine(op);
 }
 
-void XLSModuleEmitter::emitFlattenedAffineIndex(MemRefType memrefType, AffineMap affineMap,
-                                                 AffineExprEmitter &affineEmitter) {
-  // For __xls_memory (flattened), compute linear index from affine expressions
-  auto shape = memrefType.getShape();
-  auto results = affineMap.getResults();
-  bool first = true;
-  
-  for (unsigned i = 0; i < results.size(); ++i) {
-    // Calculate stride (product of all dimensions after this one)
-    int64_t stride = 1;
-    for (unsigned j = i + 1; j < shape.size(); ++j) {
-      stride *= shape[j];
-    }
-    
-    if (!first) {
-      os << " + ";
-    }
-    first = false;
-    
-    if (stride == 1) {
-      os << "(";
-      affineEmitter.emitAffineExpr(results[i]);
-      os << ")";
-    } else {
-      os << "(";
-      affineEmitter.emitAffineExpr(results[i]);
-      os << ") * " << stride;
-    }
-  }
-}
-
-void XLSModuleEmitter::emitAffineLoad(AffineLoadOp op) {
+void allo::hls::XlsModuleEmitter::emitAffineLoad(AffineLoadOp op) {
   indent();
   std::string load_from_name = "";
   if (op->hasAttr("from")) {
-    load_from_name = op->getAttr("from").cast<StringAttr>().getValue().str();
+    load_from_name =
+        llvm::dyn_cast<StringAttr>(op->getAttr("from")).getValue().str();
   }
   Value result = op.getResult();
   fixUnsignedType(result, op->hasAttr("unsigned"));
   emitValue(result);
   os << " = ";
-  
+
   auto memref = op.getMemRef();
   emitValue(memref, 0, false, load_from_name);
-  
-  auto memrefType = memref.getType().cast<MemRefType>();
+
+  auto memrefType = llvm::cast<MemRefType>(memref.getType());
   auto attr = memrefType.getMemorySpace();
   auto affineMap = op.getAffineMap();
-  AffineExprEmitter affineEmitter(state, affineMap.getNumDims(), op.getMapOperands());
-  
-  // Check for stream memory space
-  if (attr && attr.cast<StringAttr>().getValue().str().substr(0, 6) == "stream") {
-    // Stream case - delegate to parent
-    allo::vhls::ModuleEmitter::emitAffineLoad(op);
-    return;
+  AffineExprEmitter affineEmitter(state, affineMap.getNumDims(),
+                                  op.getMapOperands());
+
+  // Check for stream memory space (StringAttr with "stream" prefix)
+  if (attr) {
+    if (auto strAttr = llvm::dyn_cast<StringAttr>(attr)) {
+      if (strAttr.getValue().str().substr(0, 6) == "stream") {
+        // Stream case - delegate to parent
+        VhlsModuleEmitter::emitAffineLoad(op);
+        return;
+      }
+    }
+    // IntegerAttr (Memory annotations) - continue with normal handling
   }
-  
+
   // For regular memref, handle memory mode vs register mode
   if (USE_MEMORY_FLAG && memrefType.getRank() > 1) {
     // Memory mode with multi-dimensional array: use flattened index
     os << "[";
-    emitFlattenedAffineIndex(memrefType, affineMap, affineEmitter);
+    emitFlattenedAffineIndexHelper(os, memrefType, affineMap, affineEmitter);
     os << "]";
   } else {
     // Register mode or 1D array: use normal indexing
@@ -804,33 +838,40 @@ void XLSModuleEmitter::emitAffineLoad(AffineLoadOp op) {
   emitInfoAndNewLine(op);
 }
 
-void XLSModuleEmitter::emitAffineStore(AffineStoreOp op) {
+void allo::hls::XlsModuleEmitter::emitAffineStore(AffineStoreOp op) {
   indent();
   std::string store_to_name = "";
   if (op->hasAttr("to")) {
-    store_to_name = op->getAttr("to").cast<StringAttr>().getValue().str();
+    store_to_name =
+        llvm::dyn_cast<StringAttr>(op->getAttr("to")).getValue().str();
   }
-  
+
   auto memref = op.getMemRef();
   emitValue(memref, 0, false, store_to_name);
-  
-  auto memrefType = memref.getType().cast<MemRefType>();
+
+  auto memrefType = llvm::cast<MemRefType>(memref.getType());
   auto attr = memrefType.getMemorySpace();
   auto affineMap = op.getAffineMap();
-  AffineExprEmitter affineEmitter(state, affineMap.getNumDims(), op.getMapOperands());
-  
-  // Check for stream memory space
-  if (attr && attr.cast<StringAttr>().getValue().str().substr(0, 6) == "stream") {
-    // Stream case - delegate to parent
-    allo::vhls::ModuleEmitter::emitAffineStore(op);
-    return;
+  AffineExprEmitter affineEmitter(state, affineMap.getNumDims(),
+                                  op.getMapOperands());
+
+  // Check for stream memory space (StringAttr with "stream" prefix)
+  if (attr) {
+    if (auto strAttr = llvm::dyn_cast<StringAttr>(attr)) {
+      if (strAttr.getValue().str().substr(0, 6) == "stream") {
+        // Stream case - delegate to parent
+        VhlsModuleEmitter::emitAffineStore(op);
+        return;
+      }
+    }
+    // IntegerAttr (Memory annotations) - continue with normal handling
   }
-  
+
   // For regular memref, handle memory mode vs register mode
   if (USE_MEMORY_FLAG && memrefType.getRank() > 1) {
     // Memory mode with multi-dimensional array: use flattened index
     os << "[";
-    emitFlattenedAffineIndex(memrefType, affineMap, affineEmitter);
+    emitFlattenedAffineIndexHelper(os, memrefType, affineMap, affineEmitter);
     os << "]";
   } else {
     // Register mode or 1D array: use normal indexing
@@ -840,14 +881,14 @@ void XLSModuleEmitter::emitAffineStore(AffineStoreOp op) {
       os << "]";
     }
   }
-  
+
   os << " = ";
   emitValue(op.getValueToStore());
   os << ";";
   emitInfoAndNewLine(op);
 }
 
-void XLSModuleEmitter::emitFunction(func::FuncOp func) {
+void allo::hls::XlsModuleEmitter::emitFunction(func::FuncOp func) {
   if (func->hasAttr("bit"))
     BIT_FLAG = true;
 
@@ -858,20 +899,18 @@ void XLSModuleEmitter::emitFunction(func::FuncOp func) {
   if (func.getBlocks().size() > 1)
     emitError(func, "has more than one basic blocks.");
 
-  if (func->hasAttr("top"))
-    os << "/// This is top function.\n";
-
   // Check for return value first to determine function return type
   auto args = func.getArguments();
   Value returnValue = nullptr;
   std::string otypes = "";
   if (func->hasAttr("otypes"))
-    otypes = func->getAttr("otypes").cast<StringAttr>().getValue().str();
+    otypes =
+        llvm::dyn_cast<StringAttr>(func->getAttr("otypes")).getValue().str();
   else {
     for (unsigned i = 0; i < func.getNumArguments(); ++i)
       otypes += "x";
   }
-  
+
   if (auto funcReturn =
           dyn_cast<func::ReturnOp>(func.front().getTerminator())) {
     // For XLS HLS, find the first return value that's not an argument
@@ -884,20 +923,22 @@ void XLSModuleEmitter::emitFunction(func::FuncOp func) {
   }
 
   // Check if return value is an array/matrix (ShapedType)
-  bool returnIsArray = returnValue && returnValue.getType().isa<ShapedType>() &&
-                       !returnValue.getType().cast<ShapedType>().getElementType().isa<StreamType>();
+  bool returnIsArray =
+      returnValue && llvm::isa<ShapedType>(returnValue.getType()) &&
+      !llvm::isa<StreamType>(
+          llvm::cast<ShapedType>(returnValue.getType()).getElementType());
 
   // Detect if function has array arguments (non-stream memrefs/tensors)
   bool hasArrayArgs = false;
   SmallVector<Value, 4> arrayArgs;
   for (auto &arg : func.getArguments()) {
-    auto st = arg.getType().dyn_cast<ShapedType>();
-    if (st && !st.getElementType().isa<StreamType>()) {
+    auto st = llvm::dyn_cast<ShapedType>(arg.getType());
+    if (st && !llvm::isa<StreamType>(st.getElementType())) {
       hasArrayArgs = true;
       arrayArgs.push_back(arg);
     }
   }
-  
+
   // If function has array arguments, convert to void function with local arrays
   if (hasArrayArgs || returnIsArray) {
     // Clear and set up state
@@ -905,44 +946,58 @@ void XLSModuleEmitter::emitFunction(func::FuncOp func) {
     arrayArgToChannelName.clear();
     returnArray = nullptr;
     inArrayFunction = true;
-    
+
     // Emit void function with no parameters
     os << "void " << func.getName() << "() {";
     emitInfoAndNewLine(func);
     addIndent();
-    
+
     // Emit function directives
     SmallVector<Value, 8> emptyPorts;
     emitFunctionDirectives(func, emptyPorts);
-    
+
     // Declare local arrays for each array argument
     unsigned argIdx = 0;
     for (auto &arg : arrayArgs) {
-      auto st = arg.getType().cast<ShapedType>();
+      auto st = llvm::cast<ShapedType>(arg.getType());
       auto elemType = st.getElementType();
       auto shape = st.getShape();
-      
+
       // Generate local array name (v0, v1, etc.)
       std::string localName = "v" + std::to_string(argIdx);
       std::string channelName = localName + "_in";
-      
+
       // Store mappings
       arrayArgToLocalName[arg] = localName;
       arrayArgToChannelName[arg] = channelName;
-      
+
       // Register the local array name for this argument value
-      // This ensures emitLoad will use the local array name instead of the argument name
+      // This ensures emitLoad will use the local array name instead of the
+      // argument name
       addName(arg, /*isPtr=*/false, localName);
-      
-      // Declare local array - emit comment placeholder if USE_MEMORY_FLAG (wrapper handles class-level decl)
+
+      // Declare local array - emit comment placeholder if USE_MEMORY_FLAG
+      // (wrapper handles class-level decl)
       indent();
       if (USE_MEMORY_FLAG) {
         // Memory mode: emit comment placeholder for wrapper to parse
         // Wrapper will add __xls_memory at class level
+        // Format: elem_type, size, name, memory_space, dim0, dim1, ...
         int64_t totalSize = 1;
-        for (int64_t dim : shape) totalSize *= dim;
-        os << "// __xls_memory_decl__: " << getXLSTypeName(elemType) << ", " << totalSize << ", " << localName;
-        for (int64_t dim : shape) os << ", " << dim;
+        for (int64_t dim : shape)
+          totalSize *= dim;
+        // Get memory_space as integer (0 if not specified)
+        int64_t memorySpace = 0;
+        if (auto memrefType = llvm::dyn_cast<MemRefType>(arg.getType())) {
+          if (auto intAttr = llvm::dyn_cast_or_null<IntegerAttr>(
+                  memrefType.getMemorySpace())) {
+            memorySpace = intAttr.getInt();
+          }
+        }
+        os << "// __xls_memory_decl__: " << getXLSTypeName(elemType) << ", "
+           << totalSize << ", " << localName << ", " << memorySpace;
+        for (int64_t dim : shape)
+          os << ", " << dim;
         os << "\n";
       } else {
         // Register mode: plain C array
@@ -952,32 +1007,35 @@ void XLSModuleEmitter::emitFunction(func::FuncOp func) {
         }
         os << ";\n";
       }
-      
+
       argIdx++;
     }
-    
+
     // Populate arrays from channels
     if (USE_MEMORY_FLAG) {
       // Memory mode: Generate state-based code with pipelined for loops
-      // Emit comment placeholder for state variable (wrapper will add at class level)
+      // Emit comment placeholder for state variable (wrapper will add at class
+      // level)
       indent();
       os << "// __xls_state_vars__: state\n";
-      
+
       // Generate state-based code for loading each input array
       unsigned stateNum = 0;
       for (auto &arg : arrayArgs) {
-        auto st = arg.getType().cast<ShapedType>();
+        auto st = llvm::cast<ShapedType>(arg.getType());
         auto shape = st.getShape();
         std::string localName = arrayArgToLocalName[arg];
         std::string channelName = arrayArgToChannelName[arg];
-        
+
         // Calculate total size
         int64_t totalSize = 1;
-        for (int64_t dim : shape) totalSize *= dim;
-        
+        for (int64_t dim : shape)
+          totalSize *= dim;
+
         // Emit state for loading this array using pipelined for loop
         indent();
-        os << "// State " << stateNum << ": Load " << localName << " from " << channelName << "\n";
+        os << "// State " << stateNum << ": Load " << localName << " from "
+           << channelName << "\n";
         indent();
         if (stateNum == 0) {
           os << "if (state == " << stateNum << ") {\n";
@@ -1000,36 +1058,39 @@ void XLSModuleEmitter::emitFunction(func::FuncOp func) {
         reduceIndent();
         indent();
         os << "}\n\n";
-        
+
         stateNum++;
       }
     } else {
       // Register mode: Use for loops
       for (auto &arg : arrayArgs) {
-        auto st = arg.getType().cast<ShapedType>();
+        auto st = llvm::cast<ShapedType>(arg.getType());
         auto shape = st.getShape();
         std::string localName = arrayArgToLocalName[arg];
         std::string channelName = arrayArgToChannelName[arg];
-        
+
         // Calculate total size
         int64_t totalSize = 1;
-        for (int64_t dim : shape) totalSize *= dim;
-        
+        for (int64_t dim : shape)
+          totalSize *= dim;
+
         // Emit loop to populate from channel
-        // Use pipelining instead of unrolling since we're reading from a channel
+        // Use pipelining instead of unrolling since we're reading from a
+        // channel
         indent();
         os << "#pragma hls_pipeline_init_interval 1\n";
         indent();
         os << "for (int _idx = 0; _idx < " << totalSize << "; ++_idx) {\n";
         addIndent();
         indent();
-        
+
         // Generate array access with proper indexing
         os << localName;
         if (shape.size() == 1) {
           os << "[_idx]";
         } else {
-          // Register mode with multi-dimensional: compute indices using division and modulo
+          // Register mode with multi-dimensional: compute indices using
+          // division and modulo
           for (size_t i = 0; i < shape.size(); ++i) {
             os << "[";
             if (i == shape.size() - 1) {
@@ -1049,59 +1110,64 @@ void XLSModuleEmitter::emitFunction(func::FuncOp func) {
           }
         }
         os << " = " << channelName << ".read();\n";
-        
+
         reduceIndent();
         indent();
         os << "}\n";
       }
     }
-    
+
     // Track return array if it exists
     if (returnIsArray && returnValue) {
       returnArray = returnValue;
       if (func->hasAttr("outputs")) {
-        outputChannelName = func->getAttr("outputs").cast<StringAttr>().getValue().str();
+        outputChannelName = llvm::dyn_cast<StringAttr>(func->getAttr("outputs"))
+                                .getValue()
+                                .str();
       }
     }
-    
+
     // Calculate compute and output state numbers
     unsigned computeState = arrayArgs.size();
     unsigned outputState = computeState + (returnIsArray ? 1 : 0);
-    
+
     if (USE_MEMORY_FLAG) {
       // Memory mode: Generate state-based compute and output
-      
+
       // Compute state: Execute function body with normal for loops
       indent();
       os << "// State " << computeState << ": Compute\n";
       indent();
       os << "else if (state == " << computeState << ") {\n";
       addIndent();
-      
-      // Emit the function body - loops will emit as normal for loops with local declarations
+
+      // Emit the function body - loops will emit as normal for loops with local
+      // declarations
       Block &block = func.front();
-      allo::vhls::ModuleEmitter::emitBlock(block);
-      
-      // After compute completes, transition to output state (or back to 0 if no output)
+      VhlsModuleEmitter::emitBlock(block);
+
+      // After compute completes, transition to output state (or back to 0 if no
+      // output)
       indent();
       unsigned nextState = returnIsArray ? outputState : 0;
       os << "state = " << nextState << ";\n";
-      
+
       reduceIndent();
       indent();
       os << "}\n\n";
-      
+
       // Output state: Write return array to channel using pipelined for loop
       if (returnIsArray && returnValue) {
         auto terminator = block.getTerminator();
         if (auto returnOp = dyn_cast<func::ReturnOp>(terminator)) {
           for (auto operand : returnOp.getOperands()) {
             if (operand == returnValue) {
-              auto returnType = returnValue.getType().cast<ShapedType>();
+              auto returnType = llvm::cast<ShapedType>(returnValue.getType());
               auto shape = returnType.getShape();
               int64_t totalSize = 1;
-              for (int64_t dim : shape) totalSize *= dim;
-              
+              for (int64_t dim : shape)
+                totalSize *= dim;
+
               indent();
               os << "// State " << outputState << ": Output\n";
               indent();
@@ -1133,27 +1199,29 @@ void XLSModuleEmitter::emitFunction(func::FuncOp func) {
       // Register mode: Use normal function body and loops
       // Emit the function body
       Block &block = func.front();
-      allo::vhls::ModuleEmitter::emitBlock(block);
-      
+      VhlsModuleEmitter::emitBlock(block);
+
       // Handle return value: write array to output channel
       if (returnIsArray && returnValue) {
         auto terminator = block.getTerminator();
         if (auto returnOp = dyn_cast<func::ReturnOp>(terminator)) {
           for (auto operand : returnOp.getOperands()) {
             if (operand == returnValue) {
-              auto returnType = returnValue.getType().cast<ShapedType>();
+              auto returnType = llvm::cast<ShapedType>(returnValue.getType());
               auto shape = returnType.getShape();
               int64_t totalSize = 1;
-              for (int64_t dim : shape) totalSize *= dim;
-              
+              for (int64_t dim : shape)
+                totalSize *= dim;
+
               // Emit loop to write to output channel
               indent();
               os << "#pragma hls_pipeline_init_interval 1\n";
               indent();
-              os << "for (int _idx = 0; _idx < " << totalSize << "; ++_idx) {\n";
+              os << "for (int _idx = 0; _idx < " << totalSize
+                 << "; ++_idx) {\n";
               addIndent();
               indent();
-              
+
               // Generate array access with proper indexing
               os << outputChannelName << ".write(";
               emitValue(returnValue);
@@ -1180,7 +1248,7 @@ void XLSModuleEmitter::emitFunction(func::FuncOp func) {
                 }
               }
               os << ");\n";
-              
+
               reduceIndent();
               indent();
               os << "}\n";
@@ -1190,13 +1258,13 @@ void XLSModuleEmitter::emitFunction(func::FuncOp func) {
         }
       }
     }
-    
+
     // Reset state
     inArrayFunction = false;
     arrayArgToLocalName.clear();
     arrayArgToChannelName.clear();
     returnArray = nullptr;
-    
+
     reduceIndent();
     os << "}\n\n";
     return;
@@ -1207,14 +1275,15 @@ void XLSModuleEmitter::emitFunction(func::FuncOp func) {
   if (func->hasAttr("top")) {
     os << "#pragma hls_top\n";
   }
-  
+
   // Emit function signature: void if returning array, otherwise use return type
   if (returnIsArray) {
     // For array/matrix returns, make function void
     os << "void " << func.getName() << "(\n";
   } else if (returnValue) {
     fixUnsignedType(returnValue, otypes.size() > 0 && otypes[0] == 'u');
-    os << getXLSTypeName(returnValue.getType()) << " " << func.getName() << "(\n";
+    os << getXLSTypeName(returnValue.getType()) << " " << func.getName()
+       << "(\n";
   } else {
     os << "void " << func.getName() << "(\n";
   }
@@ -1228,30 +1297,33 @@ void XLSModuleEmitter::emitFunction(func::FuncOp func) {
   std::vector<std::string> input_args;
   if (func->hasAttr("inputs")) {
     std::string input_names =
-        func->getAttr("inputs").cast<StringAttr>().getValue().str();
+        llvm::dyn_cast<StringAttr>(func->getAttr("inputs")).getValue().str();
     input_args = split_names(input_names);
   }
   std::string output_names;
   if (func->hasAttr("outputs")) {
-    output_names = func->getAttr("outputs").cast<StringAttr>().getValue().str();
+    output_names =
+        llvm::dyn_cast<StringAttr>(func->getAttr("outputs")).getValue().str();
     // suppose only one output
     input_args.push_back(output_names);
   }
   std::string itypes = "";
   if (func->hasAttr("itypes"))
-    itypes = func->getAttr("itypes").cast<StringAttr>().getValue().str();
+    itypes =
+        llvm::dyn_cast<StringAttr>(func->getAttr("itypes")).getValue().str();
   else {
     for (unsigned i = 0; i < func.getNumArguments(); ++i)
       itypes += "x";
   }
-  
+
   bool hasArgs = func.getNumArguments() > 0;
   for (auto &arg : func.getArguments()) {
     indent();
     fixUnsignedType(arg, itypes[argIdx] == 'u');
-    if (arg.getType().isa<ShapedType>()) {
-      if (arg.getType().cast<ShapedType>().getElementType().isa<StreamType>()) {
-        auto shapedType = arg.getType().dyn_cast<ShapedType>();
+    if (llvm::isa<ShapedType>(arg.getType())) {
+      if (llvm::isa<StreamType>(
+              llvm::cast<ShapedType>(arg.getType()).getElementType())) {
+        auto shapedType = llvm::dyn_cast<ShapedType>(arg.getType());
         // Use XLS-specific stream type name
         os << getXLSTypeName(arg.getType()) << " ";
         os << addName(arg, false);
@@ -1263,7 +1335,7 @@ void XLSModuleEmitter::emitFunction(func::FuncOp func) {
         emitArrayDecl(arg, true, input_args[argIdx]);
       }
     } else {
-      if (arg.getType().isa<StreamType>()) {
+      if (llvm::isa<StreamType>(arg.getType())) {
         // need to pass by reference - use XLS-specific stream type
         os << getXLSTypeName(arg.getType()) << "& ";
         os << addName(arg, false);
@@ -1275,35 +1347,39 @@ void XLSModuleEmitter::emitFunction(func::FuncOp func) {
     }
 
     portList.push_back(arg);
-    // Add comma if there are more arguments or if we need to add output parameter
+    // Add comma if there are more arguments or if we need to add output
+    // parameter
     if (argIdx + 1 < func.getNumArguments() || returnIsArray)
       os << ",\n";
     argIdx++;
   }
 
-  // For XLS HLS, if returning an array, add it as output parameter (third parameter)
+  // For XLS HLS, if returning an array, add it as output parameter (third
+  // parameter)
   std::string outputParamName = "";
   if (returnIsArray && returnValue) {
     indent();
     fixUnsignedType(returnValue, otypes.size() > 0 && otypes[0] == 'u');
     // Generate a name for the output parameter
     if (func->hasAttr("outputs")) {
-      outputParamName = func->getAttr("outputs").cast<StringAttr>().getValue().str();
+      outputParamName =
+          llvm::dyn_cast<StringAttr>(func->getAttr("outputs")).getValue().str();
     } else {
       // Use a simple default name - try to get from return value or use "out"
-      outputParamName = "out";  // Simple default name
+      outputParamName = "out"; // Simple default name
     }
     // Emit output parameter declaration
-    auto returnType = returnValue.getType().cast<ShapedType>();
+    auto returnType = llvm::cast<ShapedType>(returnValue.getType());
     auto elemType = returnType.getElementType();
     auto shape = returnType.getShape();
     os << getXLSTypeName(elemType) << " " << outputParamName;
     for (int64_t dim : shape)
       os << "[" << dim << "]";
     os << " /* output */";
-    
+
     // Store the output param name in a way we can access it later
-    // We'll use a class member or pass it through state - for now use a simple approach
+    // We'll use a class member or pass it through state - for now use a simple
+    // approach
   }
 
   reduceIndent();
@@ -1314,12 +1390,12 @@ void XLSModuleEmitter::emitFunction(func::FuncOp func) {
   addIndent();
 
   emitFunctionDirectives(func, portList);
-  
+
   // Emit the function body using base class
   // ReturnOp visitor in base class just returns true without emitting
   Block &block = func.front();
-  allo::vhls::ModuleEmitter::emitBlock(block);
-  
+  VhlsModuleEmitter::emitBlock(block);
+
   // For XLS HLS, handle return value
   if (returnValue) {
     auto terminator = block.getTerminator();
@@ -1329,22 +1405,25 @@ void XLSModuleEmitter::emitFunction(func::FuncOp func) {
         // Compute output parameter name (same logic as above)
         std::string outParamName = "";
         if (func->hasAttr("outputs")) {
-          outParamName = func->getAttr("outputs").cast<StringAttr>().getValue().str();
+          outParamName = llvm::dyn_cast<StringAttr>(func->getAttr("outputs"))
+                             .getValue()
+                             .str();
         } else {
-          outParamName = "out";  // Simple default name
+          outParamName = "out"; // Simple default name
         }
-        
+
         // Find the return operand that matches returnValue
         for (auto operand : returnOp.getOperands()) {
           if (operand == returnValue) {
             indent();
             os << "// Copy result to output parameter\n";
             // Emit a loop to copy each element
-            auto returnType = returnValue.getType().cast<ShapedType>();
+            auto returnType = llvm::cast<ShapedType>(returnValue.getType());
             auto shape = returnType.getShape();
             int64_t totalSize = 1;
-            for (int64_t dim : shape) totalSize *= dim;
-            
+            for (int64_t dim : shape)
+              totalSize *= dim;
+
             // Emit a simple loop to copy all elements (unrolled by default)
             indent();
             os << "#pragma hls_unroll yes\n";
@@ -1389,7 +1468,7 @@ void XLSModuleEmitter::emitFunction(func::FuncOp func) {
   os << "\n";
 }
 
-void XLSModuleEmitter::emitModule(ModuleOp module) {
+void allo::hls::XlsModuleEmitter::emitModule(ModuleOp module) {
   std::string header = R"XXX(
 //===------------------------------------------------------------*- C++ -*-===//
 //
@@ -1397,14 +1476,14 @@ void XLSModuleEmitter::emitModule(ModuleOp module) {
 //
 //===----------------------------------------------------------------------===//
 #include <cstdint>
-#include "/xls_builtin.h"
+#include "xls_builtin.h"
 #include "xls_int.h"
 
 template <int Width, bool Signed = true>
 using ac_int = XlsInt<Width, Signed>;
 
 )XXX";
-  
+
   os << header;
   for (auto &op : *module.getBody()) {
     if (auto func = dyn_cast<func::FuncOp>(op))
@@ -1416,18 +1495,24 @@ using ac_int = XlsInt<Width, Signed>;
   }
 }
 
+} // namespace hls
+} // namespace allo
+} // namespace mlir
+
 //===----------------------------------------------------------------------===//
 // Entry of allo-translate
 //===----------------------------------------------------------------------===//
 
-LogicalResult allo::emitXlsHLS(ModuleOp module, llvm::raw_ostream &os, bool useMemory) {
+LogicalResult allo::emitXlsHLS(ModuleOp module, llvm::raw_ostream &os,
+                               bool useMemory) {
   USE_MEMORY_FLAG = useMemory;
   AlloEmitterState state(os);
-  XLSModuleEmitter(state).emitModule(module);
+  hls::XlsModuleEmitter(state).emitModule(module);
   return failure(state.encounteredError);
 }
 
-// Wrapper function for TranslateFromMLIRRegistration (uses default useMemory=false)
+// Wrapper function for TranslateFromMLIRRegistration (uses default
+// useMemory=false)
 static LogicalResult emitXlsHLSDefault(ModuleOp module, llvm::raw_ostream &os) {
   return allo::emitXlsHLS(module, os, /*useMemory=*/false);
 }
@@ -1445,9 +1530,8 @@ void allo::registerEmitXlsHLSTranslation() {
           mlir::scf::SCFDialect,
           mlir::affine::AffineDialect,
           mlir::math::MathDialect,
-          mlir::memref::MemRefDialect,
-          mlir::linalg::LinalgDialect
+          mlir::memref::MemRefDialect
         >();
         // clang-format on
       });
-} 
+}

@@ -2,48 +2,62 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import allo
-from allo.ir.types import int16, int32, float32
+from allo.ir.types import float32
 import allo.dataflow as df
 import numpy as np
 from allo.memory import Layout
+from allo.backend.aie import is_available
 
-LyA = Layout("S0R")
-LyB = Layout("RS1")
-LyC = Layout("S0S1")
-
-
-TyI, TyO = float32, float32
-total_M, total_N, total_K = 64, 64, 512
-M, N, K = 64, 64, 64
+S = Layout.Shard
+R = Layout.Replicate
 
 
-@df.region()
-def top1():
-    @df.kernel(mapping=[4, 4])
-    def gemm(A: TyI[M, K] @ LyA, B: TyI[K, N] @ LyB, C: TyO[M, N] @ LyC):
-        C[:, :] = allo.matmul(A, B)
+def test_gemm_temporal_reduction():
+    LyA = [S(1), R]
+    LyB = [R, S(0)]
+    LyC = [S(1), S(0)]
+
+    TyI, TyO = float32, float32
+    total_M, total_N, total_K = 64, 64, 512
+    M, N, K = 64, 64, 64
+
+    @df.region()
+    def top1(A: TyI[M, K], B: TyI[K, N], C: TyO[M, N]):
+        @df.kernel(mapping=[4, 4], args=[A, B, C])
+        def gemm(
+            local_A: TyI[M, K] @ LyA, local_B: TyI[K, N] @ LyB, local_C: TyO[M, N] @ LyC
+        ):
+            local_C[:, :] = allo.matmul(local_A, local_B)
+
+    @df.region()
+    def top2(A: TyO[M, N], B: TyO[M, N], C: TyO[M, N]):
+        @df.kernel(mapping=[2, 4], args=[A, B, C])
+        def core(
+            local_A: TyO[M, N] @ LyC, local_B: TyO[M, N] @ LyC, local_C: TyO[M, N] @ LyC
+        ):
+            local_C[:, :] = allo.add(local_A, local_B)
+
+    if is_available():
+        print("Building AIE modules...")
+        mod1 = df.build(top1, target="aie", project="top1.prj")
+        mod2 = df.build(top2, target="aie", project="top2.prj")
+
+        A = np.random.randint(0, 8, (total_M, total_K)).astype(np.float32)
+        B = np.random.randint(0, 8, (total_K, total_N)).astype(np.float32)
+        C_tmp = np.zeros((M, N)).astype(np.float32)
+        C = np.zeros((M, N)).astype(np.float32)
+
+        for k in range(total_K // K):
+            tile_A = A[:, k * K : (k + 1) * K]
+            tile_B = B[k * K : (k + 1) * K, :]
+            mod1(tile_A, tile_B, C_tmp)
+            mod2(C, C_tmp, C)
+
+        np.testing.assert_allclose(C, A @ B, atol=1e-2)
+        print("PASSED!")
+    else:
+        print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 
 
-@df.region()
-def top2():
-    @df.kernel(mapping=[2, 4])
-    def core(A: TyO[M, N] @ LyC, B: TyO[M, N] @ LyC, C: TyO[M, N] @ LyC):
-        C[:, :] = allo.add(A, B)
-
-
-mod1 = df.build(top1, target="aie", project="top1.prj")
-mod2 = df.build(top2, target="aie", project="top2.prj")
-
-A = np.random.randint(0, 8, (total_M, total_K)).astype(np.float32)
-B = np.random.randint(0, 8, (total_K, total_N)).astype(np.float32)
-C_tmp = np.zeros((M, N)).astype(np.float32)
-C = np.zeros((M, N)).astype(np.float32)
-
-for k in range(total_K // K):
-    tile_A = A[:, k * K : (k + 1) * K]
-    tile_B = B[k * K : (k + 1) * K, :]
-    mod1(tile_A, tile_B, C_tmp)
-    mod2(C, C_tmp, C)
-
-np.testing.assert_allclose(C, A @ B, atol=1e-2)
-print("PASSED!")
+if __name__ == "__main__":
+    test_gemm_temporal_reduction()

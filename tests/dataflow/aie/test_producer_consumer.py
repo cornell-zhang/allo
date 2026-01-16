@@ -1,35 +1,35 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-import os
 import allo
 from allo.ir.types import int32, Stream
 import allo.dataflow as df
 import numpy as np
+from allo.backend.aie import is_available
 
 Ty = int32
 M, N, K = 16, 16, 16
 
 
 @df.region()
-def top():
+def top(A: Ty[M, N], B: Ty[M, N]):
     pipe: Stream[Ty, 4]
 
-    @df.kernel(mapping=[1])
-    def producer(A: Ty[M, N]):
+    @df.kernel(mapping=[1], args=[A])
+    def producer(local_A: Ty[M, N]):
         for i, j in allo.grid(M, N):
             # load data
-            out: Ty = A[i, j]
+            out: Ty = local_A[i, j]
             # send data
             pipe.put(out)
 
-    @df.kernel(mapping=[1])
-    def consumer(B: Ty[M, N]):
+    @df.kernel(mapping=[1], args=[B])
+    def consumer(local_B: Ty[M, N]):
         for i, j in allo.grid(M, N):
             # receive data
             data = pipe.get()
             # computation
-            B[i, j] = data + 1
+            local_B[i, j] = data + 1
 
 
 def test_producer_consumer():
@@ -41,7 +41,7 @@ def test_producer_consumer():
     np.testing.assert_allclose(B, A + 1)
     print("Dataflow Simulator Passed!")
 
-    if "MLIR_AIE_INSTALL_DIR" in os.environ:
+    if is_available():
         mod = df.build(top, target="aie")
         mod(A, B)
         np.testing.assert_allclose(A + 1, B, atol=1e-5)

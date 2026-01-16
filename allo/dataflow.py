@@ -20,7 +20,10 @@ from ._mlir.dialects import func as func_d, allo as allo_d
 from ._mlir.passmanager import PassManager as mlir_pass_manager
 from .customize import customize as _customize, Schedule
 from .utils import parse_kernel_name, construct_kernel_name
-from .ir.utils import get_global_vars, get_all_df_kernels
+from .ir.utils import (
+    get_all_df_kernels,
+    get_global_vars,
+)
 from .backend.simulator import LLVMOMPModule
 from .passes import df_pipeline
 from .backend import AIE_MLIRModule
@@ -251,6 +254,155 @@ def move_stream_to_interface(
             for i, arg in enumerate(func.arguments):
                 arg.replace_all_uses_with(new_func.arguments[i])
             func.operation.erase()
+
+    # Second pass: Process nested kernels' streams
+    # These were skipped in the first pass but need their local streams moved to interface
+    nested_funcs = []
+    for func in list(s.module.body.operations):
+        if (
+            isinstance(func, func_d.FuncOp)
+            and "df.kernel" in func.attributes
+            and "df.nested_kernel" in func.attributes
+        ):
+            nested_funcs.append(func)
+
+    for func in nested_funcs:
+        func_name = func.attributes["sym_name"].value
+        stream_ops = []
+        stream_types = []
+        stream_signed = ""
+        stream_info[func_name] = []
+        in_types = func.attributes["function_type"].value.inputs
+        out_types = func.attributes["function_type"].value.results
+        s_type_str = "_" * len(in_types)
+
+        # Collect stream constructs in this nested kernel
+        for op in func.entry_block.operations:
+            if isinstance(op, allo_d.StreamConstructOp):
+                stream_ops.append(op)
+                stream_types.append(op.result.type)
+                stream_signed += "u" if "unsigned" in op.attributes else "_"
+                for use in op.result.uses:
+                    if isinstance(use.owner, allo_d.StreamGetOp):
+                        direction = "in"
+                    elif isinstance(use.owner, allo_d.StreamPutOp):
+                        direction = "out"
+                    else:
+                        raise ValueError("Stream is not used correctly.")
+                stream_name = op.attributes["name"].value
+                if with_stream_type and stream_name not in stream_types_dict:
+                    stream_types_dict[stream_name] = op.result.type
+                stream_info[func_name].append((stream_name, direction))
+                s_type_str += direction[0]
+
+        # Rebuild the function with streams as arguments
+        # Force rebuild even if no streams to clean up potential structure issues
+        in_types = list(in_types) + stream_types
+        with s.module.context, Location.unknown():
+            func_type = FunctionType.get(in_types, out_types)
+            # Create new func with temporary name to avoid collision handling by MLIR
+            # (which would rename it to func_name_0)
+            temp_name = func_name + "_temp"
+            new_func = func_d.FuncOp(
+                name=temp_name,
+                type=func_type,
+                ip=InsertionPoint(func),
+            )
+            new_func.add_entry_block()
+            final_op = func_d.ReturnOp([], ip=InsertionPoint(new_func.entry_block))
+            # copy old attributes
+            if "itypes" in func.attributes:
+                new_func.attributes["itypes"] = StringAttr.get(
+                    func.attributes["itypes"].value + stream_signed
+                )
+            if "otypes" in func.attributes:
+                new_func.attributes["otypes"] = func.attributes["otypes"]
+            # tag stream types
+            new_func.attributes["stypes"] = StringAttr.get(s_type_str)
+            if "df.kernel" in func.attributes:
+                new_func.attributes["df.kernel"] = UnitAttr.get()
+            if "df.nested_kernel" in func.attributes:
+                new_func.attributes["df.nested_kernel"] = UnitAttr.get()
+            if "tag" in func.attributes:
+                new_func.attributes["tag"] = StringAttr.get(
+                    func.attributes["tag"].value
+                )
+            # move operations from old func to new func
+            cnt_stream = 0
+            for op in func.entry_block.operations:
+                if op in stream_ops:
+                    op.result.replace_all_uses_with(
+                        new_func.arguments[len(in_types) - len(stream_ops) + cnt_stream]
+                    )
+                    cnt_stream += 1
+                    op.operation.erase()
+                    continue
+                op.operation.move_before(final_op)
+            final_op.erase()
+            # update original arguments
+            for i, arg in enumerate(func.arguments):
+                arg.replace_all_uses_with(new_func.arguments[i])
+            func.operation.erase()
+            # Rename to _fixed to avoid any potential name collision/stale reference
+            fixed_name = func_name + "_fixed"
+            new_func.attributes["sym_name"] = StringAttr.get(fixed_name)
+
+    # Third pass: Update calls to nested kernels to pass streams from parent
+    # Find all functions that call nested kernels and update those calls
+    # Collect into list first to avoid iterator invalidation
+    all_funcs = list(s.module.body.operations)
+    for func in all_funcs:
+        if not isinstance(func, func_d.FuncOp):
+            continue
+
+        # Skip if this function has no body
+        if len(func.body.blocks) == 0:
+            continue
+
+        # Collect stream constructs in this function (parent)
+        parent_stream_map = {}  # stream name -> stream construct op
+        for op in func.entry_block.operations:
+            if isinstance(op, allo_d.StreamConstructOp):
+                stream_name = op.attributes["name"].value
+                parent_stream_map[stream_name] = op
+
+        # Force processing even if no streams in parent, because we renamed nested kernels
+        # and we MUST update calls to them regardless of streams
+
+        # Find calls to nested kernels and update them
+        calls_to_update = []
+        for op in func.entry_block.operations:
+            if isinstance(op, func_d.CallOp):
+                callee_name = str(op.callee)[1:]  # Remove leading @
+                # Check if callee is a nested kernel that we processed
+                if callee_name in stream_info:
+                    calls_to_update.append((op, callee_name))
+
+        with s.module.context, Location.unknown():
+            for old_call, callee_name in calls_to_update:
+                # Get stream info for this callee
+                callee_streams = stream_info[callee_name]
+
+                # Build new operands list - need to properly extract values from operands
+                new_operands = list(old_call.operands_)
+                for stream_name, _ in callee_streams:
+                    if stream_name in parent_stream_map:
+                        new_operands.append(parent_stream_map[stream_name].result)
+
+                # Create new call with updated operands and FIXED name
+                fixed_callee_name = callee_name + "_fixed"
+                new_call = func_d.CallOp(
+                    [],
+                    FlatSymbolRefAttr.get(fixed_callee_name),
+                    new_operands,
+                    ip=InsertionPoint(old_call),
+                )
+                # Copy attributes
+                for attr_name in old_call.attributes:
+                    if attr_name not in ("callee", "operandSegmentSizes"):
+                        new_call.attributes[attr_name] = old_call.attributes[attr_name]
+                old_call.operation.erase()
+
     s.func_args = new_func_args
     if with_stream_type:
         if with_extra_info:
@@ -276,7 +428,7 @@ def remove_unused_func_ops(s, func_names):
             func_op.erase()
 
 
-def _build_top(s, stream_info, target="vitis_hls", get_parameter_list: bool = False):
+def _build_top(s, stream_info, enable_layout=False):
     """
     s: top-level schedule
     stream_info: {func_name: [(stream_names, direction)]}
@@ -311,7 +463,6 @@ def _build_top(s, stream_info, target="vitis_hls", get_parameter_list: bool = Fa
                     input_types.append((dtensor.shape, dtensor.dtype))
                     if "itypes" in func.attributes:
                         input_signed += func.attributes["itypes"].value[i]
-                    s.func_args[s.top_func_name].append(s.func_args[func_name][i])
                 arg_mapping[func_name].append(used_args[arg_name])
     # update top function
     top_func = None
@@ -352,7 +503,8 @@ def _build_top(s, stream_info, target="vitis_hls", get_parameter_list: bool = Fa
             stream_lst = [
                 stream_map[stream_name] for stream_name, _ in stream_info[func_name]
             ]
-            if target != "aie":
+            # FIXME: this `call_op` is required for current 'simulator' backend, but is incompatible with sharding
+            if not enable_layout:
                 call_op = func_d.CallOp(
                     [],
                     FlatSymbolRefAttr.get(func_name),
@@ -363,8 +515,6 @@ def _build_top(s, stream_info, target="vitis_hls", get_parameter_list: bool = Fa
                     call_op.attributes["last"] = UnitAttr.get()
         new_top.attributes["dataflow"] = UnitAttr.get()
     s.top_func = new_top
-    if get_parameter_list:
-        return used_args, s
     return s
 
 
@@ -425,7 +575,7 @@ def customize(func, enable_tensor=False, opt_default=False):
     global_vars = get_global_vars(func)
     s = _customize(func, global_vars=global_vars, enable_tensor=enable_tensor)
     stream_info = move_stream_to_interface(s)
-    s = _build_top(s, stream_info, enable_tensor)
+    s = _build_top(s, stream_info)
 
     if opt_default:
         df_primitive_default(s)
@@ -459,18 +609,19 @@ def build(
         global_vars = get_global_vars(func)
         # [NOTE]: set unroll = False to improve compilation efficiency
         s: Schedule = _customize(
-            func, global_vars=global_vars, enable_tensor=False, unroll=False
+            func,
+            global_vars=global_vars,
+            enable_tensor=False,
+            unroll=False,
+            typing_rule_set="cpp-style",
         )
         stream_info, stream_types_dict, extra_stream_info = move_stream_to_interface(
             s, with_stream_type=True, with_extra_info=True, unroll=False
         )
-        parameter_list, s = _build_top(
-            s, stream_info, target=target, get_parameter_list=True
-        )
+        s = _build_top(s, stream_info, True)
         aie_mod = AIE_MLIRModule(
             s.module,
             s.top_func_name,
-            parameter_list,
             s.func_args,
             project,
             stream_info,

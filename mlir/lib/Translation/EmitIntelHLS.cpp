@@ -9,6 +9,7 @@
 #include "allo/Translation/Utils.h"
 #include "mlir/Dialect/Affine/IR/AffineValueMap.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/IR/AffineExprVisitor.h"
 #include "mlir/IR/IntegerSet.h"
 #include "mlir/InitAllDialects.h"
@@ -29,19 +30,19 @@ static SmallString<16> getTypeName(Value val) {
   // Handle memref, tensor, and vector types.
   bool BIT_FLAG = false;
   auto valType = val.getType();
-  if (auto arrayType = val.getType().dyn_cast<ShapedType>())
+  if (auto arrayType = llvm::dyn_cast<ShapedType>(val.getType()))
     valType = arrayType.getElementType();
 
   // Handle float types.
-  if (valType.isa<Float32Type>())
+  if (llvm::isa<Float32Type>(valType))
     return SmallString<16>("float");
-  else if (valType.isa<Float64Type>())
+  else if (llvm::isa<Float64Type>(valType))
     return SmallString<16>("double");
 
   // Handle integer types.
-  else if (valType.isa<IndexType>())
+  else if (llvm::isa<IndexType>(valType))
     return SmallString<16>("int");
-  else if (auto intType = valType.dyn_cast<IntegerType>()) {
+  else if (auto intType = llvm::dyn_cast<IntegerType>(valType)) {
     if (intType.getWidth() == 1) {
       if (!BIT_FLAG)
         return SmallString<16>("bool");
@@ -71,12 +72,12 @@ static SmallString<16> getTypeName(Value val) {
   }
 
   // Handle (custom) fixed point types.
-  else if (auto fixedType = valType.dyn_cast<allo::FixedType>())
+  else if (auto fixedType = llvm::dyn_cast<allo::FixedType>(valType))
     return SmallString<16>(
         "ac_fixed<" + std::to_string(fixedType.getWidth()) + ", " +
         std::to_string(fixedType.getWidth() - fixedType.getFrac()) + ">");
 
-  else if (auto ufixedType = valType.dyn_cast<allo::UFixedType>())
+  else if (auto ufixedType = llvm::dyn_cast<allo::UFixedType>(valType))
     return SmallString<16>(
         "ac_ufixed<" + std::to_string(ufixedType.getWidth()) + ", " +
         std::to_string(ufixedType.getWidth() - ufixedType.getFrac()) + ">");
@@ -86,57 +87,8 @@ static SmallString<16> getTypeName(Value val) {
   return SmallString<16>();
 }
 
-//===----------------------------------------------------------------------===//
-// ModuleEmitter Class Declaration
-//===----------------------------------------------------------------------===//
-
-namespace {
-class ModuleEmitter : public AlloEmitterBase {
-public:
-  using operand_range = Operation::operand_range;
-  explicit ModuleEmitter(AlloEmitterState &state) : AlloEmitterBase(state) {}
-
-  /// Affine statement emitters.
-  void emitAffineFor(AffineForOp op);
-  void emitAffineLoad(AffineLoadOp op);
-  void emitAffineStore(AffineStoreOp op);
-  void emitAffineApply(AffineApplyOp op);
-  void emitAffineYield(AffineYieldOp op);
-
-  /// Memref-related statement emitters.
-  template <typename OpType> void emitAlloc(OpType op);
-  void emitLoad(memref::LoadOp op);
-  void emitStore(memref::StoreOp op);
-
-  /// Standard expression emitters.
-  void emitBinary(Operation *op, const char *syntax);
-  void emitUnary(Operation *op, const char *syntax);
-  void emitPower(Operation *op);
-
-  /// Special operation emitters.
-  void emitConstant(arith::ConstantOp op);
-  template <typename CastOpType> void emitCast(CastOpType op);
-
-  /// Top-level MLIR module emitter.
-  void emitModule(ModuleOp module);
-
-private:
-  /// C++ component emitters.
-  void emitValue(Value val, unsigned rank = 0, bool isPtr = false,
-                 std::string name = "", bool noType = false);
-  void emitArrayDecl(Value array, bool isFunc = false, std::string name = "");
-  void emitBufferDecl(Value array, bool isAccessor = false,
-                      bool isReadOnly = false, std::string name = "");
-  unsigned emitNestedLoopHead(Value val);
-  void emitNestedLoopTail(unsigned rank);
-  void emitFunction(func::FuncOp func, bool isAccessor = false);
-  void emitInfoAndNewLine(Operation *op);
-
-  /// MLIR component and HLS C++ pragma emitters.
-  void emitBlock(Block &block);
-  void emitLoopDirectives(Operation *op);
-};
-} // namespace
+// Use the IntelModuleEmitter class from the header
+using hls::IntelModuleEmitter;
 
 //===----------------------------------------------------------------------===//
 // AffineEmitter Class
@@ -180,7 +132,7 @@ public:
   /// Affine expression emitters.
   void emitAffineBinary(AffineBinaryOpExpr expr, const char *syntax) {
     os << "(";
-    if (auto constRHS = expr.getRHS().dyn_cast<AffineConstantExpr>()) {
+    if (auto constRHS = llvm::dyn_cast<AffineConstantExpr>(expr.getRHS())) {
       if ((unsigned)*syntax == (unsigned)*"*" && constRHS.getValue() == -1) {
         os << "-";
         visit(expr.getLHS());
@@ -195,8 +147,9 @@ public:
         return;
       }
     }
-    if (auto binaryRHS = expr.getRHS().dyn_cast<AffineBinaryOpExpr>()) {
-      if (auto constRHS = binaryRHS.getRHS().dyn_cast<AffineConstantExpr>()) {
+    if (auto binaryRHS = llvm::dyn_cast<AffineBinaryOpExpr>(expr.getRHS())) {
+      if (auto constRHS =
+              llvm::dyn_cast<AffineConstantExpr>(binaryRHS.getRHS())) {
         if ((unsigned)*syntax == (unsigned)*"+" && constRHS.getValue() == -1 &&
             binaryRHS.getKind() == AffineExprKind::Mul) {
           visit(expr.getLHS());
@@ -228,7 +181,7 @@ private:
 namespace {
 class StmtVisitor : public HLSCppVisitorBase<StmtVisitor, bool> {
 public:
-  StmtVisitor(ModuleEmitter &emitter) : emitter(emitter) {}
+  StmtVisitor(IntelModuleEmitter &emitter) : emitter(emitter) {}
 
   using HLSCppVisitorBase::visitOp;
   /// Affine statements.
@@ -247,14 +200,14 @@ public:
   bool visitOp(memref::DeallocOp op) { return true; }
 
 private:
-  ModuleEmitter &emitter;
+  IntelModuleEmitter &emitter;
 };
 } // namespace
 
 namespace {
 class ExprVisitor : public HLSCppVisitorBase<ExprVisitor, bool> {
 public:
-  ExprVisitor(ModuleEmitter &emitter) : emitter(emitter) {}
+  ExprVisitor(IntelModuleEmitter &emitter) : emitter(emitter) {}
 
   using HLSCppVisitorBase::visitOp;
   /// Float binary expressions.
@@ -341,13 +294,18 @@ public:
   bool visitOp(allo::CreateOpHandleOp op) { return true; }
 
 private:
-  ModuleEmitter &emitter;
+  IntelModuleEmitter &emitter;
 };
 } // namespace
 
+namespace mlir {
+namespace allo {
+namespace hls {
+
 /// C++ component emitters.
-void ModuleEmitter::emitValue(Value val, unsigned rank, bool isPtr,
-                              std::string name, bool noType) {
+void allo::hls::IntelModuleEmitter::emitValueImpl(Value val, unsigned rank,
+                                                  bool isPtr, std::string name,
+                                                  bool noType) {
   assert(!(rank && isPtr) && "should be either an array or a pointer.");
 
   // Value has been declared before or is a constant number.
@@ -371,16 +329,16 @@ void ModuleEmitter::emitValue(Value val, unsigned rank, bool isPtr,
   }
 }
 
-void ModuleEmitter::emitLoopDirectives(Operation *op) {
+void allo::hls::IntelModuleEmitter::emitLoopDirectives(Operation *op) {
   if (auto ii = getLoopDirective(op, "pipeline_ii")) {
     indent();
-    os << "[[intel::initiation_interval(" << ii.cast<IntegerAttr>().getValue()
-       << ")]]\n";
+    os << "[[intel::initiation_interval("
+       << llvm::dyn_cast<IntegerAttr>(ii).getValue() << ")]]\n";
   }
 
   if (auto factor = getLoopDirective(op, "unroll")) {
     indent();
-    auto val = factor.cast<IntegerAttr>().getValue();
+    auto val = llvm::dyn_cast<IntegerAttr>(factor).getValue();
     if (val == 0)
       os << "#pragma unroll\n";
     else
@@ -389,7 +347,7 @@ void ModuleEmitter::emitLoopDirectives(Operation *op) {
 }
 
 /// Affine statement emitters.
-void ModuleEmitter::emitAffineFor(AffineForOp op) {
+void allo::hls::IntelModuleEmitter::emitAffineFor(AffineForOp op) {
   // intel code put directives before the loop
   emitLoopDirectives(op);
 
@@ -397,7 +355,8 @@ void ModuleEmitter::emitAffineFor(AffineForOp op) {
   auto iterVar = op.getInductionVar();
   std::string loop_name = "";
   if (op->hasAttr("loop_name")) { // loop label
-    loop_name = op->getAttr("loop_name").cast<StringAttr>().getValue().str();
+    loop_name =
+        llvm::dyn_cast<StringAttr>(op->getAttr("loop_name")).getValue().str();
     std::replace(loop_name.begin(), loop_name.end(), '.', '_');
   }
   os << "for (";
@@ -455,7 +414,7 @@ void ModuleEmitter::emitAffineFor(AffineForOp op) {
   os << "}\n";
 }
 
-void ModuleEmitter::emitAffineApply(AffineApplyOp op) {
+void allo::hls::IntelModuleEmitter::emitAffineApply(AffineApplyOp op) {
   indent();
   emitValue(op.getResult());
   os << " = ";
@@ -467,7 +426,7 @@ void ModuleEmitter::emitAffineApply(AffineApplyOp op) {
 }
 
 /// Memref-related statement emitters.
-template <typename OpType> void ModuleEmitter::emitAlloc(OpType op) {
+template <typename OpType> void IntelModuleEmitter::emitAlloc(OpType op) {
   // A declared result indicates that the memref is output of the function, and
   // has been declared in the function signature.
   if (isDeclared(op.getResult()))
@@ -479,7 +438,7 @@ template <typename OpType> void ModuleEmitter::emitAlloc(OpType op) {
 
   std::string name;
   if (op->hasAttr("name")) {
-    auto attr = op->getAttr("name").template cast<StringAttr>();
+    auto attr = llvm::dyn_cast<StringAttr>(op->getAttr("name"));
     name = attr.getValue().str();
   }
 
@@ -492,7 +451,7 @@ template <typename OpType> void ModuleEmitter::emitAlloc(OpType op) {
   // emitArrayDirectives(result);
 }
 
-void ModuleEmitter::emitLoad(memref::LoadOp op) {
+void allo::hls::IntelModuleEmitter::emitLoad(memref::LoadOp op) {
   indent();
   Value result = op.getResult();
   fixUnsignedType(result, op->hasAttr("unsigned"));
@@ -500,9 +459,9 @@ void ModuleEmitter::emitLoad(memref::LoadOp op) {
   os << " = ";
   auto memref = op.getMemRef();
   emitValue(memref);
-  auto attr = memref.getType().dyn_cast<MemRefType>().getMemorySpace();
-  if (attr &&
-      attr.cast<StringAttr>().getValue().str().substr(0, 6) == "stream") {
+  auto attr = llvm::dyn_cast<MemRefType>(memref.getType()).getMemorySpace();
+  if (attr && llvm::dyn_cast<StringAttr>(attr).getValue().str().substr(0, 6) ==
+                  "stream") {
     os << ".read(); // ";
     emitValue(memref); // comment
   }
@@ -515,13 +474,13 @@ void ModuleEmitter::emitLoad(memref::LoadOp op) {
   emitInfoAndNewLine(op);
 }
 
-void ModuleEmitter::emitStore(memref::StoreOp op) {
+void allo::hls::IntelModuleEmitter::emitStore(memref::StoreOp op) {
   indent();
   auto memref = op.getMemRef();
   emitValue(memref);
-  auto attr = memref.getType().dyn_cast<MemRefType>().getMemorySpace();
-  if (attr &&
-      attr.cast<StringAttr>().getValue().str().substr(0, 6) == "stream") {
+  auto attr = llvm::dyn_cast<MemRefType>(memref.getType()).getMemorySpace();
+  if (attr && llvm::dyn_cast<StringAttr>(attr).getValue().str().substr(0, 6) ==
+                  "stream") {
     os << ".write(";
     emitValue(op.getValueToStore());
     os << "); // ";
@@ -538,16 +497,17 @@ void ModuleEmitter::emitStore(memref::StoreOp op) {
   emitInfoAndNewLine(op);
 }
 
-void ModuleEmitter::emitArrayDecl(Value array, bool isFunc, std::string name) {
+void allo::hls::IntelModuleEmitter::emitArrayDecl(Value array, bool isFunc,
+                                                  std::string name) {
   assert(!isDeclared(array) && "has been declared before.");
 
-  auto arrayType = array.getType().cast<ShapedType>();
+  auto arrayType = llvm::dyn_cast<ShapedType>(array.getType());
   if (arrayType.hasStaticShape()) {
-    auto memref = array.getType().dyn_cast<MemRefType>();
+    auto memref = llvm::dyn_cast<MemRefType>(array.getType());
     if (memref) {
       auto attr = memref.getMemorySpace();
-      if (attr &&
-          attr.cast<StringAttr>().getValue().str().substr(0, 6) == "stream") {
+      if (attr && llvm::dyn_cast<StringAttr>(attr).getValue().str().substr(
+                      0, 6) == "stream") {
         // Value has been declared before or is a constant number.
         if (isDeclared(array)) {
           os << getName(array);
@@ -580,18 +540,19 @@ void ModuleEmitter::emitArrayDecl(Value array, bool isFunc, std::string name) {
     emitValue(array, /*rank=*/0, /*isPtr=*/true, name);
 }
 
-void ModuleEmitter::emitBufferDecl(Value array, bool isAccessor,
-                                   bool isReadOnly, std::string name) {
-  auto arrayType = array.getType().cast<ShapedType>();
+void allo::hls::IntelModuleEmitter::emitBufferDecl(Value array, bool isAccessor,
+                                                   bool isReadOnly,
+                                                   std::string name) {
+  auto arrayType = llvm::dyn_cast<ShapedType>(array.getType());
   assert(arrayType.hasStaticShape());
-  auto memref = array.getType().dyn_cast<MemRefType>();
+  auto memref = llvm::dyn_cast<MemRefType>(array.getType());
   assert(memref);
   if (!isAccessor) {
     os << "buffer<";
     os << getTypeName(array) << ", ";
     os << arrayType.getRank() << "> ";
     os << "buf_";
-    emitValue(array, 0, false, name, true);
+    emitValueImpl(array, 0, false, name, true);
     os << "(range(";
     for (unsigned i = 0; i < arrayType.getRank(); ++i) {
       os << arrayType.getShape()[i];
@@ -601,9 +562,9 @@ void ModuleEmitter::emitBufferDecl(Value array, bool isAccessor,
     os << "));\n";
   } else {
     os << "accessor ";
-    emitValue(array, 0, false, name, true);
+    emitValueImpl(array, 0, false, name, true);
     os << "(buf_";
-    emitValue(array, 0, false, name, true);
+    emitValueImpl(array, 0, false, name, true);
     os << ", h";
     if (isReadOnly)
       os << ", read_only";
@@ -611,10 +572,10 @@ void ModuleEmitter::emitBufferDecl(Value array, bool isAccessor,
   }
 }
 
-unsigned ModuleEmitter::emitNestedLoopHead(Value val) {
+unsigned IntelModuleEmitter::emitNestedLoopHead(Value val) {
   unsigned rank = 0;
 
-  if (auto type = val.getType().dyn_cast<ShapedType>()) {
+  if (auto type = llvm::dyn_cast<ShapedType>(val.getType())) {
     if (!type.hasStaticShape()) {
       emitError(val.getDefiningOp(), "is unranked or has dynamic shape.");
       return 0;
@@ -643,20 +604,12 @@ unsigned ModuleEmitter::emitNestedLoopHead(Value val) {
   return rank;
 }
 
-void ModuleEmitter::emitNestedLoopTail(unsigned rank) {
-  for (unsigned i = 0; i < rank; ++i) {
-    reduceIndent();
-
-    indent();
-    os << "}\n";
-  }
-}
-
-void ModuleEmitter::emitAffineLoad(AffineLoadOp op) {
+void allo::hls::IntelModuleEmitter::emitAffineLoad(AffineLoadOp op) {
   indent();
   std::string load_from_name = "";
   if (op->hasAttr("from")) {
-    load_from_name = op->getAttr("from").cast<StringAttr>().getValue().str();
+    load_from_name =
+        llvm::dyn_cast<StringAttr>(op->getAttr("from")).getValue().str();
   }
   Value result = op.getResult();
   fixUnsignedType(result, op->hasAttr("unsigned"));
@@ -664,16 +617,16 @@ void ModuleEmitter::emitAffineLoad(AffineLoadOp op) {
   os << " = ";
   auto memref = op.getMemRef();
   emitValue(memref, 0, false, load_from_name);
-  auto attr = memref.getType().dyn_cast<MemRefType>().getMemorySpace();
-  if (attr &&
-      attr.cast<StringAttr>().getValue().str().substr(0, 6) == "stream") {
+  auto attr = llvm::dyn_cast<MemRefType>(memref.getType()).getMemorySpace();
+  if (attr && llvm::dyn_cast<StringAttr>(attr).getValue().str().substr(0, 6) ==
+                  "stream") {
     os << ".read(); // ";
     emitValue(memref, 0, false, load_from_name); // comment
   }
   auto affineMap = op.getAffineMap();
   AffineExprEmitter affineEmitter(state, affineMap.getNumDims(),
                                   op.getMapOperands());
-  auto arrayType = memref.getType().cast<ShapedType>();
+  auto arrayType = llvm::dyn_cast<ShapedType>(memref.getType());
   for (auto index : affineMap.getResults()) {
     os << "[";
     affineEmitter.emitAffineExpr(index);
@@ -683,17 +636,18 @@ void ModuleEmitter::emitAffineLoad(AffineLoadOp op) {
   emitInfoAndNewLine(op);
 }
 
-void ModuleEmitter::emitAffineStore(AffineStoreOp op) {
+void allo::hls::IntelModuleEmitter::emitAffineStore(AffineStoreOp op) {
   indent();
   std::string store_to_name = "";
   if (op->hasAttr("to")) {
-    store_to_name = op->getAttr("to").cast<StringAttr>().getValue().str();
+    store_to_name =
+        llvm::dyn_cast<StringAttr>(op->getAttr("to")).getValue().str();
   }
   auto memref = op.getMemRef();
   emitValue(memref, 0, false, store_to_name);
-  auto attr = memref.getType().dyn_cast<MemRefType>().getMemorySpace();
-  if (attr &&
-      attr.cast<StringAttr>().getValue().str().substr(0, 6) == "stream") {
+  auto attr = llvm::dyn_cast<MemRefType>(memref.getType()).getMemorySpace();
+  if (attr && llvm::dyn_cast<StringAttr>(attr).getValue().str().substr(0, 6) ==
+                  "stream") {
     os << ".write(";
     emitValue(op.getValueToStore());
     os << "); // ";
@@ -702,7 +656,7 @@ void ModuleEmitter::emitAffineStore(AffineStoreOp op) {
   auto affineMap = op.getAffineMap();
   AffineExprEmitter affineEmitter(state, affineMap.getNumDims(),
                                   op.getMapOperands());
-  auto arrayType = memref.getType().cast<ShapedType>();
+  auto arrayType = llvm::dyn_cast<ShapedType>(memref.getType());
   for (auto index : affineMap.getResults()) {
     os << "[";
     affineEmitter.emitAffineExpr(index);
@@ -718,7 +672,7 @@ void ModuleEmitter::emitAffineStore(AffineStoreOp op) {
 // in the generated C++. However, values which will be returned by affine
 // yield operation should not be declared again. How to "bind" the pair of
 // values inside/outside of AffineIf region needs to be considered.
-void ModuleEmitter::emitAffineYield(AffineYieldOp op) {
+void allo::hls::IntelModuleEmitter::emitAffineYield(AffineYieldOp op) {
   if (op.getNumOperands() == 0)
     return;
 
@@ -830,65 +784,25 @@ void ModuleEmitter::emitAffineYield(AffineYieldOp op) {
   }
 }
 
-/// Standard expression emitters.
-void ModuleEmitter::emitBinary(Operation *op, const char *syntax) {
-  auto rank = emitNestedLoopHead(op->getResult(0));
-  indent();
-  Value result = op->getResult(0);
-  fixUnsignedType(result, op->hasAttr("unsigned"));
-  emitValue(result, rank);
-  os << " = ";
-  emitValue(op->getOperand(0), rank);
-  os << " " << syntax << " ";
-  emitValue(op->getOperand(1), rank);
-  os << ";";
-  emitInfoAndNewLine(op);
-  emitNestedLoopTail(rank);
-}
-
-void ModuleEmitter::emitUnary(Operation *op, const char *syntax) {
-  auto rank = emitNestedLoopHead(op->getResult(0));
-  indent();
-  Value result = op->getResult(0);
-  fixUnsignedType(result, op->hasAttr("unsigned"));
-  emitValue(result, rank);
-  os << " = " << syntax << "(";
-  emitValue(op->getOperand(0), rank);
-  os << ");";
-  emitInfoAndNewLine(op);
-  emitNestedLoopTail(rank);
-}
-
-void ModuleEmitter::emitPower(Operation *op) {
-  auto rank = emitNestedLoopHead(op->getResult(0));
-  indent();
-  emitValue(op->getResult(0), rank);
-  os << " = pow(";
-  emitValue(op->getOperand(0), rank);
-  os << ", ";
-  emitValue(op->getOperand(1), rank);
-  os << ");";
-  emitInfoAndNewLine(op);
-  emitNestedLoopTail(rank);
-}
-
-void ModuleEmitter::emitConstant(arith::ConstantOp op) {
+void allo::hls::IntelModuleEmitter::emitConstant(arith::ConstantOp op) {
   // This indicates the constant type is scalar (float, integer, or bool).
   if (isDeclared(op.getResult()))
     return;
 
-  if (auto denseAttr = op.getValue().dyn_cast<DenseElementsAttr>()) {
+  if (auto denseAttr = llvm::dyn_cast<DenseElementsAttr>(op.getValue())) {
     indent();
     Value result = op.getResult(); // memref
     fixUnsignedType(result, op->hasAttr("unsigned"));
     emitBufferDecl(result);
     os << " = {";
-    auto type = op.getResult().getType().cast<ShapedType>().getElementType();
+    auto type =
+        llvm::dyn_cast<ShapedType>(op.getResult().getType()).getElementType();
 
     unsigned elementIdx = 0;
     for (auto element : denseAttr.getValues<Attribute>()) {
       if (type.isF32()) {
-        auto value = element.cast<FloatAttr>().getValue().convertToFloat();
+        auto value =
+            llvm::dyn_cast<FloatAttr>(element).getValue().convertToFloat();
         if (std::isfinite(value))
           os << value;
         else if (value > 0)
@@ -897,7 +811,8 @@ void ModuleEmitter::emitConstant(arith::ConstantOp op) {
           os << "-INFINITY";
 
       } else if (type.isF64()) {
-        auto value = element.cast<FloatAttr>().getValue().convertToDouble();
+        auto value =
+            llvm::dyn_cast<FloatAttr>(element).getValue().convertToDouble();
         if (std::isfinite(value))
           os << value;
         else if (value > 0)
@@ -906,9 +821,9 @@ void ModuleEmitter::emitConstant(arith::ConstantOp op) {
           os << "-INFINITY";
 
       } else if (type.isInteger(1))
-        os << element.cast<BoolAttr>().getValue();
+        os << llvm::dyn_cast<BoolAttr>(element).getValue();
       else if (type.isIntOrIndex())
-        os << element.cast<IntegerAttr>().getValue();
+        os << llvm::dyn_cast<IntegerAttr>(element).getValue();
       else
         emitError(op, "array has unsupported element type.");
 
@@ -921,7 +836,8 @@ void ModuleEmitter::emitConstant(arith::ConstantOp op) {
     emitError(op, "has unsupported constant type.");
 }
 
-template <typename CastOpType> void ModuleEmitter::emitCast(CastOpType op) {
+template <typename CastOpType>
+void allo::hls::IntelModuleEmitter::emitCast(CastOpType op) {
   indent();
   emitValue(op.getResult());
   os << " = ";
@@ -931,7 +847,7 @@ template <typename CastOpType> void ModuleEmitter::emitCast(CastOpType op) {
 }
 
 /// MLIR component and HLS C++ pragma emitters.
-void ModuleEmitter::emitBlock(Block &block) {
+void allo::hls::IntelModuleEmitter::emitBlock(Block &block) {
   for (auto &op : block) {
     if (ExprVisitor(*this).dispatchVisitor(&op))
       continue;
@@ -944,15 +860,8 @@ void ModuleEmitter::emitBlock(Block &block) {
   }
 }
 
-void ModuleEmitter::emitInfoAndNewLine(Operation *op) {
-  os << "\t//";
-  // Print line number.
-  if (auto loc = op->getLoc().dyn_cast<FileLineColLoc>())
-    os << " L" << loc.getLine();
-  os << "\n";
-}
-
-void ModuleEmitter::emitFunction(func::FuncOp func, bool isAccessor) {
+void allo::hls::IntelModuleEmitter::emitFunction(func::FuncOp func,
+                                                 bool isAccessor) {
 
   if (func.getBlocks().size() != 1)
     emitError(func, "has zero or more than one basic blocks.");
@@ -965,18 +874,20 @@ void ModuleEmitter::emitFunction(func::FuncOp func, bool isAccessor) {
   std::vector<std::string> input_args;
   if (func->hasAttr("inputs")) {
     std::string input_names =
-        func->getAttr("inputs").cast<StringAttr>().getValue().str();
+        llvm::dyn_cast<StringAttr>(func->getAttr("inputs")).getValue().str();
     input_args = split_names(input_names);
   }
   std::string output_names;
   if (func->hasAttr("outputs")) {
-    output_names = func->getAttr("outputs").cast<StringAttr>().getValue().str();
+    output_names =
+        llvm::dyn_cast<StringAttr>(func->getAttr("outputs")).getValue().str();
     // suppose only one output
     input_args.push_back(output_names);
   }
   std::string itypes = "";
   if (func->hasAttr("itypes"))
-    itypes = func->getAttr("itypes").cast<StringAttr>().getValue().str();
+    itypes =
+        llvm::dyn_cast<StringAttr>(func->getAttr("itypes")).getValue().str();
   else {
     for (unsigned i = 0; i < func.getNumArguments(); ++i)
       itypes += "x";
@@ -984,7 +895,7 @@ void ModuleEmitter::emitFunction(func::FuncOp func, bool isAccessor) {
   for (auto &arg : func.getArguments()) {
     indent();
     fixUnsignedType(arg, itypes[argIdx] == 'u');
-    if (arg.getType().isa<ShapedType>()) {
+    if (llvm::isa<ShapedType>(arg.getType())) {
       if (input_args.size() == 0) {
         emitBufferDecl(arg, isAccessor, true);
       } else {
@@ -1006,13 +917,14 @@ void ModuleEmitter::emitFunction(func::FuncOp func, bool isAccessor) {
   auto args = func.getArguments();
   std::string otypes = "";
   if (func->hasAttr("otypes"))
-    otypes = func->getAttr("otypes").cast<StringAttr>().getValue().str();
+    otypes =
+        llvm::dyn_cast<StringAttr>(func->getAttr("otypes")).getValue().str();
   else {
     for (unsigned i = 0; i < func.getNumArguments(); ++i)
       otypes += "x";
   }
   if (auto funcReturn =
-          dyn_cast<func::ReturnOp>(func.front().getTerminator())) {
+          llvm::dyn_cast<func::ReturnOp>(func.front().getTerminator())) {
     unsigned idx = 0;
     for (auto result : funcReturn.getOperands()) {
       if (std::find(args.begin(), args.end(), result) == args.end()) {
@@ -1021,7 +933,7 @@ void ModuleEmitter::emitFunction(func::FuncOp func, bool isAccessor) {
         // TODO: a known bug, cannot return a value twice, e.g. return %0, %0
         // : index, index. However, typically this should not happen.
         fixUnsignedType(result, otypes[idx] == 'u');
-        if (result.getType().isa<ShapedType>()) {
+        if (llvm::isa<ShapedType>(result.getType())) {
           if (output_names != "")
             emitBufferDecl(result, isAccessor, false);
           else
@@ -1045,7 +957,7 @@ void ModuleEmitter::emitFunction(func::FuncOp func, bool isAccessor) {
 }
 
 /// Top-level MLIR module emitter.
-void ModuleEmitter::emitModule(ModuleOp module) {
+void allo::hls::IntelModuleEmitter::emitModule(ModuleOp module) {
   std::string snippet = R"XXX(
 //===------------------------------------------------------------*- DPC++ -*-===//
 //
@@ -1114,8 +1026,8 @@ int main() {
   // generate initial buffers (function arguments)
   // TODO: can only support one function now!
   for (auto &op : *module.getBody()) {
-    if (auto func = dyn_cast<func::FuncOp>(op))
-      emitFunction(func);
+    if (auto func = llvm::dyn_cast<func::FuncOp>(op))
+      emitFunction(func, false);
     else
       emitError(&op, "is unsupported operation.");
   }
@@ -1135,7 +1047,7 @@ int main() {
   // generate accessors
   // TODO: can only support one function now!
   for (auto &op : *module.getBody()) {
-    if (auto func = dyn_cast<func::FuncOp>(op))
+    if (auto func = llvm::dyn_cast<func::FuncOp>(op))
       emitFunction(func, true);
     else
       emitError(&op, "is unsupported operation.");
@@ -1154,7 +1066,7 @@ int main() {
   addIndent();
   // Emit function body.
   for (auto &op : *module.getBody()) {
-    if (auto func = dyn_cast<func::FuncOp>(op)) {
+    if (auto func = llvm::dyn_cast<func::FuncOp>(op)) {
       addIndent();
       emitBlock(func.front());
       reduceIndent();
@@ -1190,13 +1102,17 @@ int main() {
   os << snippet;
 }
 
+} // namespace hls
+} // namespace allo
+} // namespace mlir
+
 //===----------------------------------------------------------------------===//
 // Entry of allo-translate
 //===----------------------------------------------------------------------===//
 
 LogicalResult allo::emitIntelHLS(ModuleOp module, llvm::raw_ostream &os) {
   AlloEmitterState state(os);
-  ModuleEmitter(state).emitModule(module);
+  hls::IntelModuleEmitter(state).emitModule(module);
   return failure(state.encounteredError);
 }
 

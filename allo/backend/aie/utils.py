@@ -1,4 +1,4 @@
-# pylint: disable=import-error, no-name-in-module, c-extension-no-member, too-many-nested-blocks, consider-using-namedtuple-or-dataclass, too-many-branches, unsubscriptable-object
+# pylint: disable=import-error, no-name-in-module, c-extension-no-member, consider-using-namedtuple-or-dataclass, too-many-branches, unsubscriptable-object
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
@@ -383,7 +383,7 @@ def inject_external_kernels(
             call_builtin = False
             replace_op = True
             # fill with zero
-            if op.operation.name == "linalg.fill" and isinstance(
+            if getattr(op, "name", None) == "linalg.fill" and isinstance(
                 op.inputs[0].owner.opview, allo_arith_d.ConstantOp
             ):
                 if (
@@ -409,8 +409,8 @@ def inject_external_kernels(
                     output_idx.append(0)
                     operands = [op.outputs[0]]
             # vec add/mul
-            elif op.operation.name in {"linalg.add", "linalg.mul"}:
-                op_name = op.operation.name.split(".")[1]
+            elif getattr(op, "name", None) in {"linalg.add", "linalg.mul"}:
+                op_name = op.name.split(".")[1]
                 dtype = str(op.inputs[0].type.element_type)
                 if dtype in external_kernel_aie2c_type:
                     ctype = external_kernel_aie2c_type[dtype]
@@ -429,7 +429,7 @@ def inject_external_kernels(
                     ]
                     include_src[kernel_name] = f'#include "aie2/{op_name}.cc"\n'
             # matmul
-            elif op.operation.name == "linalg.matmul":
+            elif getattr(op, "name", None) == "linalg.matmul":
                 M, K = MemRefType(op.inputs[0].type).shape
                 _, N = MemRefType(op.inputs[1].type).shape
                 dtype_a = str(op.inputs[0].type.element_type)
@@ -785,11 +785,7 @@ def simplify_matmul_accumulate(function: allo_func_d.FuncOp):
     for call_matmul_op in matmul_ops:
         output = call_matmul_op.operands[-1]
         uses = list(output.uses)
-        if (
-            isinstance(output.owner, allo_ir.ir.Operation)
-            and output.owner.name == "memref.alloc"
-            and len(uses) == 3
-        ):
+        if getattr(output.owner, "name", None) == "memref.alloc" and len(uses) == 3:
             init_zero_op, acc_op = allo_d.get_first_use_in_function(
                 output, function
             ), allo_d.get_last_use_in_function(output, function)
@@ -811,14 +807,28 @@ def simplify_matmul_accumulate(function: allo_func_d.FuncOp):
                 )
                 if (
                     allo_d.get_last_use_in_function(acc_base, function) == acc_op
-                    and isinstance(acc_op.operands[-1].owner, allo_ir.ir.Operation)
-                    and acc_op.operands[-1].owner.name == "memref.alloc"
+                    and getattr(acc_op.operands[-1].owner, "name", None)
+                    == "memref.alloc"
                 ):
                     # accumulation is the last use
                     call_matmul_op.operands[-1] = acc_base
                     init_zero_op.erase()
                     acc_op.operands[-1].replace_all_uses_with(acc_base)
                     acc_op.erase()
+    # similar optimization apply to lib function like 'add' (the root cause is the mismatch between allo interface and lib function interface)
+    acc_ops: list[allo_func_d.CallOp] = collect_lib_func_call(function, "add")
+    for call_add_op in acc_ops:
+        output = call_add_op.operands[-1]
+        uses = list(output.uses)
+        if getattr(output.owner, "name", None) == "memref.alloc" and len(uses) == 2:
+            copy_op = allo_d.get_last_use_in_function(output, function)
+            if getattr(copy_op, "name", None) == "memref.copy":
+                dst = copy_op.operands[1]
+                # filter out a special case, a better solution is to move the memref.subview operation before function call
+                if getattr(dst.owner, "name", None) != "memref.subview":
+                    call_add_op.operands[-1] = copy_op.operands[1]
+                    copy_op.erase()
+                    output.owner.erase()
 
 
 # ############################################################

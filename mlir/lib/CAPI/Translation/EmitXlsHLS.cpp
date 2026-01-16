@@ -12,11 +12,8 @@
 using namespace mlir;
 using namespace allo;
 
-MlirLogicalResult mlirEmitXlsHls(MlirModule module,
-                                 MlirStringCallback callback,
-                                 void *userData,
-                                 bool useMemory) {
+MlirLogicalResult mlirEmitXlsHls(MlirModule module, MlirStringCallback callback,
+                                 void *userData, bool useMemory) {
   mlir::detail::CallbackOstream stream(callback, userData);
   return wrap(emitXlsHLS(unwrap(module), stream, useMemory));
 }
-

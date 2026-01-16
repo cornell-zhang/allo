@@ -1,6 +1,8 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import tempfile
+
 import pytest
 import allo
 from allo.ir.types import int16, int32, bool, Stream
@@ -9,16 +11,26 @@ import allo.backend.hls as hls
 import numpy as np
 
 
+U = 4  # Require for same size in two dimension if not tiling
+M, N, K = U, 4, U
+P0, P1 = U + 2, U + 2
+
+
 @df.region()
-def unified_gemm_simple():
+def unified_gemm_simple(A: int32[M, K], B: int32[K, N], inst: bool, C: int32[M, N]):
     # interconnect
     fifo_R: Stream[int32, 16][P0, P1 - 1]
     fifo_C: Stream[int32, 16][P0 - 1, P1]
     inst_broad: Stream[bool, 4][P1 - 1]
     inst_chain: Stream[bool, 4][P0 - 1, P1]
 
-    @df.kernel(mapping=[P0, P1])
-    def gemm(A: int32[M, K], B: int32[K, N], inst: bool, C: int32[M, N]):
+    @df.kernel(mapping=[P0, P1], args=[A, B, inst, C])
+    def gemm(
+        local_A: int32[M, K],
+        local_B: int32[K, N],
+        local_inst: bool,
+        local_C: int32[M, N],
+    ):
 
         i, j = df.get_pid()
 
@@ -26,7 +38,7 @@ def unified_gemm_simple():
         # Decode and Dispatch
 
         with allo.meta_if(i == 0 and j == 0):
-            tag: bool = inst
+            tag: bool = local_inst
             inst_broad[j].put(tag)
             inst_chain[i, j].put(tag)
 
@@ -58,13 +70,15 @@ def unified_gemm_simple():
             with allo.meta_if(i == 0):
                 for t in range(Tlength):
                     if flowtag:
-                        fifo_C[i, j].put(B[t, j - 1])
+                        fifo_C[i, j].put(local_B[t, j - 1])
                     else:
                         fifo_C[i, j].put(Czero)
 
             with allo.meta_elif(j == 0):
                 for t in range(Tlength):
-                    fifo_R[i, j].put(A[i - 1, t] if flowtag else A[t, i - 1])
+                    fifo_R[i, j].put(
+                        local_A[i - 1, t] if flowtag else local_A[t, i - 1]
+                    )
 
             # peripheral Drain
             with allo.meta_elif(i == U + 1 and j > 0):
@@ -72,7 +86,7 @@ def unified_gemm_simple():
                     if flowtag:
                         c_drain: int32 = fifo_C[i - 1, j].get()
                     else:
-                        C[t, j - 1] = fifo_C[i - 1, j].get()
+                        local_C[t, j - 1] = fifo_C[i - 1, j].get()
 
             with allo.meta_elif(j == U + 1 and i > 0):
                 for t in range(Tlength):
@@ -80,7 +94,7 @@ def unified_gemm_simple():
 
             # main Compute
             with allo.meta_else():
-                local_S: int32 = 0 if flowtag else B[i - 1, j - 1]
+                local_S: int32 = 0 if flowtag else local_B[i - 1, j - 1]
 
                 for t in range(Tlength):
                     # Flow In
@@ -98,11 +112,13 @@ def unified_gemm_simple():
                     fifo_C[i, j].put(c if flowtag else accu)
 
                 if flowtag:
-                    C[i - 1, j - 1] = local_S
+                    local_C[i - 1, j - 1] = local_S
 
 
 @df.region()
-def unified_gemm_daisy_chain():
+def unified_gemm_daisy_chain(
+    A: int16[M, K], B: int16[K, N], inst: bool, C: int16[M, N]
+):
     L2_R: Stream[UInt(U * 16), 4][P0 - 1]
     L2_C: Stream[UInt(N * 16), 4][P1 - 1]
 
@@ -116,8 +132,13 @@ def unified_gemm_daisy_chain():
     inst_broad: Stream[bool, 4][P1 - 1]
     inst_chain: Stream[bool, 4][P0 - 1, P1]
 
-    @df.kernel(mapping=[P0, P1])
-    def gemm(A: int16[M, K], B: int16[K, N], inst: bool, C: int16[M, N]):
+    @df.kernel(mapping=[P0, P1], args=[A, B, inst, C])
+    def gemm(
+        local_A: int16[M, K],
+        local_B: int16[K, N],
+        local_inst: bool,
+        local_C: int16[M, N],
+    ):
 
         # --------------------------------------------------------
         # Parameters
@@ -131,7 +152,7 @@ def unified_gemm_daisy_chain():
         # Instruction Decode and Dispatch
         flowtag: bool
         with allo.meta_if(i == 0 and j == 0):
-            flowtag: bool = inst
+            flowtag: bool = local_inst
             inst_broad[j].put(flowtag)
             inst_chain[i, j].put(flowtag)
 
@@ -156,7 +177,7 @@ def unified_gemm_daisy_chain():
                 for n in range(N):
                     packed_S_in: UInt(U * 16) = 0
                     for k in range(U):
-                        packed_S_in[k * 16 : (k + 1) * 16] = B[k, n]
+                        packed_S_in[k * 16 : (k + 1) * 16] = local_B[k, n]
                     L2_S_in[0].put(packed_S_in)
 
             for u in range(U):
@@ -164,16 +185,16 @@ def unified_gemm_daisy_chain():
                 packed_R: UInt(U * 16) = 0
                 if flowtag:
                     for m in range(U):
-                        packed_R[m * 16 : (m + 1) * 16] = A[m, u]
+                        packed_R[m * 16 : (m + 1) * 16] = local_A[m, u]
                 else:
                     for k in range(U):
-                        packed_R[k * 16 : (k + 1) * 16] = A[u, k]
+                        packed_R[k * 16 : (k + 1) * 16] = local_A[u, k]
                 L2_R[1].put(packed_R)
                 # pack data Column
                 packed_C: UInt(N * 16) = 0
                 if flowtag:
                     for n in range(N):
-                        packed_C[n * 16 : (n + 1) * 16] = B[u, n]
+                        packed_C[n * 16 : (n + 1) * 16] = local_B[u, n]
                 else:
                     for n in range(N):
                         packed_C[n * 16 : (n + 1) * 16] = Czero
@@ -183,7 +204,7 @@ def unified_gemm_daisy_chain():
             for n in range(N):
                 packed_S_out = L2_S_out[N - 1].get()
                 for m in range(M):
-                    C[m, n] = packed_S_out[m * 16 : (m + 1) * 16]
+                    local_C[m, n] = packed_S_out[m * 16 : (m + 1) * 16]
 
         with allo.meta_elif(i in {0, P0 - 1} and j in {0, P1 - 1}):
             pass
@@ -284,7 +305,7 @@ def unified_gemm_daisy_chain():
 
 
 @df.region()
-def unified_gemm_tiling():
+def unified_gemm_tiling(A: int32[M, K], B: int32[K, N], inst: bool, C: int32[M, N]):
     # interconnect
     fifo_R: Stream[int32, 16][P0, P1 - 1]
     fifo_C: Stream[int32, 16][P0 - 1, P1]
@@ -292,8 +313,13 @@ def unified_gemm_tiling():
     inst_broad: Stream[bool, 4][P1 - 1]
     inst_chain: Stream[bool, 4][P0 - 1, P1]
 
-    @df.kernel(mapping=[P0, P1])
-    def gemm(A: int32[M, K], B: int32[K, N], inst: bool, C: int32[M, N]):
+    @df.kernel(mapping=[P0, P1], args=[A, B, inst, C])
+    def gemm(
+        local_A: int32[M, K],
+        local_B: int32[K, N],
+        local_inst: bool,
+        local_C: int32[M, N],
+    ):
 
         i, j = df.get_pid()
 
@@ -301,7 +327,7 @@ def unified_gemm_tiling():
         # Decode and Dispatch
 
         with allo.meta_if(i == 0 and j == 0):
-            tag: bool = inst
+            tag: bool = local_inst
             inst_broad[j].put(tag)
             inst_chain[i, j].put(tag)
 
@@ -338,16 +364,16 @@ def unified_gemm_tiling():
                     with allo.meta_if(i == 0):
                         for t in range(Tlength):
                             if flowtag:
-                                fifo_C[i, j].put(B[t, ci * Ct + (j - 1)])
+                                fifo_C[i, j].put(local_B[t, ci * Ct + (j - 1)])
                             else:
                                 fifo_C[i, j].put(Czero)
 
                     with allo.meta_elif(j == 0):
                         for t in range(Tlength):
                             fifo_R[i, j].put(
-                                A[ri * Rt + (i - 1), t]
+                                local_A[ri * Rt + (i - 1), t]
                                 if flowtag
-                                else A[t, ri * Rt + (i - 1)]
+                                else local_A[t, ri * Rt + (i - 1)]
                             )
 
                     # peripheral Drain
@@ -356,8 +382,9 @@ def unified_gemm_tiling():
                             if flowtag:
                                 c_drain: int32 = fifo_C[i - 1, j].get()
                             else:
-                                C[t, ci * Ct + (j - 1)] = (
-                                    C[t, ci * Ct + (j - 1)] + fifo_C[i - 1, j].get()
+                                local_C[t, ci * Ct + (j - 1)] = (
+                                    local_C[t, ci * Ct + (j - 1)]
+                                    + fifo_C[i - 1, j].get()
                                 )
 
                     with allo.meta_elif(j == Ct + 1 and i > 0):
@@ -367,7 +394,9 @@ def unified_gemm_tiling():
                     # main Compute
                     with allo.meta_else():
                         local_S: int32 = (
-                            0 if flowtag else B[ri * Rt + (i - 1), ci * Ct + (j - 1)]
+                            0
+                            if flowtag
+                            else local_B[ri * Rt + (i - 1), ci * Ct + (j - 1)]
                         )
 
                         for t in range(Tlength):
@@ -386,7 +415,7 @@ def unified_gemm_tiling():
                             fifo_C[i, j].put(c if flowtag else accu)
 
                         if flowtag:
-                            C[ri * Rt + (i - 1), ci * Ct + (j - 1)] = local_S
+                            local_C[ri * Rt + (i - 1), ci * Ct + (j - 1)] = local_S
 
 
 def schedule_unified_systolic(s):
@@ -394,11 +423,6 @@ def schedule_unified_systolic(s):
     s.partition(f"{s.top_func_name}:B", dim=0)
     s.partition(f"{s.top_func_name}:C", dim=0)
     return s
-
-
-U = 4  # Require for same size in two dimension if not tiling
-M, N, K = U, 4, U
-P0, P1 = U + 2, U + 2
 
 
 @pytest.mark.skip(reason="Invalid MLIR generated. Needs fixing.")
@@ -426,39 +450,39 @@ def test_unified_simple():
 
         # csim test
         print(" Csim Test ".center(60, "*"))
-        mod = s.build(target="vitis_hls", mode="csim", project="df-uni-simple-csim.prj")
-        C_truth = np.dot(A, B)
-        print(C_truth)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mod = s.build(target="vitis_hls", mode="csim", project=tmpdir)
+            C_truth = np.dot(A, B)
+            print(C_truth)
 
-        flowtag1: bool = False
-        mod(A, B, flowtag1, C)
-        print(C)
-        np.testing.assert_allclose(C, C_truth, atol=1e-5)
-        print("Csim: Weight-stationary Mode Passed!")
+            flowtag1: bool = False
+            mod(A, B, flowtag1, C)
+            print(C)
+            np.testing.assert_allclose(C, C_truth, atol=1e-5)
+            print("Csim: Weight-stationary Mode Passed!")
 
-        flowtag2: bool = True
-        C = np.zeros((M, N), dtype=np.int32)
-        mod(A, B, flowtag2, C)
-        print(C)
-        np.testing.assert_allclose(C, C_truth, atol=1e-5)
-        print("Csim: Output-stationary Mode Passed!")
+            flowtag2: bool = True
+            C = np.zeros((M, N), dtype=np.int32)
+            mod(A, B, flowtag2, C)
+            print(C)
+            np.testing.assert_allclose(C, C_truth, atol=1e-5)
+            print("Csim: Output-stationary Mode Passed!")
 
         # hw_emu test
         print(" Hw_emu Test ".center(60, "*"))
-        mod_hwemu = s.build(
-            target="vitis_hls", mode="hw_emu", project="df-uni-simple-hwemu.prj"
-        )
-        C = np.zeros((M, N), dtype=np.int32)
-        mod_hwemu(A, B, flowtag1, C)
-        print(C)
-        np.testing.assert_allclose(C, C_truth, atol=1e-5)
-        print("Hw_emu: Weight-stationary Mode Passed!")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mod_hwemu = s.build(target="vitis_hls", mode="hw_emu", project=tmpdir)
+            C = np.zeros((M, N), dtype=np.int32)
+            mod_hwemu(A, B, flowtag1, C)
+            print(C)
+            np.testing.assert_allclose(C, C_truth, atol=1e-5)
+            print("Hw_emu: Weight-stationary Mode Passed!")
 
-        C = np.zeros((M, N), dtype=np.int32)
-        mod_hwemu(A, B, flowtag2, C)
-        print(C)
-        np.testing.assert_allclose(C, C_truth, atol=1e-5)
-        print("Hw_emu: Output-stationary Mode Passed!")
+            C = np.zeros((M, N), dtype=np.int32)
+            mod_hwemu(A, B, flowtag2, C)
+            print(C)
+            np.testing.assert_allclose(C, C_truth, atol=1e-5)
+            print("Hw_emu: Output-stationary Mode Passed!")
 
 
 @pytest.mark.skip(reason="Invalid MLIR generated. Needs fixing.")
@@ -480,47 +504,49 @@ def test_unified_daisy_chain():
     if hls.is_available("vitis_hls"):
         # csim test
         print(" Csim Test ".center(60, "*"))
-        mod = df.build(
-            unified_gemm_daisy_chain,
-            target="vitis_hls",
-            mode="csim",
-            project="df-uni-daisy-csim.prj",
-        )
-        C_truth = np.dot(A, B)
-        print(C_truth)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mod = df.build(
+                unified_gemm_daisy_chain,
+                target="vitis_hls",
+                mode="csim",
+                project=tmpdir,
+            )
+            C_truth = np.dot(A, B)
+            print(C_truth)
 
-        flowtag1: bool = False
-        mod(A, B, flowtag1, C)
-        print(C)
-        np.testing.assert_allclose(C, C_truth, atol=1e-5)
-        print("Csim: Weight-stationary Mode Passed!")
+            flowtag1: bool = False
+            mod(A, B, flowtag1, C)
+            print(C)
+            np.testing.assert_allclose(C, C_truth, atol=1e-5)
+            print("Csim: Weight-stationary Mode Passed!")
 
-        flowtag2: bool = True
-        C = np.zeros((M, N), dtype=np.int16)
-        mod(A, B, flowtag2, C)
-        print(C)
-        np.testing.assert_allclose(C, C_truth, atol=1e-5)
-        print("Csim: Output-stationary Mode Passed!")
+            flowtag2: bool = True
+            C = np.zeros((M, N), dtype=np.int16)
+            mod(A, B, flowtag2, C)
+            print(C)
+            np.testing.assert_allclose(C, C_truth, atol=1e-5)
+            print("Csim: Output-stationary Mode Passed!")
 
         # hw_emu test
         print(" Hw_emu Test ".center(60, "*"))
-        mod_hwemu = df.build(
-            unified_gemm_daisy_chain,
-            target="vitis_hls",
-            mode="hw_emu",
-            project="df-uni-daisy-hwemu.prj",
-        )
-        C = np.zeros((M, N), dtype=np.int32)
-        mod_hwemu(A, B, flowtag1, C)
-        print(C)
-        np.testing.assert_allclose(C, C_truth, atol=1e-5)
-        print("Hw_emu: Weight-stationary Mode Passed!")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mod_hwemu = df.build(
+                unified_gemm_daisy_chain,
+                target="vitis_hls",
+                mode="hw_emu",
+                project=tmpdir,
+            )
+            C = np.zeros((M, N), dtype=np.int32)
+            mod_hwemu(A, B, flowtag1, C)
+            print(C)
+            np.testing.assert_allclose(C, C_truth, atol=1e-5)
+            print("Hw_emu: Weight-stationary Mode Passed!")
 
-        C = np.zeros((M, N), dtype=np.int32)
-        mod_hwemu(A, B, flowtag2, C)
-        print(C)
-        np.testing.assert_allclose(C, C_truth, atol=1e-5)
-        print("Hw_emu: Output-stationary Mode Passed!")
+            C = np.zeros((M, N), dtype=np.int32)
+            mod_hwemu(A, B, flowtag2, C)
+            print(C)
+            np.testing.assert_allclose(C, C_truth, atol=1e-5)
+            print("Hw_emu: Output-stationary Mode Passed!")
 
 
 M, N, K = 4, 4, 4
@@ -553,39 +579,39 @@ def test_unified_tiling():
 
         # csim test
         print(" Csim Test ".center(60, "*"))
-        mod = s.build(target="vitis_hls", mode="csim", project="df-uni-tiling-csim.prj")
-        C_truth = np.dot(A, B)
-        print(C_truth)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mod = s.build(target="vitis_hls", mode="csim", project=tmpdir)
+            C_truth = np.dot(A, B)
+            print(C_truth)
 
-        flowtag1: bool = False
-        mod(A, B, flowtag1, C)
-        print(C)
-        np.testing.assert_allclose(C, C_truth, atol=1e-5)
-        print("Csim: Weight-stationary Mode Passed!")
+            flowtag1: bool = False
+            mod(A, B, flowtag1, C)
+            print(C)
+            np.testing.assert_allclose(C, C_truth, atol=1e-5)
+            print("Csim: Weight-stationary Mode Passed!")
 
-        flowtag2: bool = True
-        C = np.zeros((M, N), dtype=np.int32)
-        mod(A, B, flowtag2, C)
-        print(C)
-        np.testing.assert_allclose(C, C_truth, atol=1e-5)
-        print("Csim: Output-stationary Mode Passed!")
+            flowtag2: bool = True
+            C = np.zeros((M, N), dtype=np.int32)
+            mod(A, B, flowtag2, C)
+            print(C)
+            np.testing.assert_allclose(C, C_truth, atol=1e-5)
+            print("Csim: Output-stationary Mode Passed!")
 
         # hw_emu test
         print(" Hw_emu Test ".center(60, "*"))
-        mod_hwemu = s.build(
-            target="vitis_hls", mode="hw_emu", project="df-uni-tiling-hwemu.prj"
-        )
-        C = np.zeros((M, N), dtype=np.int32)
-        mod_hwemu(A, B, flowtag1, C)
-        print(C)
-        np.testing.assert_allclose(C, C_truth, atol=1e-5)
-        print("Hw_emu: Weight-stationary Mode Passed!")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mod_hwemu = s.build(target="vitis_hls", mode="hw_emu", project=tmpdir)
+            C = np.zeros((M, N), dtype=np.int32)
+            mod_hwemu(A, B, flowtag1, C)
+            print(C)
+            np.testing.assert_allclose(C, C_truth, atol=1e-5)
+            print("Hw_emu: Weight-stationary Mode Passed!")
 
-        C = np.zeros((M, N), dtype=np.int32)
-        mod_hwemu(A, B, flowtag2, C)
-        print(C)
-        np.testing.assert_allclose(C, C_truth, atol=1e-5)
-        print("Hw_emu: Output-stationary Mode Passed!")
+            C = np.zeros((M, N), dtype=np.int32)
+            mod_hwemu(A, B, flowtag2, C)
+            print(C)
+            np.testing.assert_allclose(C, C_truth, atol=1e-5)
+            print("Hw_emu: Output-stationary Mode Passed!")
 
 
 if __name__ == "__main__":

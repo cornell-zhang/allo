@@ -6,41 +6,44 @@ import allo.dataflow as df
 from allo.ir.types import int32, Stream
 from allo.memory import Layout
 import numpy as np
+from allo.backend.aie import is_available
 
-LyA = Layout("S0S1")
-LyB = Layout("S0S1")
-LyC = Layout("S0S1")
+S = Layout.Shard
+R = Layout.Replicate
+LyA = [S(1), S(0)]
+LyB = [S(1), S(0)]
+LyC = [S(1), S(0)]
 
 
-def _test_cannon():
+def test_cannon():
     Ty = int32
     M, K, N = 32, 32, 32
     P = 2
     m, k, n = M // P, K // P, N // P
 
     @df.region()
-    def top():
+    def top(A: Ty[M, K], B: Ty[K, N], C: Ty[M, N]):
         A_init: Stream[Ty[m, k], 2][P, P]
         B_init: Stream[Ty[k, n], 2][P, P]
 
         A_pipe: Stream[Ty[m, k], 2][P, P]
         B_pipe: Stream[Ty[k, n], 2][P, P]
 
-        @df.kernel(mapping=[P, P])
-        def init(A: Ty[M, K] @ LyA, B: Ty[K, N] @ LyB):
+        @df.kernel(mapping=[P, P], args=[A, B])
+        def init(local_A: Ty[M, K] @ LyA, local_B: Ty[K, N] @ LyB):
             pi, pj = df.get_pid()
 
-            A_init[(pi - pj) % P, pj].put(A)
-            B_init[pi, (pj - pi) % P].put(B)
+            A_init[(pi - pj) % P, pj].put(local_A)
+            B_init[pi, (pj - pi) % P].put(local_B)
 
-        @df.kernel(mapping=[P, P])
-        def cannon(C: Ty[M, N] @ LyC):
+        @df.kernel(mapping=[P, P], args=[C])
+        def cannon(local_C: Ty[M, N] @ LyC):
             pi, pj = df.get_pid()
 
             A_out: Ty[m, k] = A_init[pi, pj].get()
             B_out: Ty[k, n] = B_init[pi, pj].get()
 
-            C[:, :] = allo.matmul(A_out, B_out)
+            local_C[:, :] = allo.matmul(A_out, B_out)
 
             A_pipe[(pi - 1) % P, pj].put(A_out)
             B_pipe[pi, (pj - 1) % P].put(B_out)
@@ -56,7 +59,7 @@ def _test_cannon():
                 """
                 A_out_: Ty[m, k] = A_pipe[pi, pj].get()
                 B_out_: Ty[k, n] = B_pipe[pi, pj].get()
-                C[:, :] += allo.matmul(A_out_, B_out_)
+                local_C[:, :] += allo.matmul(A_out_, B_out_)
                 A_pipe[(pi - 1) % P, pj].put(A_out_)
                 B_pipe[pi, (pj - 1) % P].put(B_out_)
 
@@ -64,12 +67,14 @@ def _test_cannon():
     B = np.random.randint(0, 64, (K, N)).astype(np.int32)
     C = np.zeros((M, N)).astype(np.int32)
 
-    mod = df.build(top, target="aie")
-
-    mod(A, B, C)
-    np.testing.assert_allclose(C, A @ B, atol=1e-5)
-    print("PASSED!")
+    if is_available():
+        mod = df.build(top, target="aie")
+        mod(A, B, C)
+        np.testing.assert_allclose(C, A @ B, atol=1e-5)
+        print("PASSED!")
+    else:
+        print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 
 
 if __name__ == "__main__":
-    _test_cannon()
+    test_cannon()

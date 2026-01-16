@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # pylint: disable=redefined-builtin, no-name-in-module
 
+import re
 import numbers
 from collections import OrderedDict
 
@@ -16,6 +17,30 @@ from .._mlir.ir import (
 )
 from .._mlir.dialects import allo as allo_d
 from .._mlir.exceptions import DTypeError, DTypeWarning
+
+
+class TypeAnnotation:
+    """
+    A wrapper class for type annotations that supports the @ operator.
+
+    This allows annotations like: a: int32[32] @ Memory(impl="URAM")
+
+    The @ operator is parsed at the AST level, but Python still tries to
+    evaluate it at runtime. This class makes the runtime evaluation succeed
+    by providing a __matmul__ method.
+    """
+
+    def __init__(self, dtype, shape):
+        self.dtype = dtype
+        self.shape = shape
+
+    def __matmul__(self, other):
+        """Support the @ operator for memory/layout annotations."""
+        # Return self to allow chaining, the actual spec is extracted from AST
+        return self
+
+    def __repr__(self):
+        return f"{self.dtype}[{', '.join(str(s) for s in self.shape)}]"
 
 
 class AlloType:
@@ -33,6 +58,8 @@ class AlloType:
         self.bits = bits
         self.fracs = fracs
         self.name = name
+        self.stateful = False
+        self.constexpr = False
 
     def build(self):
         # Required a MLIR context outside
@@ -43,19 +70,48 @@ class AlloType:
         return isinstance(other, (AlloType, numbers.Number))
 
     def __getitem__(self, sizes):
-        # Placeholder for type[*sizes]
-        pass
+        # Return a TypeAnnotation that supports the @ operator
+        if isinstance(sizes, tuple):
+            shape = sizes
+        else:
+            shape = (sizes,)
+        return TypeAnnotation(self, shape)
 
     def __repr__(self):
-        return self.name
+        prefix = "stateful(" if self.stateful else ""
+        suffix = ")" if self.stateful else ""
+        return f"{prefix}{self.name}{suffix}"
 
     def __eq__(self, other):
         if other is None or not isinstance(other, AlloType):
             return False
-        return self.name == other.name
+        return self.name == other.name and self.stateful == other.stateful
 
     def __hash__(self):
-        return hash(self.name)
+        return hash((self.name, self.stateful))
+
+
+def stateful(dtype: AlloType):
+    """
+    Marks a type as stateful, making it persistent across kernel invocations.
+
+    Usage:
+        state: stateful(int32)           # Stateful scalar
+        counter: stateful(int32[10])     # Stateful array
+
+    Parameters
+    ----------
+    dtype : AlloType
+        The underlying type to mark as stateful
+
+    Returns
+    -------
+    tuple
+        A marker tuple that will be processed during type inference
+    """
+    # TODO: Return type should be AlloType with stateful attribute set,
+    #       but currently returns tuple for AST
+    return ("stateful", dtype)
 
 
 class Index(AlloType):
@@ -228,7 +284,9 @@ class Struct(AlloType):
         super().__init__(self.bits, 0, "struct")
 
     def __repr__(self):
-        return "Struct(" + str(self.dtype_dict) + ")"
+        prefix = "Stateful[" if self.stateful else ""
+        suffix = "]" if self.stateful else ""
+        return f"{prefix}Struct({self.dtype_dict}){suffix}"
 
     def __getattr__(self, key):
         try:
@@ -244,6 +302,18 @@ class Struct(AlloType):
         for _, dtype in self.dtype_dict.items():
             types.append(dtype.build())
         return allo_d.StructType.get(types)
+
+
+class ConstExpr:
+    """
+    A marker for compile-time constant variables.
+    Usage:
+        a: ConstExpr[int32] = 10
+    """
+
+    # pylint: disable=unused-argument
+    def __class_getitem__(cls, item):
+        return cls
 
 
 class Stream(AlloType):
@@ -266,7 +336,42 @@ class Stream(AlloType):
 
     def __repr__(self):
         shape = ", ".join(str(s) for s in self.shape)
-        return f"Stream({self.dtype}[{shape}])"
+        prefix = "Stateful[" if self.stateful else ""
+        suffix = "]" if self.stateful else ""
+        return f"{prefix}Stream({self.dtype}[{shape}]){suffix}"
+
+
+def allo_type_from_mlir_type(mlir_type):
+    """
+    Reconstruct an Allo Type from an MLIR type.
+    """
+    # index
+    if isinstance(mlir_type, IndexType):
+        return Index()
+    # integer
+    if isinstance(mlir_type, IntegerType):
+        # MLIR integer reconstructed as Int
+        return Int(bits=mlir_type.width)
+    # float
+    if isinstance(mlir_type, BF16Type):
+        return Float(16, 7)
+    if isinstance(mlir_type, F16Type):
+        return Float(16, 10)
+    if isinstance(mlir_type, F32Type):
+        return Float(32, 23)
+    if isinstance(mlir_type, F64Type):
+        return Float(64, 52)
+    # fixme (Shihan): avoid using string matching and parsing
+    pattern = re.compile(r"!allo\.(U)?Fixed<\s*(\d+)\s*,\s*(\d+)\s*>")
+    m = pattern.fullmatch(str(mlir_type))
+    if m:
+        is_unsigned = m.group(1) is not None
+        bits = int(m.group(2))
+        fracs = int(m.group(3))
+        if is_unsigned:
+            return UFixed(bits, fracs)
+        return Fixed(bits, fracs)
+    raise TypeError(f"Cannot reconstruct Allo Type from MLIR type: {mlir_type}")
 
 
 # boolean type should not be used as i1!

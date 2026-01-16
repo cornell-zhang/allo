@@ -1,6 +1,8 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import tempfile
+
 import allo
 from allo.ir.types import float32, Stream
 import allo.dataflow as df
@@ -12,24 +14,24 @@ M, N, K = 16, 16, 16
 
 
 @df.region()
-def top():
+def top(A: Ty[M, N], B: Ty[M, N]):
     pipe: Stream[Ty, 4]
 
-    @df.kernel(mapping=[1])
-    def producer(A: Ty[M, N]):
+    @df.kernel(mapping=[1], args=[A])
+    def producer(local_A: Ty[M, N]):
         for i, j in allo.grid(M, N):
             # load data
-            out: Ty = A[i, j]
+            out: Ty = local_A[i, j]
             # send data
             pipe.put(out)
 
-    @df.kernel(mapping=[1])
-    def consumer(B: Ty[M, N]):
+    @df.kernel(mapping=[1], args=[B])
+    def consumer(local_B: Ty[M, N]):
         for i, j in allo.grid(M, N):
             # receive data
             data = pipe.get()
             # computation
-            B[i, j] = data + 1
+            local_B[i, j] = data + 1
 
 
 def test_producer_consumer():
@@ -42,15 +44,16 @@ def test_producer_consumer():
     print("Dataflow Simulator Passed!")
 
     if hls.is_available("vitis_hls"):
-        mod = df.build(
-            top,
-            target="vitis_hls",
-            mode="csim",
-            project="producer_consumer.prj",
-        )
-        mod(A, B)
-        np.testing.assert_allclose(A + 1, B)
-        print("Passed!")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mod = df.build(
+                top,
+                target="vitis_hls",
+                mode="csim",
+                project=tmpdir,
+            )
+            mod(A, B)
+            np.testing.assert_allclose(A + 1, B)
+            print("Passed!")
 
 
 if __name__ == "__main__":

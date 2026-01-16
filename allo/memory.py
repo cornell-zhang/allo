@@ -2,8 +2,8 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-import re
 from itertools import product
+from collections import defaultdict
 from dataclasses import dataclass
 
 
@@ -18,80 +18,33 @@ class Layout:
     1 |/    |/
       +-----+
          0
-      2D tensor: [32, 32]
+      2D tensor: tensor_dim = [32, 32]
       +-----------+
       | 0,0 | 0,1 |
       +-----------+
       | 1,0 | 1,1 |
       +-----------+
 
-      placement = "S2S0" ->   (tensor_dim[-1], shard on mesh_dim[2]),
-                              (tensor_dim[-2], shard on mesh_dim[0])
+      partitions = [Shard(0), Shard(2)] ->  (tensor_dim[0], shard on mesh_dim[0]),
+                                            (tensor_dim[1], shard on mesh_dim[2])
 
       PE tile (a, ?, b) gets tensor tile (a, b)
     """
 
-    def __init__(self, placement):
-        # R: replicated, S: shared
-        # e.g., S0S1R, S0R, RS0
-        pattern = r"([A-Z])(\d)?"
-        matches = re.findall(pattern, placement)
-        result = []
-        for letter, number in matches:
-            if number:
-                result.append((letter, int(number)))
-            else:
-                result.append((letter, None))
-        self.placement = result
+    @dataclass(frozen=True)
+    class Shard:
+        axis: int
 
-    def get_placement(self, mesh_dims):
+    @dataclass(frozen=True)
+    class Replicate:
+        pass
+
+    def __init__(self, partitions: list[Replicate | Shard]):
+        self.partitions = partitions
+
+    def get_placement(self, mesh_dims: list[int]):
         """
-        Calculate mapping from tensor tile IDs to PE tile IDs based on the placement scheme.
-        ! Unsafe!! (12,1) is same as (1,21)
-        Args:
-            mesh_dims (list): Dimensions of the device mesh (e.g., [4] for 1D, [2,2] for 2D)
-
-        Returns:
-            dict: A mapping from tensor tile IDs to corresponding PE tile coordinates
-        """
-        # Generate all possible PE coordinates
-        pe_coords = list(product(*[range(dim) for dim in mesh_dims]))
-
-        # Initialize mapping
-        mapping = {}
-
-        # For each PE coordinate, determine its tensor tile ID
-        for pe_coord in pe_coords:
-            tensor_id_parts = []
-
-            for _, (op, dim) in enumerate(self.placement):
-                if op == "S":
-                    # For sharding, use the coordinate at the specified dimension
-                    # start from right to left
-                    mesh_dim = int(dim)
-                    tensor_id_parts.append(str(pe_coord[-mesh_dim - 1]))
-                elif op == "R":
-                    # For replication, use 'R'
-                    tensor_id_parts.append("R")
-
-            tensor_id = "".join(tensor_id_parts)
-
-            # Add this PE coordinate to the mapping for this tensor ID
-            if tensor_id not in mapping:
-                mapping[tensor_id] = []
-            mapping[tensor_id].append(pe_coord)
-
-        # Post-process the mapping to combine PE coordinates for replicated dimensions
-        result = {}
-        for tensor_id, coords in mapping.items():
-            # Convert to tuples for final output
-            result[tensor_id] = [tuple(coord) for coord in coords]
-
-        return result
-
-    def get_placement_exp(self, mesh_dims):
-        """
-        Calculate mapping from tensor tile IDs to PE tile IDs based on the placement scheme.
+        Calculate mapping from tensor tile IDs to PE tile IDs based on the partition scheme.
 
         Args:
             mesh_dims (list): Dimensions of the device mesh (e.g., [4] for 1D, [2,2] for 2D)
@@ -101,27 +54,21 @@ class Layout:
         """
         # Generate all possible PE coordinates
         pe_coords = list(product(*[range(dim) for dim in mesh_dims]))
-        # Initialize mapping
-        mapping = {}
+        mapping = defaultdict(list)
         # For each PE coordinate, determine its tensor tile ID
         for pe_coord in pe_coords:
             tensor_id_parts = []
-
-            for _, (op, dim) in enumerate(self.placement):
-                if op == "S":
+            for partition in self.partitions:
+                if isinstance(partition, Layout.Shard):
                     # For sharding, use the coordinate at the specified dimension
-                    # start from right to left
-                    mesh_dim = int(dim)
-                    tensor_id_parts.append(int(pe_coord[-mesh_dim - 1]))
-                elif op == "R":
-                    # For replication, use 'R'
-                    tensor_id_parts.append("R")
+                    # start from left to right
+                    tensor_id_parts.append(int(pe_coord[partition.axis]))
+                else:
+                    # For replication, use 0 as placeholder
+                    tensor_id_parts.append(0)
 
             tensor_id = tuple(tensor_id_parts)
-
             # Add this PE coordinate to the mapping for this tensor ID
-            if tensor_id not in mapping:
-                mapping[tensor_id] = []
             mapping[tensor_id].append(pe_coord)
 
         # Post-process the mapping to combine PE coordinates for replicated dimensions
@@ -129,16 +76,189 @@ class Layout:
         for tensor_id, coords in mapping.items():
             # Convert to tuples for final output
             result[tensor_id] = [tuple(coord) for coord in coords]
-
         return result
 
+
+class Memory:
+    """
+    Memory interface specification for HLS synthesis.
+
+    This class allows users to specify memory implementation details
+    for array/tensor arguments, similar to Vitis HLS pragma interface.
+
+    Supported options:
+    - resource: Memory resource type
+        - "BRAM": Block RAM
+        - "URAM": Ultra RAM
+        - "LUTRAM": LUT-based RAM
+        - "SRL": Shift Register LUT
+        - "AUTO": Let the tool decide (default)
+    - storage_type: RAM access pattern
+        - "RAM_1P": Single-port RAM
+        - "RAM_2P": Simple dual-port RAM (one read, one write port)
+        - "RAM_T2P": True dual-port RAM (two read/write ports)
+        - "RAM_1WNR": Single write, N read ports
+        - "RAM_S2P": Simple dual-port (alias for RAM_2P)
+        - "ROM_1P": Single-port ROM
+        - "ROM_2P": Dual-port ROM
+        - "ROM_NP": N-port ROM
+    - latency: Memory access latency in cycles
+    - depth: Depth of the memory (for streams/FIFOs)
+
+    Example:
+        def kernel(a: int32[32] @ Memory(resource="URAM")):
+            ...
+
+        def kernel(b: float32[64, 64] @ Memory(resource="BRAM", storage_type="RAM_2P")):
+            ...
+    """
+
+    # Valid resource types
+    VALID_RESOURCE = {"BRAM", "URAM", "LUTRAM", "SRL", "AUTO"}
+
+    # Memory space encoding for MLIR MemRefType
+    # Format: resource_code * 16 + storage_type_code
+    # This allows encoding both resource and storage_type in a single integer
+    RESOURCE_TO_SPACE = {
+        "AUTO": 0,
+        "BRAM": 1,
+        "URAM": 2,
+        "LUTRAM": 3,
+        "SRL": 4,
+    }
+
+    STORAGE_TYPE_TO_CODE = {
+        None: 0,
+        "RAM_1P": 1,
+        "RAM_2P": 2,
+        "RAM_T2P": 3,
+        "RAM_1WNR": 4,
+        "RAM_S2P": 5,
+        "ROM_1P": 6,
+        "ROM_2P": 7,
+        "ROM_NP": 8,
+    }
+
+    # Reverse mappings for decoding in C++ emitter
+    SPACE_TO_RESOURCE = {v: k for k, v in RESOURCE_TO_SPACE.items()}
+    CODE_TO_STORAGE_TYPE = {v: k for k, v in STORAGE_TYPE_TO_CODE.items()}
+
+    # Valid storage types
+    VALID_STORAGE_TYPE = {
+        "RAM_1P",
+        "RAM_2P",
+        "RAM_T2P",
+        "RAM_1WNR",
+        "RAM_S2P",
+        "ROM_1P",
+        "ROM_2P",
+        "ROM_NP",
+    }
+
+    def __init__(
+        self,
+        resource: str = "AUTO",
+        storage_type: str = None,
+        latency: int = None,
+        depth: int = None,
+    ):
+        """
+        Create a Memory specification.
+
+        Parameters
+        ----------
+        resource : str
+            Memory resource type. One of: BRAM, URAM, LUTRAM, SRL, AUTO.
+            Default is AUTO (let the tool decide).
+        storage_type : str
+            RAM access pattern. One of: RAM_1P, RAM_2P, RAM_T2P, RAM_1WNR,
+            RAM_S2P, ROM_1P, ROM_2P, ROM_NP. Default is None (tool decides).
+        latency : int
+            Memory access latency in cycles. Default is None (tool decides).
+        depth : int
+            Depth of the memory. Useful for streams/FIFOs. Default is None.
+        """
+        if resource.upper() not in self.VALID_RESOURCE:
+            raise ValueError(
+                f"Invalid resource '{resource}'. Must be one of: {', '.join(self.VALID_RESOURCE)}"
+            )
+        self.resource = resource.upper()
+
+        if storage_type is not None:
+            if storage_type.upper() not in self.VALID_STORAGE_TYPE:
+                raise ValueError(
+                    f"Invalid storage_type '{storage_type}'. "
+                    f"Must be one of: {', '.join(self.VALID_STORAGE_TYPE)}"
+                )
+            self.storage_type = storage_type.upper()
+        else:
+            self.storage_type = None
+
+        self.latency = latency
+        self.depth = depth
+
     def __repr__(self):
-        result = ""
-        for letter, number in self.placement:
-            result += letter
-            if number is not None:
-                result += str(number)
-        return f"Layout({result})"
+        parts = [f'resource="{self.resource}"']
+        if self.storage_type is not None:
+            parts.append(f'storage_type="{self.storage_type}"')
+        if self.latency is not None:
+            parts.append(f"latency={self.latency}")
+        if self.depth is not None:
+            parts.append(f"depth={self.depth}")
+        return f"Memory({', '.join(parts)})"
+
+    def __eq__(self, other):
+        if not isinstance(other, Memory):
+            return False
+        return (
+            self.resource == other.resource
+            and self.storage_type == other.storage_type
+            and self.latency == other.latency
+            and self.depth == other.depth
+        )
+
+    def __hash__(self):
+        return hash((self.resource, self.storage_type, self.latency, self.depth))
+
+    def get_memory_space(self) -> int:
+        """
+        Get the memory space encoding for MLIR MemRefType.
+
+        The encoding combines resource and storage_type into a single integer:
+            memory_space = resource_code * 16 + storage_type_code
+
+        This allows the C++ emitter to decode both values and emit
+        appropriate HLS pragmas.
+
+        Returns
+        -------
+        int
+            Memory space encoding. 0 means AUTO (default, no pragma needed).
+        """
+        resource_code = self.RESOURCE_TO_SPACE.get(self.resource, 0)
+        storage_code = self.STORAGE_TYPE_TO_CODE.get(self.storage_type, 0)
+        return resource_code * 16 + storage_code
+
+    @staticmethod
+    def decode_memory_space(memory_space: int) -> tuple:
+        """
+        Decode memory space integer back to (resource, storage_type).
+
+        Parameters
+        ----------
+        memory_space : int
+            The memory space encoding.
+
+        Returns
+        -------
+        tuple
+            (resource: str, storage_type: str or None)
+        """
+        resource_code = memory_space // 16
+        storage_code = memory_space % 16
+        resource = Memory.SPACE_TO_RESOURCE.get(resource_code, "AUTO")
+        storage_type = Memory.CODE_TO_STORAGE_TYPE.get(storage_code, None)
+        return resource, storage_type
 
 
 class DTensor:
@@ -146,18 +266,34 @@ class DTensor:
     Distributed tensor.
     """
 
-    def __init__(self, rank, mapping, shape, dtype, layout, name=None):
+    def __init__(self, rank, mapping, shape, dtype, spec, name=None, top_name=None):
         self.rank = rank
         self.mapping = mapping  # mesh dims
         self.shape = shape  # tensor shape
         self.dtype = dtype
-        self.layout: Layout = layout
         self.name = name
-        if layout is not None and mapping is not None:
+        self.top_name = top_name
+
+        # Handle spec: can be Layout, Memory, or None
+        self.layout: Layout = None
+        self.memory: Memory = None
+
+        if isinstance(spec, Layout):
+            self.layout = spec
+        elif isinstance(spec, Memory):
+            self.memory = spec
+        elif spec is not None:
+            # For backward compatibility, treat as layout if it has placement attr
+            if hasattr(spec, "placement"):
+                self.layout = spec
+            elif hasattr(spec, "resource"):
+                self.memory = spec
+
+        if self.layout is not None and mapping is not None:
             # tensor tile ID -> PE tile IDs
             self.global_placement: dict[
                 tuple[int | str, ...], list[tuple[int, ...]]
-            ] = layout.get_placement_exp(mapping)
+            ] = self.layout.get_placement(mapping)
         self.access_pattern_set = False
         self.global_id: int = None
         self.is_input: bool = None
@@ -170,13 +306,11 @@ class DTensor:
         if self.layout is None:
             return self.shape
         local_shape = []
-        for i, s in enumerate(self.shape):
-            shard, dim = self.layout.placement[i]
-            if shard == "R":
-                local_shape.append(s)
+        for shape, partition in zip(self.shape, self.layout.partitions):
+            if isinstance(partition, Layout.Shard):
+                local_shape.append(shape // self.mapping[partition.axis])
             else:
-                # count from right to left
-                local_shape.append(s // self.mapping[-dim - 1])
+                local_shape.append(shape)
         return tuple(local_shape)
 
     def set_global_info(self, global_id: int, is_input: bool):
@@ -199,16 +333,24 @@ class DTensor:
         self.access_pattern_set = True
         # tensor tile ID -> address offset
         self.offset_map: dict[tuple[int | str, ...], Offset4D] = {}
-        partition_str = "".join([p[0] for p in self.layout.placement])
-        partition_dim = [p[1] for p in self.layout.placement]
+        partition_str = "".join(
+            [
+                "S" if isinstance(p, Layout.Shard) else "R"
+                for p in self.layout.partitions
+            ]
+        )
+        partition_dim = [
+            p.axis if isinstance(p, Layout.Shard) else None
+            for p in self.layout.partitions
+        ]
         if len(self.shape) == 1:
             if partition_str == "S":
                 dim = partition_dim[0]
                 for i, key in enumerate(sorted(list(self.global_placement.keys()))):
                     self.offset_map[key] = Offset4D(0, 0, i, 0)
-                shard_size = self.shape[0] // self.mapping[-dim - 1]
+                shard_size = self.shape[0] // self.mapping[dim]
                 device_dims = [2]  # partition idx = 2
-                size = [1, 1, self.mapping[-dim - 1], shard_size]
+                size = [1, 1, self.mapping[dim], shard_size]
                 stride = [0, 0, shard_size, 1]
             elif partition_str == "R":
                 for key in self.global_placement.keys():
@@ -222,8 +364,8 @@ class DTensor:
             tensor_m, tensor_n = self.shape  # [tensor_m x tensor_n]
             if partition_str == "SS":
                 device_a, device_b = (
-                    self.mapping[-partition_dim[0] - 1],
-                    self.mapping[-partition_dim[1] - 1],
+                    self.mapping[partition_dim[0]],
+                    self.mapping[partition_dim[1]],
                 )
                 for i, key in enumerate(sorted(list(self.global_placement.keys()))):
                     self.offset_map[key] = Offset4D(i // device_b, i % device_b, 0, 0)
@@ -235,8 +377,8 @@ class DTensor:
                     tensor_n,
                     1,
                 ]
-            elif partition_str == "SR":  # TODO: something is wrong here
-                device_a = self.mapping[-partition_dim[0] - 1]
+            elif partition_str == "SR":
+                device_a = self.mapping[partition_dim[0]]
                 for i, key in enumerate(sorted(list(self.global_placement.keys()))):
                     self.offset_map[key] = Offset4D(i // device_a, i % device_a, 0, 0)
                 # First dim sharded across all devices, second replicated
@@ -244,7 +386,7 @@ class DTensor:
                 size = [1, device_a, tensor_m // device_a, tensor_n]
                 stride = [0, (tensor_m // device_a) * tensor_n, tensor_n, 1]
             elif partition_str == "RS":
-                device_b = self.mapping[-partition_dim[1] - 1]
+                device_b = self.mapping[partition_dim[1]]
                 for i, key in enumerate(sorted(list(self.global_placement.keys()))):
                     self.offset_map[key] = Offset4D(i // device_b, i % device_b, 0, 0)
                 # First dim replicated, second sharded across second dim of mesh
@@ -275,7 +417,23 @@ class DTensor:
         )
 
     def __str__(self):
-        return f"DTensor(name={self.name}, shape={self.shape}, dtype={self.dtype}, layout={self.layout}, mapping={self.mapping}, rank={self.rank}, local_shape={self.get_local_shape()})"
+        parts = [
+            f"name={self.name}",
+            f"shape={self.shape}",
+            f"dtype={self.dtype}",
+        ]
+        if self.layout is not None:
+            parts.append(f"layout={self.layout}")
+        if self.memory is not None:
+            parts.append(f"memory={self.memory}")
+        parts.extend(
+            [
+                f"mapping={self.mapping}",
+                f"rank={self.rank}",
+                f"local_shape={self.get_local_shape()}",
+            ]
+        )
+        return f"DTensor({', '.join(parts)})"
 
     def __repr__(self):
         return f"{self.name}"
@@ -540,7 +698,7 @@ def coalesce_memory_access(offset_map: dict[Offset4D, list]):
                 inc_offset = inc_offset.get_next_offset(coalesce_dim)
                 if inc_offset in access:
                     base_size.inc_on_dim(coalesce_dim)
-                    coalesced.add(offset)
+                    coalesced.add(inc_offset)
                     coalesce_info[base_offset].extend(coalesce_info[inc_offset])
                     connected_nodes[base_offset].extend(connected_nodes[inc_offset])
                 else:

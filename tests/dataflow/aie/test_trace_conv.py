@@ -2,18 +2,16 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import os
+import pytest
 import torch
 import torch.nn.functional as F
 from typing import Annotated
 from allo.ir.types import int32
 import allo.dataflow as df
 import numpy as np
-from allo.memory import Layout
 from allo.backend.aie.external_kernel import ExternalModule
+from allo.backend.aie import is_available
 
-KERNEL_LIB_PATH = "../../../allo/library/aie/"
-
-Ly = Layout("RR")
 
 # Convolution dimensions
 IN_H = 3  # Input height (smaller for int32)
@@ -49,7 +47,21 @@ def conv2d_simple(
 # PyTorch reference code ends
 
 
-def _trace_conv2d(kernel_path: str):
+def kernel_paths():
+    dir_path = os.path.dirname(os.path.abspath(__file__))
+    kernel_dir = os.path.join(dir_path, "../../../allo/library/aie/kernels/")
+    return [
+        os.path.join(kernel_dir, "conv_small_scalar.cc"),
+        os.path.join(kernel_dir, "conv_small_vector.cc"),
+    ]
+
+
+@pytest.mark.skipif(
+    os.environ.get("NPU2") == "1",
+    reason="[FIXME]: seems that this test may crash the device",
+)
+@pytest.mark.parametrize("kernel_path", kernel_paths())
+def test_trace_conv2d(kernel_path: str):
 
     conv = ExternalModule(
         top="conv2d_int32",
@@ -61,14 +73,14 @@ def _trace_conv2d(kernel_path: str):
     Ty = int32
 
     @df.region()
-    def top():
-        @df.kernel(mapping=[1])
+    def top(Input: Ty[IN_H, IN_W], Kernel: Ty[K_H, K_W], Output: Ty[OUT_H, OUT_W]):
+        @df.kernel(mapping=[1], args=[Input, Kernel, Output])
         def core(
-            Input: Ty[IN_H, IN_W] @ Ly,
-            Kernel: Ty[K_H, K_W] @ Ly,
-            Output: Ty[OUT_H, OUT_W] @ Ly,
+            local_Input: Ty[IN_H, IN_W],
+            local_Kernel: Ty[K_H, K_W],
+            local_Output: Ty[OUT_H, OUT_W],
         ):
-            conv(Input, Kernel, Output)
+            conv(local_Input, local_Kernel, local_Output)
 
     # Create random input data
     input_tensor = torch.randint(-10, 10, (IN_H, IN_W), dtype=torch.int32)
@@ -77,7 +89,7 @@ def _trace_conv2d(kernel_path: str):
     )  # Smaller kernel values
     output = conv2d_simple(input_tensor, kernel_tensor).to(torch.int32)
 
-    if "MLIR_AIE_INSTALL_DIR" in os.environ:
+    if is_available():
         mod = df.build(
             top,
             target="aie",
@@ -102,5 +114,7 @@ def _trace_conv2d(kernel_path: str):
 
 
 if __name__ == "__main__":
-    _trace_conv2d(KERNEL_LIB_PATH + "conv_small_scalar.cc")
-    _trace_conv2d(KERNEL_LIB_PATH + "conv_small_vector.cc")
+    dir_path = os.path.dirname(os.path.abspath(__file__))
+    KERNEL_LIB_PATH = f"{dir_path}/../../../allo/library/aie/kernels/"
+    test_trace_conv2d(KERNEL_LIB_PATH + "conv_small_scalar.cc")
+    test_trace_conv2d(KERNEL_LIB_PATH + "conv_small_vector.cc")

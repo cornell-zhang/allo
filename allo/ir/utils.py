@@ -23,7 +23,7 @@ from .._mlir.dialects import (
     tensor as tensor_d,
     func as func_d,
 )
-from .types import AlloType, Int, UInt, Fixed, UFixed, Index
+from .types import AlloType, Int, UInt, Fixed, UFixed, Index, Float
 from .symbol_resolver import ASTResolver
 
 
@@ -77,6 +77,25 @@ def get_kwarg(kwargs, name):
     raise RuntimeError(f"Keyword argument {name} not found")
 
 
+def _ast_to_value(node):
+    """Convert an AST node to its Python value (Python 3.12+)."""
+    if isinstance(node, ast.Constant):
+        return node.value
+    if isinstance(node, ast.List):
+        return [_ast_to_value(elt) for elt in node.elts]
+    if isinstance(node, ast.Tuple):
+        return tuple(_ast_to_value(elt) for elt in node.elts)
+    return node
+
+
+def get_kwarg_value(kwargs, name, default=None):
+    """Get a keyword argument value, returning default if not found."""
+    for keyword in kwargs:
+        if keyword.arg == name:
+            return _ast_to_value(keyword.value)
+    return default
+
+
 def _adjust_line_numbers(node, offset):
     for child in ast.walk(node):
         if hasattr(child, "lineno"):
@@ -109,7 +128,12 @@ def get_func_id_from_param_types(param_types):
 def get_all_df_kernels(s):
     funcs = []
     for func in s.module.body.operations:
-        if isinstance(func, func_d.FuncOp) and "df.kernel" in func.attributes:
+        # Exclude nested kernels (those inside sub-regions) from top-level calls
+        if (
+            isinstance(func, func_d.FuncOp)
+            and "df.kernel" in func.attributes
+            and "df.nested_kernel" not in func.attributes
+        ):
             funcs.append(func)
     return funcs
 
@@ -182,9 +206,15 @@ class MockConstant(MockOp):
     @property
     def result(self):
         if self.dtype is not None:
-            assert isinstance(self.dtype, Index)
             dtype = self.dtype.build()
-            value_attr = IntegerAttr.get(dtype, self.val)
+            if isinstance(self.dtype, (Int, UInt, Index)):
+                value_attr = IntegerAttr.get(dtype, self.val)
+            elif isinstance(self.dtype, Float):
+                value_attr = FloatAttr.get(dtype, self.val)
+            else:
+                raise ValueError(
+                    f"Fail to resolve MockConstant with dtype {self.dtype}"
+                )
         elif isinstance(self.val, int):
             dtype = IntegerType.get_signless(32)
             value_attr = IntegerAttr.get(dtype, self.val)

@@ -62,37 +62,46 @@ Example
 
 .. code-block:: python
 
-   import allo
-   from allo.ir.types import int16, int32, float32
-   import allo.dataflow as df
-   import numpy as np
-   from allo.memory import Layout
+    import allo
+    from allo.ir.types import int16, int32, float32
+    import allo.dataflow as df
+    import numpy as np
+    from allo.memory import Layout
 
-   Ty = int16
-   M, N, K = 128, 128, 32
-   Pm, Pn, Pk = 4, 4, 1
-   Mt, Nt, Kt = M // Pm, N // Pn, K // Pk
+    S = Layout.Shard
+    R = Layout.Replicate
 
-   LyA = Layout("S1S2")
-   LyB = Layout("S2S0")
-   LyC = Layout("S1S0")
+    TyI, TyO = int16, int32
+    M, N, K = 64, 64, 32
+    P0, P1 = 4, 4
+    LyA = [S(1), R]
+    LyB = [R, S(0)]
+    LyC = [S(1), S(0)]
 
-   @df.region()
-   def top1():
-       @df.kernel(mapping=[Pk, Pm, Pn])
-       def gemm(A: Ty[M, K] @ LyA, B: Ty[K, N] @ LyB, C: int32[M, N] @ LyC):
-           C[:, :] = allo.matmul(A, B)
+    @df.region()
+    def top(A: TyI[M, K], B: TyI[K, N], C: TyO[M, N]):
+        @df.kernel(mapping=[P0, P1], args=[A, B, C])
+        def gemm(
+            local_A: TyI[M, K] @ LyA, local_B: TyI[K, N] @ LyB, local_C: TyO[M, N] @ LyC
+        ):
+            local_C[:, :] = allo.matmul(local_A, local_B)
 
-   mod = df.build(
-       top1,
-       target="aie",
-       profile=True,
-       warmup=200,
-       num_iters=1000,
-   )
-   A = np.random.randint(0, 32, (M, K)).astype(np.int16)
-   B = np.random.randint(0, 32, (K, N)).astype(np.int16)
-   C = np.zeros((M, N)).astype(np.int32)
-   tmp_C = np.zeros((M, N)).astype(np.int32)
-   mod(A, B, C)
+    if is_available():
+        mod = df.build(
+            top,
+            target="aie",
+            profile=True,
+            warmup=200,
+            num_iters=1000,
+        )
+        A = np.random.randint(0, 64, (M, K)).astype(np.int16)
+        B = np.random.randint(0, 64, (K, N)).astype(np.int16)
+        C = np.zeros((M, N)).astype(np.int32)
+        mod(A, B, C)
+        np_C = A.astype(np.int32) @ B.astype(np.int32)
+        np.testing.assert_allclose(C, np_C, atol=1e-5)
+        print("PASSED!")
+    else:
+        print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
+
 

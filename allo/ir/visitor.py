@@ -56,6 +56,7 @@ class ASTContext:
         unroll=True,
         meta_fors_to_unroll=None,
         enable_tensor=False,
+        typing_rule_set="default",
         verbose=False,
     ):
         self.ip_stack = []
@@ -88,6 +89,7 @@ class ASTContext:
         # whether the instances are unrolled at ir build time
         self.unroll = unroll
         self.enable_tensor = enable_tensor
+        self.typing_rule_set = typing_rule_set
         self.verbose = verbose
         # libraries for external IPs
         self.ext_libs = []
@@ -128,6 +130,7 @@ class ASTContext:
             self.func_tag2instance,
             unroll=self.unroll,
             enable_tensor=self.enable_tensor,
+            typing_rule_set=self.typing_rule_set,
             verbose=self.verbose,
         )
         ctx.func_id = self.func_id
@@ -138,6 +141,8 @@ class ASTContext:
         ctx.rank = self.rank
         ctx.mapping = self.mapping
         ctx.meta_fors_to_unroll = self.meta_fors_to_unroll
+        if hasattr(self, "func_suffix"):
+            ctx.func_suffix = self.func_suffix
         return ctx
 
     def set_ip(self, ip):
@@ -323,9 +328,7 @@ class ASTVisitor:
 
     @staticmethod
     def visit_FunctionDef(ctx, node):
-        print("inside fundef")
         visit_stmts(ctx, node.body)
-        print("end inside fundef")
 
     @staticmethod
     def visit_Compare(ctx, node):
@@ -355,9 +358,7 @@ class ASTVisitor:
     @staticmethod
     def visit_Module(ctx, node):
         for stmt in node.body:
-            print("stmt", stmt)
             visit_stmt(ctx, stmt)
-            print("end", stmt)
 
     @staticmethod
     def visit_Call(ctx, node):

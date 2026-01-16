@@ -89,7 +89,7 @@ bool applyMemRefDCE(ModuleOp &mod) {
 
 namespace {
 struct AlloMemRefDCETransformation
-    : public MemRefDCEBase<AlloMemRefDCETransformation> {
+    : public mlir::allo::impl::MemRefDCEBase<AlloMemRefDCETransformation> {
   void runOnOperation() override {
     auto mod = getOperation();
     if (!applyMemRefDCE(mod)) {

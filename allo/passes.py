@@ -130,6 +130,18 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
     if mappings is None:
         mappings = [None] * len(top_func.arguments)
 
+    # Extract type hints from top function's itypes and otypes attributes
+    input_typehints = {}
+    output_typehints = {}
+    if "itypes" in top_func.attributes:
+        itypes_str = top_func.attributes["itypes"].value
+        for idx, typehint in enumerate(itypes_str):
+            input_typehints[idx] = typehint
+    if "otypes" in top_func.attributes:
+        otypes_str = top_func.attributes["otypes"].value
+        for idx, typehint in enumerate(otypes_str):
+            output_typehints[idx] = typehint
+
     load_store_mapping = analyze_arg_load_store(module)
     # Build Buffer-Load functions
     load_func_names = []
@@ -151,6 +163,7 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
                     from_memory=True,
                     flatten=flatten,
                     mapping=mappings[idx],
+                    typehint=input_typehints.get(idx),
                 )
 
     # Find ReturnOp
@@ -181,6 +194,7 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
                     from_memory=False,
                     flatten=flatten,
                     mapping=mappings[idx],
+                    typehint=output_typehints.get(idx),
                 )
 
         else:
@@ -200,6 +214,7 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
                         from_memory=False,
                         flatten=flatten,
                         mapping=mappings[-1],
+                        typehint=input_typehints.get(idx),
                     )
 
     # Modify Top function
@@ -223,6 +238,9 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
                     [],
                 )
                 alloc_op.attributes["name"] = StringAttr.get(f"buf{idx}")
+                # Set unsigned attribute if typehint indicates unsigned
+                if input_typehints.get(idx) == "u":
+                    alloc_op.attributes["unsigned"] = UnitAttr.get()
 
                 # Replace original argument with buffer
                 arg.replace_all_uses_with(alloc_op.result)
@@ -283,6 +301,9 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
                 alloc_op.attributes["name"] = StringAttr.get(
                     f"res{idx + len(top_func.arguments)}"
                 )
+                # Set unsigned attribute if typehint indicates unsigned
+                if output_typehints.get(idx) == "u":
+                    alloc_op.attributes["unsigned"] = UnitAttr.get()
 
                 # Update returnop
                 op_return.operation.replace_uses_of_with(arg, alloc_op.result)
@@ -369,11 +390,21 @@ def analyze_arg_load_store_in_func(func, mapping={}):
 
 def analyze_arg_load_store(mod):
     res = {}
-    for func in mod.body.operations:
-        if not isinstance(func, func_d.FuncOp):
-            continue
-        func_res = analyze_arg_load_store_in_func(func, res)
-        res[func.attributes["sym_name"].value] = func_res
+    # Run iteratively until the mapping stabilizes
+    # This is needed because functions may appear in the module in any order
+    # and we need to propagate information from callees to callers
+    changed = True
+    while changed:
+        changed = False
+        for func in mod.body.operations:
+            if not isinstance(func, func_d.FuncOp):
+                continue
+            func_name = func.attributes["sym_name"].value
+            old_res = res.get(func_name, [])
+            func_res = analyze_arg_load_store_in_func(func, res)
+            if func_res != old_res:
+                changed = True
+            res[func_name] = func_res
     return res
 
 
@@ -770,7 +801,7 @@ def analyze_read_write_patterns(mlir_func, external_kernel_lib: dict = {}):
 
             for use in value.uses:
                 user = use.owner
-                if user.name == "memref.subview":
+                if getattr(user, "name", None) == "memref.subview":
                     subview_map[user.result] = arg.arg_number
                     work_list.append(user.result)
 
@@ -893,7 +924,7 @@ def analyze_read_write_patterns(mlir_func, external_kernel_lib: dict = {}):
                     op_str = str(op)
                     arg_refs = re.findall(r"%arg\d+", op_str)
                     for arg_ref in arg_refs:
-                        index = int(arg_ref.group(1))
+                        index = int(re.findall(r"\d+", arg_ref)[0])
                         if (
                             "ins(" in op_str
                             and arg_ref in op_str.split("ins(")[1].split("outs(")[0]

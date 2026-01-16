@@ -63,7 +63,7 @@ void moveReturnToInput(func::FuncOp &funcOp) {
   for (auto op : returnOps) {
     for (unsigned i = 0; i < op->getNumOperands(); i++) {
       Value arg = op->getOperand(i);
-      if (MemRefType type = arg.getType().dyn_cast<MemRefType>()) {
+      if (MemRefType type = llvm::dyn_cast<MemRefType>(arg.getType())) {
         BlockArgument bArg = blockArgs[i];
         // build an memref.copy op to copy the return value to block arg
         builder.create<memref::CopyOp>(op->getLoc(), arg, bArg);
@@ -113,7 +113,8 @@ bool applyMoveReturnToInput(ModuleOp &mod) {
 namespace {
 
 struct AlloMoveReturnToInputTransformation
-    : public MoveReturnToInputBase<AlloMoveReturnToInputTransformation> {
+    : public mlir::allo::impl::MoveReturnToInputBase<
+          AlloMoveReturnToInputTransformation> {
 
   void runOnOperation() override {
     auto mod = getOperation();
