@@ -3,7 +3,7 @@
 Converts AST nodes to properly formatted DSLX code.
 """
 
-from .proc_ast import *
+from .dslx_ast import *
 
 
 class DslxProcSerializer:
@@ -19,6 +19,8 @@ class DslxProcSerializer:
             return self._serialize_module(node)
         elif isinstance(node, DslxProc):
             return self._serialize_proc(node)
+        elif isinstance(node, DslxFunction):
+            return self._serialize_function(node)
         elif isinstance(node, DslxImport):
             return self._serialize_import(node)
         elif isinstance(node, DslxTypeAlias):
@@ -48,10 +50,15 @@ class DslxProcSerializer:
             for alias in module.type_aliases:
                 lines.append(self._serialize_type_alias(alias))
 
+        # Functions
+        for func in module.functions:
+            if lines and lines[-1] != "":
+                lines.append("")
+            lines.append(self._serialize_function(func))
+
         # Procs
         for proc in module.procs:
-            lines.append("")
-            if lines[-1] != "":
+            if lines and lines[-1] != "":
                 lines.append("")
             lines.append(self._serialize_proc(proc))
 
@@ -112,6 +119,47 @@ class DslxProcSerializer:
         self.indent_level -= 1
         lines.append("}")
 
+        return "\n".join(lines)
+
+    def _serialize_function(self, func):
+        """Serialize function definition."""
+        lines = []
+        
+        # Function signature
+        params_str = ", ".join(func.params) if func.params else ""
+        sig = f"fn {func.name}({params_str})"
+        if func.return_type:
+            sig += f" -> {func.return_type}"
+        sig += " {"
+        lines.append(sig)
+        
+        self.indent_level += 1
+        
+        # Function body
+        if isinstance(func.body, list):
+            for stmt in func.body:
+                stmt_lines = self._serialize_stmt(stmt)
+                if isinstance(stmt_lines, str):
+                    lines.append(f"{self._indent()}{stmt_lines}")
+                else:
+                    for line in stmt_lines:
+                        lines.append(f"{self._indent()}{line}")
+        elif isinstance(func.body, DslxBlock):
+            for stmt in func.body.stmts:
+                stmt_lines = self._serialize_stmt(stmt)
+                if isinstance(stmt_lines, str):
+                    lines.append(f"{self._indent()}{stmt_lines}")
+                else:
+                    for line in stmt_lines:
+                        lines.append(f"{self._indent()}{line}")
+        else:
+            # Body is an expression (return value)
+            expr_str = self._serialize_expr(func.body)
+            lines.append(f"{self._indent()}{expr_str}")
+        
+        self.indent_level -= 1
+        lines.append("}")
+        
         return "\n".join(lines)
 
     def _serialize_config(self, config):
@@ -322,7 +370,7 @@ class DslxProcSerializer:
             lines.append(f"}}({init_str});")
             return "\n".join(lines)
 
-        elif isinstance(stmt, DslxConst):
+        elif isinstance(stmt, DslxConstStmt):
             value_str = self._serialize_expr(stmt.value)
             return f"const {stmt.name} = {value_str};"
 

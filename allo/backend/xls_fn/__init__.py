@@ -6,8 +6,7 @@ Supports both DSLX functions (combinational) and procs (stateful with channels).
 
 # AST infrastructure
 from .dslx_ast import DslxProcSerializer
-from .dslx_ast.proc_ast import *
-from .dslx_ast.function_ast import *
+from .dslx_ast.dslx_ast import *
 
 # Lowering - Functions
 from .lowering import (

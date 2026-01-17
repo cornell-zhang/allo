@@ -22,6 +22,25 @@ class MlirToDslxLowerer:
 
     def lower(self):
         params = []
+        # Get function name
+        func_name = "simple_add"  # default
+        if "sym_name" in self.func_op.attributes:
+            func_name = self.func_op.attributes["sym_name"].value
+        elif hasattr(self.func_op, "name") and self.func_op.name:
+            func_name = self.func_op.name.value if hasattr(self.func_op.name, "value") else str(self.func_op.name)
+        
+        # Get return type
+        return_type = None
+        if self.func_op.type.results:
+            ret_mlir_type = self.func_op.type.results[0]
+            if isinstance(ret_mlir_type, MemRefType):
+                shape = list(ret_mlir_type.shape)
+                return_type = "u32" + "".join(f"[{dim}]" for dim in shape)
+            else:
+                # Scalar return type
+                return_type = "u32"
+        
+        # Process arguments
         for i, arg in enumerate(self.func_op.arguments):
             if isinstance(arg.type, MemRefType):
                 name = f"arg{i}"
@@ -30,19 +49,33 @@ class MlirToDslxLowerer:
                 self.ctx.bind(arg, DslxVar(name))
                 type_str = "u32" + "".join(f"[{dim}]" for dim in shape)
                 params.append((name, type_str))
+            else:
+                # Scalar argument
+                name = f"arg{i}"
+                self.ctx.bind(arg, DslxVar(name))
+                params.append((name, "u32"))
 
+        # Process all operations and track return value
+        return_value = None
         for op in self.func_op.body.blocks[0].operations:
+            if isinstance(op, func_d.ReturnOp):
+                if op.operands:
+                    return_value = self.ctx.lookup(op.operands[0])
+                # Don't break - still process other ops if any
+                continue
             self.lower_op(op)
 
-        if self.ctx.result_buffer:
+        # Determine return expression
+        if return_value:
+            return_expr = self.emit_expr(return_value)
+        elif self.ctx.result_buffer:
             return_expr = self.ctx.result_buffer
+        elif self.ctx.memref_shapes:
+            return_expr = list(self.ctx.memref_shapes.keys())[-1]
         else:
-            if self.ctx.memref_shapes:
-                return_expr = list(self.ctx.memref_shapes.keys())[-1]
-            else:
-                return_expr = "arg0"
+            return_expr = "arg0"
 
-        return self.emit_dslx(params, return_expr)
+        return self.emit_dslx(func_name, params, return_expr, return_type)
 
     def lower_op(self, op: Operation):
         if isinstance(op, affine_d.AffineForOp):
@@ -313,22 +346,34 @@ class MlirToDslxLowerer:
         else:
             return index_nodes
 
-    def emit_dslx(self, params, return_expr):
+    def emit_dslx(self, func_name, params, return_expr, return_type=None):
         out = ["", ""]
 
         param_list = ", ".join(f"{name}: {typ}" for name, typ in params)
 
-        if return_expr in self.ctx.memref_shapes:
+        # Determine return type
+        if return_type:
+            ret_type = return_type
+        elif return_expr in self.ctx.memref_shapes:
             shape = self.ctx.memref_shapes[return_expr]
             ret_type = "u32" + "".join(f"[{dim}]" for dim in shape)
         else:
-            ret_type = "u32[32][32]"
+            # Default to u32 for scalar
+            ret_type = "u32"
 
-        out.append(f"fn gemm({param_list}) -> {ret_type} {{")
+        # Build function signature
+        if return_type:
+            sig = f"fn {func_name}({param_list}) -> {ret_type} {{"
+        else:
+            sig = f"fn {func_name}({param_list}) {{"
 
+        out.append(sig)
+
+        # Emit body statements
         for stmt in self.ctx.dslx_stmts:
             out.extend(self.emit_stmt(stmt, indent=1))
 
+        # Emit return expression
         out.append(f"  {return_expr}")
         out.append("}")
 
@@ -342,7 +387,14 @@ class MlirToDslxLowerer:
         if isinstance(node, DslxBinOp):
             return f"({self.emit_expr(node.lhs)} {node.op} {self.emit_expr(node.rhs)})"
         if isinstance(node, DslxLoad):
-            if isinstance(node.index_expr, list):
+            # Check if this is a scalar (no index or empty index list)
+            is_scalar = (node.index_expr is None or 
+                        (isinstance(node.index_expr, list) and len(node.index_expr) == 0))
+            
+            if is_scalar:
+                # Scalar: just return the variable name
+                return node.buffer_name
+            elif isinstance(node.index_expr, list):
                 indices = "][".join(self.emit_expr(idx) for idx in node.index_expr)
                 return f"{node.buffer_name}[{indices}]"
             else:
@@ -372,6 +424,22 @@ class MlirToDslxLowerer:
             return [f"{tab}let {stmt.name} = {self.emit_expr(stmt.expr)};"]
         if isinstance(stmt, DslxStore):
             val_expr = self.emit_expr(stmt.value_expr)
+            
+            # Check if this is a scalar accumulator (not in memref_shapes)
+            # For scalar accumulators in for loops, we just return the value directly
+            is_scalar = stmt.buffer_name not in self.ctx.memref_shapes
+            
+            # Check if index_expr is empty/None (scalar accumulator case)
+            has_index = stmt.index_expr is not None and (
+                (isinstance(stmt.index_expr, list) and len(stmt.index_expr) > 0) or
+                (not isinstance(stmt.index_expr, list))
+            )
+            
+            if is_scalar or not has_index:
+                # Scalar accumulator: just return the value (for loop will handle it)
+                return [f"{tab}{val_expr}"]
+            
+            # Array update: use update() function
             if isinstance(stmt.index_expr, list):
                 if len(stmt.index_expr) == 2:
                     i_expr = self.emit_expr(stmt.index_expr[0])
@@ -405,15 +473,29 @@ class MlirToDslxLowerer:
                     out = [f"{tab}let {accum_tuple} = for ({stmt.iter_name}, {accum_tuple}) in u32:{stmt.lb}..u32:{stmt.ub} {{"]
 
                 # Emit body statements
+                # For scalar accumulators, the body should just return the expression
                 for b in stmt.body:
                     body_lines = self.emit_stmt(b, indent + 1)
                     out.extend(body_lines)
 
-                # Add the accumulator initializer: }(C) or }(C);
+                # Determine initializer value
+                # For scalar accumulators, use u32:0, for arrays use the variable name
+                init_values = []
+                for accum_name in accum_names:
+                    if accum_name in self.ctx.memref_shapes:
+                        # Array: use variable name as initializer
+                        init_values.append(accum_name)
+                    else:
+                        # Scalar: use u32:0 as initializer
+                        init_values.append("u32:0")
+                
+                init_str = "(" + ", ".join(init_values) + ")" if len(init_values) > 1 else init_values[0]
+
+                # Add the accumulator initializer: }(init) or }(init);
                 if is_nested:
-                    out.append(f"{tab}}}({accum_tuple})")
+                    out.append(f"{tab}}}({init_str})")
                 else:
-                    out.append(f"{tab}}}({accum_tuple});")
+                    out.append(f"{tab}}}({init_str});")
             else:
                 out = [f"{tab}for ({stmt.iter_name}, _) in u32:{stmt.lb}..u32:{stmt.ub} {{"]
                 for b in stmt.body:

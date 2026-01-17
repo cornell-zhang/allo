@@ -1,16 +1,25 @@
-"""DSLX Proc AST node classes for representing DSLX proc structures.
+"""Unified DSLX AST node classes for representing DSLX code structure.
 
-This module provides an AST (Abstract Syntax Tree) representation for DSLX procs,
-allowing generic construction and serialization of proc definitions.
+This module provides a complete AST (Abstract Syntax Tree) representation for DSLX,
+supporting both functions and procs, allowing generic construction and serialization
+of DSLX definitions.
 """
 
 
-class DslxProcNode:
-    """Base class for DSLX proc AST nodes."""
+# ============================================================================
+# Base Classes
+# ============================================================================
+
+class DslxNode:
+    """Base class for all DSLX AST nodes."""
     pass
 
 
-class DslxType(DslxProcNode):
+# ============================================================================
+# Type System
+# ============================================================================
+
+class DslxType(DslxNode):
     """Represents a DSLX type."""
 
     def __init__(self, name, params=None):
@@ -18,14 +27,14 @@ class DslxType(DslxProcNode):
         self.params = params or []  # e.g., ["F32", "in"] for chan<F32> in
 
 
-class DslxImport(DslxProcNode):
+class DslxImport(DslxNode):
     """Represents an import statement."""
 
     def __init__(self, module_name):
         self.module_name = module_name
 
 
-class DslxTypeAlias(DslxProcNode):
+class DslxTypeAlias(DslxNode):
     """Represents a type alias (e.g., type F32 = float32::F32)."""
 
     def __init__(self, alias_name, target_type):
@@ -33,23 +42,7 @@ class DslxTypeAlias(DslxProcNode):
         self.target_type = target_type
 
 
-class DslxChannelDecl(DslxProcNode):
-    """Represents a channel declaration in a proc.
-
-    Examples:
-        a_in: chan<F32> in
-        activations: chan<F32>[ROWS] in
-        from_wests: chan<F32>[COLS + u32:1][ROWS] in
-    """
-
-    def __init__(self, name, chan_type, direction, array_dims=None):
-        self.name = name  # e.g., "a_in"
-        self.chan_type = chan_type  # e.g., "F32"
-        self.direction = direction  # "in" or "out"
-        self.array_dims = array_dims or []  # e.g., ["ROWS"], ["COLS", "ROWS"]
-
-
-class DslxParam(DslxProcNode):
+class DslxParam(DslxNode):
     """Represents a parametric value (e.g., K: u32)."""
 
     def __init__(self, name, param_type):
@@ -57,7 +50,11 @@ class DslxParam(DslxProcNode):
         self.param_type = param_type
 
 
-class DslxExpr(DslxProcNode):
+# ============================================================================
+# Expressions
+# ============================================================================
+
+class DslxExpr(DslxNode):
     """Base class for expressions."""
     pass
 
@@ -75,6 +72,19 @@ class DslxVar(DslxExpr):
 
     def __init__(self, name):
         self.name = name
+
+
+class DslxConst(DslxExpr):
+    """Represents a constant value.
+    
+    Can be used as both an expression (in procs) and a statement (in functions).
+    For function-based usage, the 'bits' parameter can be used.
+    """
+
+    def __init__(self, value, bits=32, lit_type=None):
+        self.value = value
+        self.bits = bits  # For function-based usage
+        self.lit_type = lit_type  # For proc-based usage (e.g., "u32", "F32")
 
 
 class DslxFuncCall(DslxExpr):
@@ -117,19 +127,6 @@ class DslxArrayIndex(DslxExpr):
         self.indices = indices  # List of DslxExpr (can be nested)
 
 
-class DslxStmt(DslxProcNode):
-    """Base class for statements."""
-    pass
-
-
-class DslxLet(DslxStmt):
-    """Represents a let binding."""
-
-    def __init__(self, pattern, expr):
-        self.pattern = pattern  # Can be DslxVar or DslxTuple
-        self.expr = expr
-
-
 class DslxIf(DslxExpr):
     """Represents an if-else expression."""
 
@@ -145,6 +142,27 @@ class DslxChannelOp(DslxExpr):
     def __init__(self, op_type, args):
         self.op_type = op_type  # "recv", "send", "join"
         self.args = args  # List of DslxExpr
+
+
+# ============================================================================
+# Statements
+# ============================================================================
+
+class DslxStmt(DslxNode):
+    """Base class for statements."""
+    pass
+
+
+class DslxLet(DslxStmt):
+    """Represents a let binding.
+    
+    For function-based usage: pattern is a string (name).
+    For proc-based usage: pattern can be DslxVar or DslxTuple.
+    """
+
+    def __init__(self, pattern, expr):
+        self.pattern = pattern  # Can be string (function) or DslxVar/DslxTuple (proc)
+        self.expr = expr
 
 
 class DslxChannelCreate(DslxStmt):
@@ -191,7 +209,7 @@ class DslxUnrollFor(DslxStmt):
         self.init_expr = init_expr  # Initial value expression
 
 
-class DslxConst(DslxStmt):
+class DslxConstStmt(DslxStmt):
     """Represents a const declaration.
 
     Example:
@@ -203,14 +221,84 @@ class DslxConst(DslxStmt):
         self.value = value  # DslxExpr
 
 
-class DslxBlock(DslxProcNode):
+class DslxBlock(DslxNode):
     """Represents a block of statements."""
 
     def __init__(self, stmts):
         self.stmts = stmts  # List of DslxStmt
 
 
-class DslxConfigFunc(DslxProcNode):
+# ============================================================================
+# Function-Specific Nodes (for function-based lowering)
+# ============================================================================
+
+class DslxLoad(DslxNode):
+    """Represents a memory load operation (function-based)."""
+
+    def __init__(self, buffer_name, index_expr):
+        self.buffer_name = buffer_name
+        self.index_expr = index_expr
+
+
+class DslxStore(DslxNode):
+    """Represents a memory store operation (function-based)."""
+
+    def __init__(self, buffer_name, index_expr, value_expr):
+        self.buffer_name = buffer_name
+        self.index_expr = index_expr
+        self.value_expr = value_expr
+
+
+class DslxFor(DslxNode):
+    """Represents a for loop (function-based)."""
+
+    def __init__(self, iter_name, lb, ub, body, accum_vars=None):
+        self.iter_name = iter_name
+        self.lb = lb
+        self.ub = ub
+        self.body = body
+        self.accum_vars = accum_vars or []
+
+
+class DslxArrayInit(DslxNode):
+    """Represents an array initialization (function-based)."""
+
+    def __init__(self, elem_expr, shape):
+        self.elem_expr = elem_expr
+        self.shape = shape
+
+
+class DslxFunction(DslxNode):
+    """Represents a DSLX function definition (function-based)."""
+
+    def __init__(self, name, params, return_type, body):
+        self.name = name
+        self.params = params
+        self.return_type = return_type
+        self.body = body
+
+
+# ============================================================================
+# Proc-Specific Nodes
+# ============================================================================
+
+class DslxChannelDecl(DslxNode):
+    """Represents a channel declaration in a proc.
+
+    Examples:
+        a_in: chan<F32> in
+        activations: chan<F32>[ROWS] in
+        from_wests: chan<F32>[COLS + u32:1][ROWS] in
+    """
+
+    def __init__(self, name, chan_type, direction, array_dims=None):
+        self.name = name  # e.g., "a_in"
+        self.chan_type = chan_type  # e.g., "F32"
+        self.direction = direction  # "in" or "out"
+        self.array_dims = array_dims or []  # e.g., ["ROWS"], ["COLS", "ROWS"]
+
+
+class DslxConfigFunc(DslxNode):
     """Represents a proc config function."""
 
     def __init__(self, params, body):
@@ -218,14 +306,14 @@ class DslxConfigFunc(DslxProcNode):
         self.body = body  # DslxBlock or DslxExpr (typically tuple return)
 
 
-class DslxInitFunc(DslxProcNode):
+class DslxInitFunc(DslxNode):
     """Represents a proc init function."""
 
     def __init__(self, init_expr):
         self.init_expr = init_expr  # DslxExpr
 
 
-class DslxNextFunc(DslxProcNode):
+class DslxNextFunc(DslxNode):
     """Represents a proc next function."""
 
     def __init__(self, state_type, body):
@@ -233,7 +321,7 @@ class DslxNextFunc(DslxProcNode):
         self.body = body  # DslxBlock
 
 
-class DslxProc(DslxProcNode):
+class DslxProc(DslxNode):
     """Represents a complete proc definition."""
 
     def __init__(self, name, type_params=None, channels=None, config=None,
@@ -247,10 +335,11 @@ class DslxProc(DslxProcNode):
         self.is_public = is_public
 
 
-class DslxModule(DslxProcNode):
+class DslxModule(DslxNode):
     """Represents a complete DSLX module."""
 
-    def __init__(self, imports=None, type_aliases=None, procs=None):
+    def __init__(self, imports=None, type_aliases=None, procs=None, functions=None):
         self.imports = imports or []  # List of DslxImport
         self.type_aliases = type_aliases or []  # List of DslxTypeAlias
         self.procs = procs or []  # List of DslxProc
+        self.functions = functions or []  # List of DslxFunction

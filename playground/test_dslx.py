@@ -1,12 +1,19 @@
 """Test script to see DSLX code emitted by xls_fn backend.
 
-This script demonstrates both function-based and proc-based DSLX lowering.
+This script demonstrates both function-based and proc-based DSLX lowering,
+and shows the unified DslxModule AST that can contain both functions and procs.
 """
 
 import numpy as np
 import allo
 from allo.ir.types import int32
 from allo.backend.xls_fn import DslxFunctionModule, DslxProcModule
+from allo.backend.xls_fn.dslx_ast import (
+    DslxModule, DslxFunction, DslxProc, DslxVar, DslxBinOp, DslxConst,
+    DslxLet, DslxBlock, DslxChannelDecl, DslxConfigFunc, DslxInitFunc,
+    DslxNextFunc, DslxType, DslxLiteral, DslxTuple, DslxFuncCall
+)
+from allo.backend.xls_fn.dslx_ast.serializer import DslxProcSerializer
 
 
 def test_function_lowering():
@@ -131,6 +138,75 @@ def test_simple_comb_proc():
     print()
 
 
+def test_unified_dslx_module():
+    """Test unified DslxModule AST with both functions and procs."""
+    print("=" * 70)
+    print("TEST 6: Unified DslxModule AST (Functions + Procs)")
+    print("=" * 70)
+    print()
+    print("Demonstrating the unified AST that can contain both functions and procs")
+    print("in a single DSLX module, showing the benefit of the unified design.")
+    print()
+
+    # Create a simple function AST
+    # In DSLX, functions return the last expression
+    add_func = DslxFunction(
+        name="add",
+        params=["a: u32", "b: u32"],
+        return_type="u32",
+        body=[
+            DslxLet("result", DslxBinOp("+", DslxVar("a"), DslxVar("b"))),
+            DslxVar("result")  # Return value (last expression)
+        ]
+    )
+
+    # Create a simple proc AST (minimal example)
+    accumulator_proc = DslxProc(
+        name="accumulator",
+        channels=[
+            DslxChannelDecl("input", "u32", "in"),
+            DslxChannelDecl("output", "u32", "out")
+        ],
+        config=DslxConfigFunc(
+            params=[("input", "chan<u32>", "in"), ("output", "chan<u32>", "out")],
+            body=DslxTuple([DslxVar("input"), DslxVar("output")])
+        ),
+        init=DslxInitFunc(DslxLiteral(0, "u32")),
+        next_func=DslxNextFunc(
+            state_type="u32",
+            body=DslxBlock([
+                DslxLet(
+                    DslxTuple([DslxVar("tok"), DslxVar("val")]),
+                    DslxFuncCall("recv", [DslxVar("join()"), DslxVar("input")])
+                ),
+                DslxLet("new_state", DslxBinOp("+", DslxVar("state"), DslxVar("val"))),
+                DslxVar("new_state")  # Return new state
+            ])
+        ),
+        is_public=True
+    )
+
+    # Create unified module with both function and proc
+    unified_module = DslxModule(
+        functions=[add_func],
+        procs=[accumulator_proc]
+    )
+
+    # Serialize using the unified serializer
+    serializer = DslxProcSerializer()
+    dslx_code = serializer.serialize(unified_module)
+
+    print("Generated DSLX Module Code (with both function and proc):")
+    print("-" * 70)
+    print(dslx_code)
+    print()
+    print("✓ This demonstrates the unified AST design:")
+    print("  - Single DslxModule can contain both functions and procs")
+    print("  - Shared AST nodes (DslxVar, DslxBinOp, etc.) work for both")
+    print("  - Unified serializer handles both function and proc codegen")
+    print()
+
+
 if __name__ == "__main__":
     print("\n" + "=" * 70)
     print("XLS_FN DSLX Code Generation Test")
@@ -173,6 +249,14 @@ if __name__ == "__main__":
         test_simple_comb_proc()
     except Exception as e:
         print(f"Error in test_simple_comb_proc: {e}")
+        import traceback
+        traceback.print_exc()
+        print()
+
+    try:
+        test_unified_dslx_module()
+    except Exception as e:
+        print(f"Error in test_unified_dslx_module: {e}")
         import traceback
         traceback.print_exc()
         print()
