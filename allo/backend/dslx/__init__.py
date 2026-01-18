@@ -38,7 +38,7 @@ from .utils import (
 )
 
 # Module interfaces for full toolchain
-from .xls_fn import (
+from .dslx import (
     DslxFunctionModule,
     XlsIRModule,
     DslxProcModule,

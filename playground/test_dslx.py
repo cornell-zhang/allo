@@ -7,13 +7,13 @@ and shows the unified DslxModule AST that can contain both functions and procs.
 import numpy as np
 import allo
 from allo.ir.types import int32
-from allo.backend.xls_fn import DslxFunctionModule, DslxProcModule
-from allo.backend.xls_fn.dslx_ast import (
-    DslxModule, DslxFunction, DslxProc, DslxVar, DslxBinOp, DslxConst,
+from allo.backend.dslx import DslxFunctionModule, DslxProcModule
+from allo.backend.dslx.dslx_ast import (
+    DslxModule, DslxFunction, DslxProc, DslxVar, DslxBinOp, DslxConst,  
     DslxLet, DslxBlock, DslxChannelDecl, DslxConfigFunc, DslxInitFunc,
     DslxNextFunc, DslxType, DslxLiteral, DslxTuple, DslxFuncCall
 )
-from allo.backend.xls_fn.dslx_ast.serializer import DslxProcSerializer
+from allo.backend.dslx.dslx_ast.serializer import DslxProcSerializer
 
 
 def test_function_lowering():

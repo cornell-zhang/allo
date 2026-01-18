@@ -1,4 +1,4 @@
-# allo/backend/xls_fn/xls.py
+# allo/backend/dslx/dslx.py
 # xls backend interface for function-based code generation and testing.
 
 import os

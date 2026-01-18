@@ -33,7 +33,7 @@ try:
     from allo._mlir.ir import Module as MlirModule
     from allo._mlir import ir as mlir_ir
     from allo._mlir.dialects import func as func_d
-    from allo.backend.xls_fn.lowering import MlirToXlsIRLowerer
+    from allo.backend.dslx.lowering import MlirToXlsIRLowerer
 except ImportError as e:
     print(f"Error: Failed to import allo modules: {e}", file=sys.stderr)
     print("Please ensure allo is properly installed.", file=sys.stderr)
