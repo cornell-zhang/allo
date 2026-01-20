@@ -336,7 +336,98 @@ also supports this by explicitly specifying the return type as a tuple.</p>
 }
 </pre></div>
 </div>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 0.215 seconds)</p>
+</section>
+<section id="compile-time-constant-expressions-constexpr">
+<h2>Compile-Time Constant Expressions (ConstExpr)<a class="headerlink" href="#compile-time-constant-expressions-constexpr" title="Link to this heading"><span>¶</span></a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">ConstExpr</span></code> allows you to declare variables that are evaluated at Python
+level during compilation. This enables using Python helper functions for
+compile-time computations like computing coefficients or lookup indices.</p>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">allo.ir.types</span><span class="w"> </span><span class="kn">import</span> <span class="n">ConstExpr</span>
+
+
+<span class="c1"># Python helper functions - evaluated at compile time</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">compute_coefficient</span><span class="p">(</span><span class="n">i</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Compute a coefficient based on index.&quot;&quot;&quot;</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
+
+    <span class="k">return</span> <span class="n">math</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="mf">2.0</span> <span class="o">*</span> <span class="n">math</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="n">i</span> <span class="o">/</span> <span class="mi">8</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">compute_index</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">offset</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Compute a transformed index.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="p">(</span><span class="n">i</span> <span class="o">+</span> <span class="n">offset</span><span class="p">)</span> <span class="o">%</span> <span class="mi">8</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">kernel_with_constexpr</span><span class="p">(</span><span class="n">A</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="mi">8</span><span class="p">],</span> <span class="n">B</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="mi">8</span><span class="p">]):</span>
+    <span class="k">with</span> <span class="n">allo</span><span class="o">.</span><span class="n">meta_for</span><span class="p">(</span><span class="mi">8</span><span class="p">)</span> <span class="k">as</span> <span class="n">i</span><span class="p">:</span>
+        <span class="c1"># ConstExpr values are computed at Python level during compilation</span>
+        <span class="n">coef</span><span class="p">:</span> <span class="n">ConstExpr</span><span class="p">[</span><span class="n">float32</span><span class="p">]</span> <span class="o">=</span> <span class="n">compute_coefficient</span><span class="p">(</span><span class="n">i</span><span class="p">)</span>
+        <span class="n">idx</span><span class="p">:</span> <span class="n">ConstExpr</span><span class="p">[</span><span class="n">int32</span><span class="p">]</span> <span class="o">=</span> <span class="n">compute_index</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+
+        <span class="c1"># Use the compile-time constants in expressions</span>
+        <span class="n">B</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">A</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span> <span class="o">*</span> <span class="n">coef</span>
+
+
+<span class="n">s</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">customize</span><span class="p">(</span><span class="n">kernel_with_constexpr</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">module</span><span class="p">)</span>
+</pre></div>
+</div>
+<div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>module {
+  func.func @kernel_with_constexpr(%arg0: memref&lt;8xf32&gt;, %arg1: memref&lt;8xf32&gt;) attributes {itypes = &quot;__&quot;, otypes = &quot;&quot;} {
+    %0 = affine.load %arg0[3] {from = &quot;A&quot;} : memref&lt;8xf32&gt;
+    %cst = arith.constant 1.000000e+00 : f32
+    %cst_0 = arith.constant 1.000000e+00 : f32
+    %1 = arith.mulf %0, %cst_0 : f32
+    affine.store %1, %arg1[0] {to = &quot;B&quot;} : memref&lt;8xf32&gt;
+    %2 = affine.load %arg0[4] {from = &quot;A&quot;} : memref&lt;8xf32&gt;
+    %cst_1 = arith.constant 0.707106769 : f32
+    %cst_2 = arith.constant 0.707106769 : f32
+    %3 = arith.mulf %2, %cst_2 : f32
+    affine.store %3, %arg1[1] {to = &quot;B&quot;} : memref&lt;8xf32&gt;
+    %4 = affine.load %arg0[5] {from = &quot;A&quot;} : memref&lt;8xf32&gt;
+    %cst_3 = arith.constant 6.12323426E-17 : f32
+    %cst_4 = arith.constant 6.12323426E-17 : f32
+    %5 = arith.mulf %4, %cst_4 : f32
+    affine.store %5, %arg1[2] {to = &quot;B&quot;} : memref&lt;8xf32&gt;
+    %6 = affine.load %arg0[6] {from = &quot;A&quot;} : memref&lt;8xf32&gt;
+    %cst_5 = arith.constant -0.707106769 : f32
+    %cst_6 = arith.constant -0.707106769 : f32
+    %7 = arith.mulf %6, %cst_6 : f32
+    affine.store %7, %arg1[3] {to = &quot;B&quot;} : memref&lt;8xf32&gt;
+    %8 = affine.load %arg0[7] {from = &quot;A&quot;} : memref&lt;8xf32&gt;
+    %cst_7 = arith.constant -1.000000e+00 : f32
+    %cst_8 = arith.constant -1.000000e+00 : f32
+    %9 = arith.mulf %8, %cst_8 : f32
+    affine.store %9, %arg1[4] {to = &quot;B&quot;} : memref&lt;8xf32&gt;
+    %10 = affine.load %arg0[0] {from = &quot;A&quot;} : memref&lt;8xf32&gt;
+    %cst_9 = arith.constant -0.707106769 : f32
+    %cst_10 = arith.constant -0.707106769 : f32
+    %11 = arith.mulf %10, %cst_10 : f32
+    affine.store %11, %arg1[5] {to = &quot;B&quot;} : memref&lt;8xf32&gt;
+    %12 = affine.load %arg0[1] {from = &quot;A&quot;} : memref&lt;8xf32&gt;
+    %cst_11 = arith.constant -1.83697015E-16 : f32
+    %cst_12 = arith.constant -1.83697015E-16 : f32
+    %13 = arith.mulf %12, %cst_12 : f32
+    affine.store %13, %arg1[6] {to = &quot;B&quot;} : memref&lt;8xf32&gt;
+    %14 = affine.load %arg0[2] {from = &quot;A&quot;} : memref&lt;8xf32&gt;
+    %cst_13 = arith.constant 0.707106769 : f32
+    %cst_14 = arith.constant 0.707106769 : f32
+    %15 = arith.mulf %14, %cst_14 : f32
+    affine.store %15, %arg1[7] {to = &quot;B&quot;} : memref&lt;8xf32&gt;
+    return
+  }
+}
+</pre></div>
+</div>
+<p>From the generated MLIR, you can see that the <code class="docutils literal notranslate"><span class="pre">coef</span></code> and <code class="docutils literal notranslate"><span class="pre">idx</span></code> values
+are embedded as constants in the code, not computed at runtime.</p>
+<p>Key points about <code class="docutils literal notranslate"><span class="pre">ConstExpr</span></code>:</p>
+<ul class="simple">
+<li><p>The RHS is evaluated at Python level, not compiled as Allo code</p></li>
+<li><p>You can use arbitrary Python functions (math, etc.)</p></li>
+<li><p>Use <code class="docutils literal notranslate"><span class="pre">ConstExpr[int32]</span></code> or <code class="docutils literal notranslate"><span class="pre">ConstExpr[float32]</span></code> for the type annotation</p></li>
+</ul>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 0.240 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-gallery-dive-04-features-py">
 <div class="sphx-glr-download sphx-glr-download-jupyter docutils container">
 <p><a class="reference download internal" download="" href="../_downloads/90b883f891c63f481ffa4756cd7e0781/dive_04_features.ipynb"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Jupyter</span> <span class="pre">notebook:</span> <span class="pre">dive_04_features.ipynb</span></code></a></p>
@@ -369,6 +460,7 @@ also supports this by explicitly specifying the return type as a tuple.</p>
 <li><a class="reference internal" href="#">Other Features</a><ul>
 <li><a class="reference internal" href="#dynamic-shapes">Dynamic Shapes</a></li>
 <li><a class="reference internal" href="#tuple-return">Tuple Return</a></li>
+<li><a class="reference internal" href="#compile-time-constant-expressions-constexpr">Compile-Time Constant Expressions (ConstExpr)</a></li>
 </ul>
 </li>
 </ul>

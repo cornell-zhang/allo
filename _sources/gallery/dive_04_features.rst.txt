@@ -146,7 +146,7 @@ Tuple Return
 Another feature is the tuple support. As in Python, we can return multiple values from a function, Allo
 also supports this by explicitly specifying the return type as a tuple.
 
-.. GENERATED FROM PYTHON SOURCE LINES 49-77
+.. GENERATED FROM PYTHON SOURCE LINES 49-78
 
 .. code-block:: Python
 
@@ -178,6 +178,7 @@ also supports this by explicitly specifying the return type as a tuple.
         np_C_ref[i], np_D_ref[i] = callee(np_A[i], np_B[i])
     np.testing.assert_allclose(np_C, np_C_ref)
     np.testing.assert_allclose(np_D, np_D_ref)
+
 
 
 
@@ -224,10 +225,121 @@ also supports this by explicitly specifying the return type as a tuple.
 
 
 
+.. GENERATED FROM PYTHON SOURCE LINES 79-84
+
+Compile-Time Constant Expressions (ConstExpr)
+----------------------------------------------
+``ConstExpr`` allows you to declare variables that are evaluated at Python
+level during compilation. This enables using Python helper functions for
+compile-time computations like computing coefficients or lookup indices.
+
+.. GENERATED FROM PYTHON SOURCE LINES 84-114
+
+.. code-block:: Python
+
+
+    from allo.ir.types import ConstExpr
+
+
+    # Python helper functions - evaluated at compile time
+    def compute_coefficient(i):
+        """Compute a coefficient based on index."""
+        import math
+
+        return math.cos(2.0 * math.pi * i / 8)
+
+
+    def compute_index(i, offset):
+        """Compute a transformed index."""
+        return (i + offset) % 8
+
+
+    def kernel_with_constexpr(A: float32[8], B: float32[8]):
+        with allo.meta_for(8) as i:
+            # ConstExpr values are computed at Python level during compilation
+            coef: ConstExpr[float32] = compute_coefficient(i)
+            idx: ConstExpr[int32] = compute_index(i, 3)
+
+            # Use the compile-time constants in expressions
+            B[i] = A[idx] * coef
+
+
+    s = allo.customize(kernel_with_constexpr)
+    print(s.module)
+
+
+
+
+
+.. rst-class:: sphx-glr-script-out
+
+ .. code-block:: none
+
+    module {
+      func.func @kernel_with_constexpr(%arg0: memref<8xf32>, %arg1: memref<8xf32>) attributes {itypes = "__", otypes = ""} {
+        %0 = affine.load %arg0[3] {from = "A"} : memref<8xf32>
+        %cst = arith.constant 1.000000e+00 : f32
+        %cst_0 = arith.constant 1.000000e+00 : f32
+        %1 = arith.mulf %0, %cst_0 : f32
+        affine.store %1, %arg1[0] {to = "B"} : memref<8xf32>
+        %2 = affine.load %arg0[4] {from = "A"} : memref<8xf32>
+        %cst_1 = arith.constant 0.707106769 : f32
+        %cst_2 = arith.constant 0.707106769 : f32
+        %3 = arith.mulf %2, %cst_2 : f32
+        affine.store %3, %arg1[1] {to = "B"} : memref<8xf32>
+        %4 = affine.load %arg0[5] {from = "A"} : memref<8xf32>
+        %cst_3 = arith.constant 6.12323426E-17 : f32
+        %cst_4 = arith.constant 6.12323426E-17 : f32
+        %5 = arith.mulf %4, %cst_4 : f32
+        affine.store %5, %arg1[2] {to = "B"} : memref<8xf32>
+        %6 = affine.load %arg0[6] {from = "A"} : memref<8xf32>
+        %cst_5 = arith.constant -0.707106769 : f32
+        %cst_6 = arith.constant -0.707106769 : f32
+        %7 = arith.mulf %6, %cst_6 : f32
+        affine.store %7, %arg1[3] {to = "B"} : memref<8xf32>
+        %8 = affine.load %arg0[7] {from = "A"} : memref<8xf32>
+        %cst_7 = arith.constant -1.000000e+00 : f32
+        %cst_8 = arith.constant -1.000000e+00 : f32
+        %9 = arith.mulf %8, %cst_8 : f32
+        affine.store %9, %arg1[4] {to = "B"} : memref<8xf32>
+        %10 = affine.load %arg0[0] {from = "A"} : memref<8xf32>
+        %cst_9 = arith.constant -0.707106769 : f32
+        %cst_10 = arith.constant -0.707106769 : f32
+        %11 = arith.mulf %10, %cst_10 : f32
+        affine.store %11, %arg1[5] {to = "B"} : memref<8xf32>
+        %12 = affine.load %arg0[1] {from = "A"} : memref<8xf32>
+        %cst_11 = arith.constant -1.83697015E-16 : f32
+        %cst_12 = arith.constant -1.83697015E-16 : f32
+        %13 = arith.mulf %12, %cst_12 : f32
+        affine.store %13, %arg1[6] {to = "B"} : memref<8xf32>
+        %14 = affine.load %arg0[2] {from = "A"} : memref<8xf32>
+        %cst_13 = arith.constant 0.707106769 : f32
+        %cst_14 = arith.constant 0.707106769 : f32
+        %15 = arith.mulf %14, %cst_14 : f32
+        affine.store %15, %arg1[7] {to = "B"} : memref<8xf32>
+        return
+      }
+    }
+
+
+
+
+
+.. GENERATED FROM PYTHON SOURCE LINES 115-123
+
+From the generated MLIR, you can see that the ``coef`` and ``idx`` values
+are embedded as constants in the code, not computed at runtime.
+
+Key points about ``ConstExpr``:
+
+- The RHS is evaluated at Python level, not compiled as Allo code
+- You can use arbitrary Python functions (math, etc.)
+- Use ``ConstExpr[int32]`` or ``ConstExpr[float32]`` for the type annotation
+
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.215 seconds)
+   **Total running time of the script:** (0 minutes 0.240 seconds)
 
 
 .. _sphx_glr_download_gallery_dive_04_features.py:

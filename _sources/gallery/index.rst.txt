@@ -119,23 +119,6 @@ Allo Documentations
 
 .. only:: html
 
-  .. image:: /gallery/images/thumb/sphx_glr_dive_04_features_thumb.png
-    :alt:
-
-  :doc:`/gallery/dive_04_features`
-
-.. raw:: html
-
-      <div class="sphx-glr-thumbnail-title">Other Features</div>
-    </div>
-
-
-.. raw:: html
-
-    <div class="sphx-glr-thumbcontainer" tooltip="Author: Hongzheng Chen (hzchen@cs.cornell.edu)">
-
-.. only:: html
-
   .. image:: /gallery/images/thumb/sphx_glr_developer_02_mlir_thumb.png
     :alt:
 
@@ -164,6 +147,23 @@ Allo Documentations
     </div>
 
 
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="Author: Hongzheng Chen (hzchen@cs.cornell.edu)">
+
+.. only:: html
+
+  .. image:: /gallery/images/thumb/sphx_glr_dive_04_features_thumb.png
+    :alt:
+
+  :doc:`/gallery/dive_04_features`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Other Features</div>
+    </div>
+
+
 .. thumbnail-parent-div-close
 
 .. raw:: html
@@ -180,9 +180,9 @@ Allo Documentations
    /gallery/tutorial_01_get_started
    /gallery/dive_02_template
    /gallery/dive_05_verifier
-   /gallery/dive_04_features
    /gallery/developer_02_mlir
    /gallery/dive_03_composition
+   /gallery/dive_04_features
 
 
 
