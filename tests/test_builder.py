@@ -1373,5 +1373,42 @@ def test_constexpr_error_uninitialized():
         allo.customize(kernel)
 
 
+def test_constexpr_with_helper_functions():
+    """Test ConstExpr with Python helper functions evaluated at compile time."""
+    import math
+
+    # Python helper functions - evaluated at compile time
+    def compute_coefficient(i):
+        return math.cos(2.0 * math.pi * i / 8)
+
+    def compute_index(i, offset):
+        return (i + offset) % 8
+
+    def kernel(A: float32[8], B: float32[8]):
+        with allo.meta_for(8) as i:
+            # ConstExpr values are computed at Python level during compilation
+            coef: ConstExpr[float32] = compute_coefficient(i)
+            idx: ConstExpr[int32] = compute_index(i, 3)
+            B[i] = A[idx] * coef
+
+    s = allo.customize(kernel)
+    print(s.module)
+    mod = s.build()
+
+    # Verify correctness
+    np_A = np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], dtype=np.float32)
+    np_B = np.zeros(8, dtype=np.float32)
+    mod(np_A, np_B)
+
+    # Compute expected result
+    expected = np.zeros(8, dtype=np.float32)
+    for i in range(8):
+        idx = compute_index(i, 3)
+        coef = compute_coefficient(i)
+        expected[i] = np_A[idx] * coef
+
+    np.testing.assert_allclose(np_B, expected, rtol=1e-5)
+
+
 if __name__ == "__main__":
     pytest.main([__file__])
