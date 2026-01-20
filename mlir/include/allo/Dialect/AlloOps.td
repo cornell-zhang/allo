@@ -1100,10 +1100,7 @@ def TransformLayoutOp : Allo_Op<"transform_layout"> {
 // Meta-programming operations
 //===----------------------------------------------------------------------===//
 
-def MetaIfOp : Allo_Op<"meta_if", [DeclareOpInterfaceMethods<RegionBranchOpInterface, [
-    "getNumRegionInvocations", "getRegionInvocationBounds",
-    "getEntrySuccessorRegions", "getSuccessorInputs"]>,
-    SingleBlockImplicitTerminator<"allo::YieldOp">,
+def MetaIfOp : Allo_Op<"meta_if", [SingleBlockImplicitTerminator<"allo::YieldOp">,
     RecursiveMemoryEffects, RecursivelySpeculatable, NoRegionArguments]> {
   let summary = "meta-programming if-then-else operation";
   let description = [{

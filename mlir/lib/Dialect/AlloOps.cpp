@@ -100,9 +100,113 @@ static void buildCmpFixedOp(OpBuilder &build, OperationState &result,
 // MetaIfOp
 //===----------------------------------------------------------------------===//
 
-static void buildTerminatedBody(OpBuilder &builder, Location loc) {
+void buildTerminatedBody(OpBuilder &builder, Location loc) {
   YieldOp::create(builder, loc);
 }
+
+void MetaIfOp::build(OpBuilder &builder, OperationState &result, Value cond,
+                     bool withElseRegion) {
+  result.addOperands(cond);
+  Region *thenRegion = result.addRegion();
+  Region *elseRegion = result.addRegion();
+  MetaIfOp::ensureTerminator(*thenRegion, builder, result.location);
+  if (withElseRegion)
+    MetaIfOp::ensureTerminator(*elseRegion, builder, result.location);
+}
+
+void MetaIfOp::build(OpBuilder &builder, OperationState &result, Value cond,
+                     function_ref<void(OpBuilder &, Location)> thenBuilder,
+                     function_ref<void(OpBuilder &, Location)> elseBuilder) {
+  result.addOperands(cond);
+  Region *thenRegion = result.addRegion();
+  Region *elseRegion = result.addRegion();
+
+  OpBuilder::InsertionGuard guard(builder);
+  builder.createBlock(thenRegion);
+  thenBuilder(builder, result.location);
+
+  if (elseBuilder) {
+    builder.createBlock(elseRegion);
+    elseBuilder(builder, result.location);
+  }
+}
+
+ParseResult MetaIfOp::parse(OpAsmParser &parser, OperationState &result) {
+  // Parse the condition.
+  OpAsmParser::UnresolvedOperand cond;
+  if (parser.parseOperand(cond) ||
+      parser.resolveOperand(cond, parser.getBuilder().getI1Type(),
+                            result.operands))
+    return failure();
+
+  // Parse the 'then' region.
+  Region *thenRegion = result.addRegion();
+  if (parser.parseRegion(*thenRegion, /*arguments=*/{}, /*argTypes=*/{}))
+    return failure();
+  MetaIfOp::ensureTerminator(*thenRegion, parser.getBuilder(), result.location);
+
+  // Parse the 'else' region.
+  Region *elseRegion = result.addRegion();
+  if (succeeded(parser.parseOptionalKeyword("else"))) {
+    if (parser.parseRegion(*elseRegion, /*arguments=*/{}, /*argTypes=*/{}))
+      return failure();
+    MetaIfOp::ensureTerminator(*elseRegion, parser.getBuilder(),
+                               result.location);
+  }
+
+  // Parse the optional attribute dictionary.
+  if (parser.parseOptionalAttrDict(result.attributes))
+    return failure();
+
+  return success();
+}
+
+void MetaIfOp::print(OpAsmPrinter &p) {
+  p << " " << getCondition();
+  p << " ";
+  p.printRegion(getThenRegion(),
+                /*printEntryBlockArgs=*/false,
+                /*printBlockTerminators=*/true);
+
+  if (!getElseRegion().empty()) {
+    p << " else ";
+    p.printRegion(getElseRegion(),
+                  /*printEntryBlockArgs=*/false,
+                  /*printBlockTerminators=*/true);
+  }
+
+  p.printOptionalAttrDict(getOperation()->getAttrs());
+}
+
+LogicalResult MetaIfOp::verify() {
+  if (getNumRegions() != 2)
+    return emitOpError("expected 2 regions");
+  if (!getThenRegion().hasOneBlock())
+    return emitOpError("expected exactly 1 block in the 'then' region");
+  if (!getElseRegion().empty() && !getElseRegion().hasOneBlock())
+    return emitOpError("expected at most 1 block in the 'else' region");
+  return success();
+}
+
+Block *MetaIfOp::thenBlock() { return &getThenRegion().back(); }
+YieldOp MetaIfOp::thenYield() {
+  return cast<YieldOp>(thenBlock()->getTerminator());
+}
+Block *MetaIfOp::elseBlock() {
+  Region &r = getElseRegion();
+  if (r.empty())
+    return nullptr;
+  return &r.back();
+}
+YieldOp MetaIfOp::elseYield() {
+  return cast<YieldOp>(elseBlock()->getTerminator());
+}
+
+void MetaIfOp::getCanonicalizationPatterns(RewritePatternSet &results,
+                                           MLIRContext *context) {
+    // TODO
+}
+
 
 } // namespace allo
 } // namespace mlir
