@@ -1103,7 +1103,7 @@ def TransformLayoutOp : Allo_Op<"transform_layout"> {
 def MetaIfOp : Allo_Op<"meta_if", [DeclareOpInterfaceMethods<RegionBranchOpInterface, [
     "getNumRegionInvocations", "getRegionInvocationBounds",
     "getEntrySuccessorRegions", "getSuccessorInputs"]>,
-    InferTypeOpAdaptor, SingleBlockImplicitTerminator<"allo::YieldOp">,
+    SingleBlockImplicitTerminator<"allo::YieldOp">,
     RecursiveMemoryEffects, RecursivelySpeculatable, NoRegionArguments]> {
   let summary = "meta-programming if-then-else operation";
   let description = [{
@@ -1112,7 +1112,7 @@ def MetaIfOp : Allo_Op<"meta_if", [DeclareOpInterfaceMethods<RegionBranchOpInter
 
     This operation is structurally and semantically aligned with `scf.if`,
     but its condition is intended to be evaluated at compile time and is used
-    for meta-programming.
+    for meta-programming. Unlike `scf.if`, this operation does not yield SSA results.
     
     The operand to an if operation is a boolean value. For example:
 
@@ -1129,18 +1129,12 @@ def MetaIfOp : Allo_Op<"meta_if", [DeclareOpInterfaceMethods<RegionBranchOpInter
     The blocks are always terminated with `allo.yield`.
   }];
   let arguments = (ins I1:$condition);
-  let results = (outs Variadic<AnyType>:$results);
   let regions = (region SizedRegion<1>:$thenRegion,
                         MaxSizedRegion<1>:$elseRegion);
 
   let skipDefaultBuilders = 1;
   let builders = [
-    OpBuilder<(ins "TypeRange":$resultTypes, "Value":$cond)>,
-    OpBuilder<(ins "TypeRange":$resultTypes, "Value":$cond,
-      "bool":$addThenBlock, "bool":$addElseBlock)>,
     OpBuilder<(ins "Value":$cond, "bool":$withElseRegion)>,
-    OpBuilder<(ins "TypeRange":$resultTypes, "Value":$cond,
-      "bool":$withElseRegion)>,
     OpBuilder<(ins "Value":$cond,
       CArg<"function_ref<void(OpBuilder &, Location)>",
            "buildTerminatedBody">:$thenBuilder,
@@ -1151,22 +1145,22 @@ def MetaIfOp : Allo_Op<"meta_if", [DeclareOpInterfaceMethods<RegionBranchOpInter
   let extraClassDeclaration = [{
     OpBuilder getThenBodyBuilder(OpBuilder::Listener *listener = nullptr) {
       Block* body = getBody(0);
-      return getResults().empty() ? OpBuilder::atBlockTerminator(body, listener)
-                                  : OpBuilder::atBlockEnd(body, listener);
+      return OpBuilder::atBlockTerminator(body, listener);
     }
     OpBuilder getElseBodyBuilder(OpBuilder::Listener *listener = nullptr) {
       Block* body = getBody(1);
-      return getResults().empty() ? OpBuilder::atBlockTerminator(body, listener)
-                                  : OpBuilder::atBlockEnd(body, listener);
+      assert(body && "else region does not exist");
+      return OpBuilder::atBlockTerminator(body, listener);
     }
+
     Block* thenBlock();
     YieldOp thenYield();
     Block* elseBlock();
     YieldOp elseYield();
   }];
-  let hasCanonicalizer = 1;
-  let hasCustomAssemblyFormat = 1;
-  let hasVerifier = 1;
+  let hasCanonicalizer = 1; // rewrite / fold
+  let hasCustomAssemblyFormat = 1; // print
+  let hasVerifier = 1; // verify
 }
 
 #endif // ALLO_OPS
