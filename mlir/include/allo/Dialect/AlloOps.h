@@ -22,6 +22,12 @@
 #include "allo/Dialect/AlloAttrs.h"
 #include "allo/Dialect/AlloTypes.h"
 
+namespace mlir {
+namespace allo {
+    void buildTerminatedBody(OpBuilder &builder, Location loc);
+} // namespace allo
+} // namespace mlir
+
 #define GET_OP_CLASSES
 #include "allo/Dialect/AlloOps.h.inc"
 
