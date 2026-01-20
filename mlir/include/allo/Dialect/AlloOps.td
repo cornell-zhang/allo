@@ -1164,7 +1164,6 @@ def MetaIfOp : Allo_Op<"meta_if", [DeclareOpInterfaceMethods<RegionBranchOpInter
     Block* elseBlock();
     YieldOp elseYield();
   }];
-  let hasFolder = 1;
   let hasCanonicalizer = 1;
   let hasCustomAssemblyFormat = 1;
   let hasVerifier = 1;

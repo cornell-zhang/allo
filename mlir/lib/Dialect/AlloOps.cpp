@@ -96,7 +96,11 @@ static void buildCmpFixedOp(OpBuilder &build, OperationState &result,
   //                     build.getI64IntegerAttr(static_cast<int64_t>(predicate)));
 }
 
-void buildTerminatedBody(OpBuilder &builder, Location loc) {
+//===----------------------------------------------------------------------===//
+// MetaIfOp
+//===----------------------------------------------------------------------===//
+
+static void buildTerminatedBody(OpBuilder &builder, Location loc) {
   YieldOp::create(builder, loc);
 }
 
