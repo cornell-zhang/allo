@@ -64,6 +64,16 @@ Allo supports several approaches to generate HLS code:
    When `use_memory` is set to `True`, the generated code will use the memory API in the XLS backend. When `use_memory` is set to `False`, 
    the generated code will use the C-style arrays which become registers clusters in the XLS backend.
 
+2. **HLS Emulation, Synthesis, and Execution**:  
+   Users may also specify the target as `"xlscc"` but run the designs in our software emulation mode:
+
+   - ``sw_emu``: Software emulation mode, which is similar to C simulation that compiles the program using C compiler 
+   and runs it on the CPU. Depending on the size of your input data, this mode may take within one minute.
+
+    .. code-block:: python
+
+       mod = s.build(target="xlscc", mode="sw_emu", project="gemm.prj")
+
 Project Structure and Execution
 -------------------------------
 The generated XLS project (e.g., in the folder ``gemm.prj``) typically includes:
@@ -76,7 +86,21 @@ If you set `use_memory` to `True`, the generated project will also include:
 backend to map any memory arrays to the hardware. Without this file or if this file is
 configured wrong, the XLS backend will error out during its IR optimization pass.
 
+If you are using the software emulation mode, you will also obtain the following files:
 
+- **test_harness.cpp**: The host-side (CPU) code that invokes the accelerator.
+- **Makefile**: Build scripts to compile the project.
+- **input*.data**: The binary input data files for the design.
+
+To run the design, prepare the input matrices using NumPy and invoke the generated module to obtain the result:
+
+.. code-block:: python
+
+   np_A = np.random.random((M, K)).astype(np.int32)
+   np_B = np.random.random((K, N)).astype(np.int32)
+   result = mod(np_A, np_B)
+   np.testing.assert_allclose(result, np.matmul(np_A, np_B), rtol=1e-5, atol=1e-5)
+   
 Note:
   The XLS backend only supports integer and fixed-point types. Floating-point types (f16, f32, f64) are not supported.
 
