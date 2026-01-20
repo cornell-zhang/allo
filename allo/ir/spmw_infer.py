@@ -5,7 +5,6 @@
 import ast
 import copy
 import sys
-import os
 import traceback
 import inspect
 import textwrap
@@ -13,7 +12,7 @@ import warnings
 import sympy
 import numpy as np
 
-from .visitor import ASTVisitor, ASTContext, get_symbolic_expr
+from .visitor import ASTVisitor, ASTContext
 from .symbol_resolver import ASTResolver
 from .types import (
     AlloType,
@@ -41,11 +40,29 @@ from ..utils import (
     handle_overflow,
     make_anywidth_numpy_array,
     np_supported_types,
-    construct_kernel_name,
 )
 from ..memory import DTensor, Layout
 from ..logging import print_error_message
 from .utils import parse_ast, get_func_id_from_param_types, resolve_generic_types
+
+
+def get_symbolic_expr(node: ast.AST, ctx: ASTContext):
+    class SymbolicChecker(ast.NodeVisitor):
+        def __init__(self, ctx: ASTContext):
+            self.ctx = ctx
+            self.alive_vars = ctx.get_alive_var_names()
+
+        def visit_Name(self, node):
+            if node.id in self.alive_vars:
+                sym = self.ctx.get_symbol(node.id)
+                if not (
+                    hasattr(sym, "dtype") and getattr(sym.dtype, "constexpr", False)
+                ):
+                    raise ValueError(
+                        "Fail to resolve the expression as symbolic expression."
+                    )
+
+    SymbolicChecker(ctx).visit(node)
 
 
 # pylint: disable=too-many-public-methods
@@ -968,12 +985,7 @@ class TypeInferer(ASTVisitor):
                         else node.func.value.value.id
                     )
                     if isinstance(node.func.value, ast.Subscript):
-                        get_symbolic_expr(
-                            copy.deepcopy(node.func.value.slice),
-                            ctx.symbolic,
-                            ctx.global_vars,
-                            ctx.get_alive_var_names(),
-                        )
+                        get_symbolic_expr(node.func.value.slice, ctx)
                     val = ctx.get_symbol(vid)
                     node.func.value.shape = val.dtype.shape
                     node.func.value.dtype = val.dtype.dtype
@@ -984,12 +996,7 @@ class TypeInferer(ASTVisitor):
                         else node.func.value.value.id
                     )
                     if isinstance(node.func.value, ast.Subscript):
-                        get_symbolic_expr(
-                            copy.deepcopy(node.func.value.slice),
-                            ctx.symbolic,
-                            ctx.global_vars,
-                            ctx.get_alive_var_names(),
-                        )
+                        get_symbolic_expr(node.func.value.slice, ctx)
                     # return value
                     val = ctx.get_symbol(vid)
                     node.shape = val.dtype.shape
@@ -1351,26 +1358,7 @@ class TypeInferer(ASTVisitor):
         if func_attr in {"meta_if", "meta_elif", "meta_else"}:
             # condition validity check
             if func_attr != "meta_else":
-                # TODO (Shihan): simplify the logic here
-                alive_var_names = ctx.get_alive_var_names()
-                # Filter out ConstExpr variables from alive_var_names
-                filtered_var_names = set()
-                for name in alive_var_names:
-                    sym = ctx.get_symbol(name)
-                    # If the symbol is a ConstExpr, we should treat it as a constant
-                    # and allow it to be resolved by the ASTResolver / ReplaceNames.
-                    # Therefore, we remove it from the "variables" list which represents
-                    # dynamic variables that cannot be resolved at compile time.
-                    if not (
-                        hasattr(sym, "dtype") and getattr(sym.dtype, "constexpr", False)
-                    ):
-                        filtered_var_names.add(name)
-                get_symbolic_expr(
-                    copy.deepcopy(node.items[0].context_expr.args[0]),
-                    ctx.symbolic,
-                    ctx.global_vars,
-                    filtered_var_names,
-                )
+                get_symbolic_expr(node.items[0].context_expr.args[0], ctx)
             ctx.with_scope_level += 1
             with ctx.block_scope_guard():
                 visit_stmts(ctx, node.body)

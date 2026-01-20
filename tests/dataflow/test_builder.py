@@ -50,4 +50,7 @@ def test_stream():
 
 
 if __name__ == "__main__":
+    """
+    TODO: add test cases for meta programming validity check (condition, stream index)
+    """
     test_stream()
