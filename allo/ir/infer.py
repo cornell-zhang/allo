@@ -668,22 +668,30 @@ class TypeInferer(ASTVisitor):
             assert (
                 target_.dtype == target_dtype and target_.shape == target_shape
             ), f"Invalid assignment to {node.target.id}, type mismatch."
-        # rhs
-        rhs = TypeInferer.visit_assignment_val(
-            ctx, node.value, target_shape, target_dtype
-        )
-        if target_ is None:
-            # new def
+
+        # If the variable is a compile-time constant (ConstExpr), we should evaluate
+        # the RHS at Python level using ASTResolver.resolve() BEFORE calling
+        # visit_assignment_val, which would otherwise try to compile function calls.
+        if getattr(target_dtype, "constexpr", False):
+            val = ASTResolver.resolve(node.value, ctx.global_vars)
+            ctx.global_vars[node.target.id] = val
+            # Set value attributes for downstream processing
+            node.value.dtype = target_dtype
+            node.value.shape = target_shape
+            rhs = node.value
+        else:
+            # rhs - normal processing
+            rhs = TypeInferer.visit_assignment_val(
+                ctx, node.value, target_shape, target_dtype
+            )
+
+        if target_ is None and not getattr(target_dtype, "constexpr", False):
+            # new def - but NOT for ConstExpr, which should only be in global_vars
             ctx.put_symbol(name=node.target.id, val=node.target)
         node.target.dtype = node.dtype = target_dtype
         node.target.shape = node.shape = target_shape
         # Store the memory/layout spec for local variables
         node.target.spec = node.spec = spec
-        # If the variable is a compile-time constant, we need to register it in the global_vars
-        # so that it can be used in the type hint of the following statements.
-        if getattr(target_dtype, "constexpr", False):
-            val = ASTResolver.resolve(node.value, ctx.global_vars)
-            ctx.global_vars[node.target.id] = val
         final_shape, lhs_dims, rhs_dims = TypeInferer.visit_broadcast(
             ctx,
             node.target.shape,
