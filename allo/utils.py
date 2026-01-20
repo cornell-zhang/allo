@@ -8,6 +8,7 @@ import numpy as np
 import numpy.typing as npt
 import ml_dtypes
 from ._mlir.ir import (
+    Context,
     MemRefType,
     RankedTensorType,
     IntegerType,
@@ -19,7 +20,7 @@ from ._mlir.ir import (
 )
 from ._mlir.exceptions import DTypeWarning
 from ._mlir.runtime import to_numpy
-from ._mlir.dialects import allo as allo_d
+from ._mlir.dialects import allo as allo_d, sdy as sdy_d
 from .ir.types import (
     AlloType,
     Int,
@@ -580,3 +581,9 @@ def allo_to_numpy_dtype(allo_type: AlloType) -> npt.DTypeLike:
             dtype = np.int64 if isinstance(allo_type, Fixed) else np.uint64
 
     return dtype
+
+
+def register_dialect(ctx: Context, dataflow: bool = False):
+    allo_d.register_dialect(ctx)
+    if dataflow:
+        sdy_d.register_dialect(ctx)

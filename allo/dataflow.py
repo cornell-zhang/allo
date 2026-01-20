@@ -18,7 +18,7 @@ from ._mlir.ir import (
 )
 from ._mlir.dialects import func as func_d, allo as allo_d
 from ._mlir.passmanager import PassManager as mlir_pass_manager
-from .customize import customize as _customize, Schedule
+from .customize import customize as _customize, Schedule, build_spmw
 from .utils import parse_kernel_name, construct_kernel_name
 from .ir.utils import (
     get_all_df_kernels,
@@ -604,6 +604,13 @@ def build(
     assert (
         trace is None or target == "aie"
     ), "Trace profiling is only supported for AIE target"
+
+    global_vars = get_global_vars(func)
+    s: Schedule = build_spmw(func, global_vars=global_vars)
+    print(s.module)
+    import sys
+
+    sys.exit(0)
 
     if target == "aie":
         global_vars = get_global_vars(func)
