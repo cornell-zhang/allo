@@ -378,20 +378,26 @@ class TypeInferer(ASTVisitor):
             targets.append(node.targets[0])
             values.append(node.value)
         if isinstance(node.value, ast.Call):
+            rhs_visited = True
             # special case: the builtin get_pid()
             if (
                 isinstance(node.value.func, ast.Attribute)
                 and node.value.func.attr == "get_pid"
             ):
-                for i, target in enumerate(targets):
-                    # TODO: add target symbol for pid??
-                    ctx.global_vars[ast.unparse(target)] = ctx.global_vars[f"df.p{i}"]
-                    ctx.symbolic[ast.unparse(target)] = f"p{i}"
-                return node
-            rhs = visit_stmt(ctx, node.value)
-            rhs_visited = True
-            rhs_dtypes = [rhs.dtype] if len(targets) == 1 else list(rhs.dtype)
-            rhs_shapes = [rhs.shape] if len(targets) == 1 else list(rhs.shape)
+                assert len(ctx.mapping) == len(targets)
+                for i in range(len(ctx.mapping)):
+                    target = targets[i]
+                    ctx.symbolic[ast.unparse(target)] = (
+                        f"p{i}"  # used for meta programming validity check
+                    )
+                dtype = Index()
+                dtype.constexpr = True  # pid is constant
+                rhs_dtypes = [dtype] * len(ctx.mapping)
+                rhs_shapes = [()] * len(ctx.mapping)
+            else:
+                rhs = visit_stmt(ctx, node.value)
+                rhs_dtypes = [rhs.dtype] if len(targets) == 1 else list(rhs.dtype)
+                rhs_shapes = [rhs.shape] if len(targets) == 1 else list(rhs.shape)
         assert len(targets) == len(values) or len(targets) == len(rhs_dtypes) == len(
             rhs_shapes
         )
@@ -714,102 +720,44 @@ class TypeInferer(ASTVisitor):
             ctx = old_ctx.copy()
             ctx.scopes = old_ctx.scopes
             for decorator in node.decorator_list:
-                if isinstance(decorator, ast.Call):
-                    if isinstance(decorator.func, ast.Attribute):
-                        if decorator.func.attr == "kernel":
-                            mapping, kernel_args = None, []
-                            for kw in decorator.keywords:
-                                if kw.arg == "mapping":
-                                    mapping = eval(
-                                        ast.unparse(kw.value),
-                                        ctx.global_vars,
-                                    )
-                                elif kw.arg == "args":
-                                    assert isinstance(kw.value, ast.List)
-                                    kernel_args = kw.value.elts
-                            assert (
-                                mapping is not None
-                            ), f"Invalid @df.kernel decorator on function '{node.name}': missing required 'mapping' parameter."
-                            old_ctx.mapping = mapping
-                            assert len(kernel_args) == len(
-                                node.args.args
-                            ), f"Invalid @df.kernel decorator on function '{node.name}': 'args' length mismatch (expected {len(node.args.args)}, got {len(kernel_args)})."
-                            for top_arg_name, arg in zip(kernel_args, node.args.args):
-                                top_arg = ctx.get_symbol(name=top_arg_name.id)
-                                dtype, shape, _ = TypeInferer.visit_type_hint(
-                                    ctx, arg.annotation
-                                )
-                                assert (
-                                    top_arg.dtype == dtype and top_arg.shape == shape
-                                ), f"df.kernel argument {arg.arg} do not match {top_arg_name.id}."
-                                arg.top_arg = top_arg_name.id
-                            orig_name = node.name
-                            old_ctx.func_predicate_tags[orig_name] = {}
-                            if ctx.unroll:
-                                for dim in np.ndindex(*mapping):
-                                    new_ctx = old_ctx.copy()
-                                    new_ctx.rank = dim
-                                    new_ctx.scopes = old_ctx.scopes
-                                    new_ctx.global_vars = old_ctx.global_vars.copy()
-                                    for axis, val in enumerate(dim):
-                                        new_ctx.global_vars.update(
-                                            {"df.p" + str(axis): val}
-                                        )
-                                    node.name = construct_kernel_name(orig_name, dim)
-                                    # check on a specific df.kernel instance
-                                    TypeInferer.visit_FunctionDef(new_ctx, node)
-                                    node.name = orig_name
-                            else:
-                                # If not unroll, only visit one 'sample' to get the execution predicates
-
-                                def get_predicate_list(predicate_raw, pid_map):
-                                    """
-                                    Recursively expand `predicate` based on conditions and pid_map.
-                                    Returns a list of results, converted from cond_list:
-                                    - If condition evaluates True, recurse into its values.
-                                    - If False, put None.
-                                    """
-                                    _, cond_list = predicate_raw
-                                    results = []
-                                    for cond, val in cond_list:
-                                        if eval(cond, pid_map):
-                                            assert all(
-                                                isinstance(v, tuple) and len(v) == 2
-                                                for v in val
-                                            )
-                                            results.append(
-                                                get_predicate_list(
-                                                    ("True", val), pid_map
-                                                )
-                                            )
-                                        else:
-                                            results.append(None)
-                                    return results
-
-                                sample_dim = (0,) * len(mapping)
-                                new_ctx = old_ctx.copy()
-                                new_ctx.rank = sample_dim
-                                new_ctx.scopes = old_ctx.scopes
-                                new_ctx.global_vars = old_ctx.global_vars.copy()
-                                for axis, val in enumerate(sample_dim):
-                                    new_ctx.global_vars.update(
-                                        {"df.p" + str(axis): val}
-                                    )
-                                node.name = construct_kernel_name(orig_name, sample_dim)
-                                # check on a specific df.kernel instance
-                                TypeInferer.visit_FunctionDef(new_ctx, node)
-                                node.name = orig_name
-                                for dim in np.ndindex(*mapping):
-                                    pid_map = {
-                                        f"p{idx}": value
-                                        for idx, value in enumerate(dim)
-                                    }
-                                    old_ctx.func_predicate_tags[orig_name][dim] = (
-                                        get_predicate_list(
-                                            new_ctx.predicate_list, pid_map
-                                        )
-                                    )
-                            return node
+                if (
+                    isinstance(decorator, ast.Call)
+                    and isinstance(decorator.func, ast.Attribute)
+                    and decorator.func.attr == "kernel"
+                ):
+                    mapping, kernel_args = None, []
+                    for kw in decorator.keywords:
+                        if kw.arg == "mapping":
+                            mapping = eval(
+                                ast.unparse(kw.value),
+                                ctx.global_vars,
+                            )
+                        elif kw.arg == "args":
+                            assert isinstance(kw.value, ast.List)
+                            kernel_args = kw.value.elts
+                    assert (
+                        mapping is not None
+                    ), f"Invalid @df.kernel decorator on function '{node.name}': missing required 'mapping' parameter."
+                    assert len(kernel_args) == len(
+                        node.args.args
+                    ), f"Invalid @df.kernel decorator on function '{node.name}': 'args' length mismatch (expected {len(node.args.args)}, got {len(kernel_args)})."
+                    for top_arg_name, arg in zip(kernel_args, node.args.args):
+                        top_arg = ctx.get_symbol(name=top_arg_name.id)
+                        dtype, shape, _ = TypeInferer.visit_type_hint(
+                            ctx, arg.annotation
+                        )
+                        assert (
+                            top_arg.dtype == dtype and top_arg.shape == shape
+                        ), f"df.kernel argument {arg.arg} do not match {top_arg_name.id}."
+                        arg.top_arg = top_arg_name.id
+                    sample_dim = (0,) * len(mapping)
+                    new_ctx = old_ctx.copy()
+                    new_ctx.mapping = mapping
+                    new_ctx.rank = sample_dim
+                    new_ctx.scopes = old_ctx.scopes
+                    new_ctx.global_vars = old_ctx.global_vars.copy()
+                    # check on a specific df.kernel instance
+                    TypeInferer.visit_FunctionDef(new_ctx, node)
         else:
             old_ctx = None
 
@@ -1020,14 +968,12 @@ class TypeInferer(ASTVisitor):
                         else node.func.value.value.id
                     )
                     if isinstance(node.func.value, ast.Subscript):
-                        _, loops_to_unroll = get_symbolic_expr(
+                        get_symbolic_expr(
                             copy.deepcopy(node.func.value.slice),
                             ctx.symbolic,
                             ctx.global_vars,
                             ctx.get_alive_var_names(),
                         )
-                        if os.getenv("FORCE_UNROLL_INDEX") == "1":
-                            ctx.meta_fors_to_unroll.update(loops_to_unroll)
                     val = ctx.get_symbol(vid)
                     node.func.value.shape = val.dtype.shape
                     node.func.value.dtype = val.dtype.dtype
@@ -1038,14 +984,12 @@ class TypeInferer(ASTVisitor):
                         else node.func.value.value.id
                     )
                     if isinstance(node.func.value, ast.Subscript):
-                        _, loops_to_unroll = get_symbolic_expr(
+                        get_symbolic_expr(
                             copy.deepcopy(node.func.value.slice),
                             ctx.symbolic,
                             ctx.global_vars,
                             ctx.get_alive_var_names(),
                         )
-                        if os.getenv("FORCE_UNROLL_INDEX") == "1":
-                            ctx.meta_fors_to_unroll.update(loops_to_unroll)
                     # return value
                     val = ctx.get_symbol(vid)
                     node.shape = val.dtype.shape
@@ -1290,7 +1234,7 @@ class TypeInferer(ASTVisitor):
                 )
             elif op_name == "matmul":
                 # FIXME (Shihan): for aie backend
-                if not ctx.unroll and node.dtype == int4:
+                if not ctx.typing_rule_set != "default" and node.dtype == int4:
                     node.dtype = int8
                 assert (
                     argAshape[-1] == argBshape[-2]
@@ -1403,71 +1347,37 @@ class TypeInferer(ASTVisitor):
         assert isinstance(
             node.items[0].context_expr.func, ast.Attribute
         ), "Only support `with allo.meta_if/elif/else()`"
-        # Compile-time comparison
-        if node.items[0].context_expr.func.attr in {"meta_if", "meta_elif"}:
-            cond = ASTResolver.resolve_constant(node.items[0].context_expr.args[0], ctx)
-            alive_var_names = ctx.get_alive_var_names()
-            # Filter out ConstExpr variables from alive_var_names
-            filtered_var_names = set()
-            for name in alive_var_names:
-                sym = ctx.get_symbol(name)
-                # If the symbol is a ConstExpr, we should treat it as a constant
-                # and allow it to be resolved by the ASTResolver / ReplaceNames.
-                # Therefore, we remove it from the "variables" list which represents
-                # dynamic variables that cannot be resolved at compile time.
-                if not (
-                    hasattr(sym, "dtype") and getattr(sym.dtype, "constexpr", False)
-                ):
-                    filtered_var_names.add(name)
-            symbolic_cond, loops_to_unroll = get_symbolic_expr(
-                copy.deepcopy(node.items[0].context_expr.args[0]),
-                ctx.symbolic,
-                ctx.global_vars,
-                filtered_var_names,
-            )
-            ctx.meta_fors_to_unroll.update(loops_to_unroll)
-            if node.items[0].context_expr.func.attr == "meta_if":
-                final_cond = cond
-                if len(ctx.meta_if_stack) > ctx.with_scope_level:
-                    ctx.meta_if_stack[ctx.with_scope_level].append(final_cond)
-                    if not ctx.unroll:
-                        ctx.raw_meta_if_stack[ctx.with_scope_level].append(
-                            symbolic_cond
-                        )
-                else:
-                    # create a new nested list
-                    ctx.meta_if_stack.append([final_cond])
-                    if not ctx.unroll:
-                        ctx.raw_meta_if_stack.append([symbolic_cond])
-            else:  # meta_elif
-                assert (
-                    len(ctx.meta_if_stack[ctx.with_scope_level]) > 0
-                ), "Unmatched allo.meta_elif()"
-                if not ctx.unroll:
-                    prev_cond = ctx.raw_meta_if_stack[ctx.with_scope_level][-1]
-                    symbolic_cond = f"(not ({prev_cond})) and {symbolic_cond}"
-                    ctx.raw_meta_if_stack[ctx.with_scope_level].append(symbolic_cond)
-                if ctx.meta_if_stack[ctx.with_scope_level][
-                    -1
-                ]:  # previous `if` has already satisfied
-                    ctx.meta_if_stack[ctx.with_scope_level].pop()
-                    ctx.meta_if_stack[ctx.with_scope_level].append(True)
-                    final_cond = False
-                else:
-                    ctx.meta_if_stack[ctx.with_scope_level].pop()
-                    ctx.meta_if_stack[ctx.with_scope_level].append(cond)
-                    final_cond = cond
-        elif node.items[0].context_expr.func.attr == "meta_else":
-            assert (
-                len(ctx.meta_if_stack[ctx.with_scope_level]) > 0
-            ), "Unmatched allo.meta_else()"
-            final_cond = not ctx.meta_if_stack[ctx.with_scope_level][-1]
-            if not ctx.unroll:
-                symbolic_cond = (
-                    f"(not ({ctx.raw_meta_if_stack[ctx.with_scope_level][-1]}))"
+        func_attr = node.items[0].context_expr.func.attr
+        if func_attr in {"meta_if", "meta_elif", "meta_else"}:
+            # condition validity check
+            if func_attr != "meta_else":
+                # TODO (Shihan): simplify the logic here
+                alive_var_names = ctx.get_alive_var_names()
+                # Filter out ConstExpr variables from alive_var_names
+                filtered_var_names = set()
+                for name in alive_var_names:
+                    sym = ctx.get_symbol(name)
+                    # If the symbol is a ConstExpr, we should treat it as a constant
+                    # and allow it to be resolved by the ASTResolver / ReplaceNames.
+                    # Therefore, we remove it from the "variables" list which represents
+                    # dynamic variables that cannot be resolved at compile time.
+                    if not (
+                        hasattr(sym, "dtype") and getattr(sym.dtype, "constexpr", False)
+                    ):
+                        filtered_var_names.add(name)
+                get_symbolic_expr(
+                    copy.deepcopy(node.items[0].context_expr.args[0]),
+                    ctx.symbolic,
+                    ctx.global_vars,
+                    filtered_var_names,
                 )
-            ctx.meta_if_stack[ctx.with_scope_level].pop()
-        elif node.items[0].context_expr.func.attr == "meta_for":
+            ctx.with_scope_level += 1
+            with ctx.block_scope_guard():
+                visit_stmts(ctx, node.body)
+            ctx.with_scope_level -= 1
+            node.dtype, node.shape = None, None
+            return node
+        if func_attr == "meta_for":
             assert (
                 len(node.items[0].context_expr.args) <= 3
             ), "Only support three arguments (lower, upper bound, and step) for `allo.meta_for()`"
@@ -1486,42 +1396,19 @@ class TypeInferer(ASTVisitor):
                         node.items[0].context_expr.args[2], ctx
                     )
                 )
-            var = node.items[0].optional_vars.id
-            for i in range(*rargs):
-                ctx.global_vars[var] = i
-                ctx.symbolic[var] = (i, node)
-                with ctx.block_scope_guard():
-                    visit_stmts(ctx, node.body)
-                ctx.global_vars.pop(var)
-                ctx.symbolic.pop(var)
-                if not ctx.unroll and node not in ctx.meta_fors_to_unroll:
-                    break
-            node.dtype = None
-            node.shape = None
+            iv = node.items[0].optional_vars
+            iv_ = ctx.get_symbol(iv.id, allow_missing=True)
+            assert iv_ is None, "Please choose a different name for the loop iterator."
+            iv.shape, iv.dtype = tuple(), Index()
+            iv.dtype.constexpr = True  # meta for iterator is constant
+            ctx.put_symbol(name=iv.id, val=iv)
+            ctx.symbolic[iv.id] = (0, node)
+            with ctx.block_scope_guard():
+                visit_stmts(ctx, node.body)
+            ctx.symbolic.pop(iv.id)
+            node.dtype, node.shape = None, None
             return node
-        else:
-            raise RuntimeError("Unsupported meta function")
-        if ctx.unroll and final_cond:
-            ctx.with_scope_level += 1
-            with ctx.block_scope_guard():
-                visit_stmts(ctx, node.body)
-            # clear inner context
-            ctx.meta_if_stack = ctx.meta_if_stack[: ctx.with_scope_level]
-            ctx.with_scope_level -= 1
-        elif not ctx.unroll:
-            # if not unroll, walk into every branch unconditionally
-            assert ctx.predicate_stack[-1] is not None
-            ctx.predicate_stack[-1].append(tuple((symbolic_cond, [])))
-            ctx.with_scope_level += 1
-            ctx.predicate_stack.append(ctx.predicate_stack[-1][-1][1])
-            with ctx.block_scope_guard():
-                visit_stmts(ctx, node.body)
-            ctx.meta_if_stack = ctx.meta_if_stack[: ctx.with_scope_level]
-            ctx.predicate_stack = ctx.predicate_stack[: ctx.with_scope_level]
-            ctx.with_scope_level -= 1
-        node.dtype = None
-        node.shape = None
-        return node
+        raise RuntimeError("Unsupported meta function")
 
     @staticmethod
     def visit_Expr(ctx: ASTContext, node: ast.Expr):
