@@ -1433,7 +1433,7 @@ def build_spmw(
             Defaults to `"default"`.
     """
     from .ir.spmw_builder import ASTTransformer as SPMW_Builder
-    from .ir.spmw_infer import SPMW_TypeInferer
+    from .ir.spmw_infer import TypeInferer as SPMW_TypeInferer
 
     # Get Python AST
     if isinstance(fn, str):

@@ -404,9 +404,6 @@ class TypeInferer(ASTVisitor):
                 assert len(ctx.mapping) == len(targets)
                 for i in range(len(ctx.mapping)):
                     target = targets[i]
-                    ctx.symbolic[ast.unparse(target)] = (
-                        f"p{i}"  # used for meta programming validity check
-                    )
                 dtype = Index()
                 dtype.constexpr = True  # pid is constant
                 rhs_dtypes = [dtype] * len(ctx.mapping)
@@ -775,6 +772,7 @@ class TypeInferer(ASTVisitor):
                     new_ctx.global_vars = old_ctx.global_vars.copy()
                     # check on a specific df.kernel instance
                     TypeInferer.visit_FunctionDef(new_ctx, node)
+                return node
         else:
             old_ctx = None
 
@@ -1390,10 +1388,8 @@ class TypeInferer(ASTVisitor):
             iv.shape, iv.dtype = tuple(), Index()
             iv.dtype.constexpr = True  # meta for iterator is constant
             ctx.put_symbol(name=iv.id, val=iv)
-            ctx.symbolic[iv.id] = (0, node)
             with ctx.block_scope_guard():
                 visit_stmts(ctx, node.body)
-            ctx.symbolic.pop(iv.id)
             node.dtype, node.shape = None, None
             return node
         raise RuntimeError("Unsupported meta function")
