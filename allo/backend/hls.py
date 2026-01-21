@@ -190,12 +190,14 @@ class HLSModule:
         self.project = project
         self.platform = platform
         self.ext_libs = [] if ext_libs is None else ext_libs
+        self.num_output_args = 0  # Will be set from configs if provided
         if configs is not None:
-            new_configs = DEFAULT_CONFIG
+            new_configs = DEFAULT_CONFIG.copy()
             new_configs.update(configs)
             configs = new_configs
+            self.num_output_args = configs.get("num_output_args", 0)
         else:
-            configs = DEFAULT_CONFIG
+            configs = DEFAULT_CONFIG.copy()
         if self.mode is not None:
             configs["mode"] = self.mode
         with Context() as ctx, Location.unknown():
@@ -333,6 +335,7 @@ class HLSModule:
                 self.host_code = codegen_host(
                     self.top_func_name,
                     self.module,
+                    num_output_args=self.num_output_args,
                 )
             elif self.platform == "tapa":
                 assert self.mode in {
@@ -570,11 +573,30 @@ class HLSModule:
                 process.wait()
                 if process.returncode != 0:
                     raise RuntimeError("Failed to run the executable")
-            # suppose the last argument is the output tensor
-            if np.isscalar(args[-1]):
-                raise RuntimeError("The output must be a tensor")
-            arr = np.fromfile(f"{self.project}/output.data", dtype=args[-1].dtype)
-            args[-1][:] = arr.reshape(args[-1].shape)
+            # Read output tensors from files
+            # Determine how many output files to read
+            func = find_func_in_module(self.module, self.top_func_name)
+            _, outputs = get_func_inputs_outputs(func)
+            if len(outputs) > 0:
+                # Original behavior: single output.data file
+                if np.isscalar(args[-1]):
+                    raise RuntimeError("The output must be a tensor")
+                arr = np.fromfile(f"{self.project}/output.data", dtype=args[-1].dtype)
+                args[-1][:] = arr.reshape(args[-1].shape)
+            else:
+                # Multiple output files: output0.data, output1.data, etc.
+                num_out = self.num_output_args if self.num_output_args > 0 else 1
+                for idx in range(num_out):
+                    out_arg_idx = len(inputs) - num_out + idx
+                    if out_arg_idx < 0 or out_arg_idx >= len(args):
+                        continue
+                    out_arg = args[out_arg_idx]
+                    if np.isscalar(out_arg):
+                        continue
+                    arr = np.fromfile(
+                        f"{self.project}/output{idx}.data", dtype=out_arg.dtype
+                    )
+                    out_arg[:] = arr.reshape(out_arg.shape)
             return
         elif self.platform == "pynq":
             # Do not assert PYNQ availability here; the presence of a physical

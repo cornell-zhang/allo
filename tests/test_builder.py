@@ -1382,5 +1382,72 @@ def test_constexpr_error_reassignment():
         allo.customize(kernel)
 
 
+def test_constexpr_with_helper_functions():
+    """Test ConstExpr with Python helper functions evaluated at compile time."""
+    import math
+
+    # Python helper functions - evaluated at compile time
+    def compute_coefficient(i):
+        return math.cos(2.0 * math.pi * i / 8)
+
+    def compute_index(i, offset):
+        return (i + offset) % 8
+
+    def kernel(A: float32[8], B: float32[8]):
+        with allo.meta_for(8) as i:
+            # ConstExpr values are computed at Python level during compilation
+            coef: ConstExpr[float32] = compute_coefficient(i)
+            idx: ConstExpr[int32] = compute_index(i, 3)
+            B[i] = A[idx] * coef
+
+    s = allo.customize(kernel)
+    print(s.module)
+    mod = s.build()
+
+    # Verify correctness
+    np_A = np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], dtype=np.float32)
+    np_B = np.zeros(8, dtype=np.float32)
+    mod(np_A, np_B)
+
+    # Compute expected result
+    expected = np.zeros(8, dtype=np.float32)
+    for i in range(8):
+        idx = compute_index(i, 3)
+        coef = compute_coefficient(i)
+        expected[i] = np_A[idx] * coef
+
+    np.testing.assert_allclose(np_B, expected, rtol=1e-5)
+
+
+def test_constant_tensor_slice():
+    """Test loading a slice of a constant numpy array."""
+    np_A = np.array([[1, 2, 3, 4], [5, 6, 7, 8]], dtype=np.int32)
+
+    def kernel() -> int32[4]:
+        A: int32[4] = np_A[1]  # Load second row as constant
+        return A
+
+    s = allo.customize(kernel)
+    print(s.module)
+    mod = s.build()
+    result = mod()
+    np.testing.assert_array_equal(result, np_A[1])
+
+
+def test_constant_tensor_slice_2d():
+    """Test loading a 2D slice of a constant numpy 3D array."""
+    np_A = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
+
+    def kernel() -> float32[3, 4]:
+        A: float32[3, 4] = np_A[1]  # Load second 2D slice
+        return A
+
+    s = allo.customize(kernel)
+    print(s.module)
+    mod = s.build()
+    result = mod()
+    np.testing.assert_allclose(result, np_A[1], rtol=1e-5)
+
+
 if __name__ == "__main__":
     pytest.main([__file__])

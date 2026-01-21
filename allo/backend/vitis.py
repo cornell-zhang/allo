@@ -68,7 +68,21 @@ ctype_map = {
 }
 
 
-def codegen_host(top, module):
+def codegen_host(top, module, num_output_args=0):
+    """Generate OpenCL host code for Vitis HLS.
+
+    Parameters
+    ----------
+    top : str
+        Top-level function name
+    module : Module
+        MLIR module containing the function
+    num_output_args : int, optional
+        Number of trailing input arguments that are actually output buffers.
+        When len(outputs) == 0 (common for dataflow), this specifies how many
+        of the inputs are written to by the kernel and need to be migrated back.
+        Default is 0, which falls back to legacy behavior (last input is output).
+    """
     # Reference: https://github.com/Xilinx/Vitis_Accel_Examples/blob/main/sys_opt/kernel_swap/src/host.cpp
     func = find_func_in_module(module, top)
     inputs, outputs = get_func_inputs_outputs(func)
@@ -191,9 +205,17 @@ def codegen_host(top, module):
         // Device-to-host communication
         """
     )
+    # Determine which input indices are actually outputs
+    # When num_output_args > 0 and len(outputs) == 0, the last num_output_args inputs are outputs
+    output_input_indices = set()
+    if len(outputs) == 0 and num_output_args > 0:
+        output_input_indices = set(range(len(inputs) - num_output_args, len(inputs)))
+    elif len(outputs) == 0 and num_output_args == 0:
+        # Legacy behavior: assume last input is output
+        output_input_indices = {len(inputs) - 1}
+
     for i, (in_dtype, in_shape) in enumerate(inputs):
-        if i == len(inputs) - 1 and len(outputs) == 0:
-            # suppose the last input is also the output
+        if i in output_input_indices:
             flag = "CL_MEM_READ_WRITE"
         else:
             flag = "CL_MEM_READ_ONLY"
@@ -267,9 +289,11 @@ def codegen_host(top, module):
             strip=False,
         )
     else:
+        # Migrate back all output input buffers
+        output_buffers = [f"buffer_in{i}" for i in sorted(output_input_indices)]
         out_str += format_str(
             "OCL_CHECK(err, err = q.enqueueMigrateMemObjects({"
-            + ", ".join([f"buffer_in{len(inputs) - 1}"])
+            + ", ".join(output_buffers)
             + "}, CL_MIGRATE_MEM_OBJECT_HOST));",
             strip=False,
         )
@@ -306,14 +330,12 @@ def codegen_host(top, module):
         """,
     )
     out_str += "\n\n"
-    assert len(outputs) <= 1, "Only support one output for now"
-    if len(outputs) == 0:
-        out_buf = "source_in" + str(len(inputs) - 1)
-    else:
+    # Write output files
+    if len(outputs) > 0:
+        assert len(outputs) <= 1, "Only support one explicit output for now"
         out_buf = "source_out" + str(len(outputs) - 1)
-        # raise RuntimeError("TODO: output is not the last argument")
-    out_str += format_str(
-        f"""    // Write the output data to file
+        out_str += format_str(
+            f"""    // Write the output data to file
     std::ofstream ofile;
     ofile.open("output.data", std::ios::binary);
     if (!ofile) {{
@@ -323,9 +345,30 @@ def codegen_host(top, module):
     ofile.write(reinterpret_cast<const char*>({out_buf}.data()), {buffer_bytes[-1]});
     ofile.close();
     """,
-        strip=False,
-        indent=0,
-    )
+            strip=False,
+            indent=0,
+        )
+    else:
+        # Write multiple output files for each output input buffer
+        out_str += format_str(
+            "    // Write the output data to files", strip=False, indent=0
+        )
+        for idx, i in enumerate(sorted(output_input_indices)):
+            out_str += format_str(
+                f"""    {{
+        std::ofstream ofile{idx};
+        ofile{idx}.open("output{idx}.data", std::ios::binary);
+        if (!ofile{idx}) {{
+            std::cerr << "Failed to open output file {idx}!" << std::endl;
+            return EXIT_FAILURE;
+        }}
+        ofile{idx}.write(reinterpret_cast<const char*>(source_in{i}.data()), {buffer_bytes[i]});
+        ofile{idx}.close();
+    }}
+""",
+                strip=False,
+                indent=0,
+            )
     out_str += format_str("return EXIT_SUCCESS;", strip=False)
     out_str += "}\n"
     return out_str
