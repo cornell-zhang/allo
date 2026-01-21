@@ -217,11 +217,8 @@ void MetaIfOp::getCanonicalizationPatterns(RewritePatternSet &results,
 void MetaForOp::build(OpBuilder &builder, OperationState &result,
                       Value lowerBound, Value upperBound, Value step,
                       ValueRange initArgs,
-                      BodyBuilderFn bodyBuilder,
-                      bool unsignedCmp) {
+                      BodyBuilderFn bodyBuilder) {
   result.addOperands({lowerBound, upperBound, step});
-  if (unsignedCmp)
-    result.addAttribute("unsignedCmp", builder.getUnitAttr());
 
   Region *bodyRegion = result.addRegion();
   Block *bodyBlock = builder.createBlock(bodyRegion);
@@ -248,10 +245,6 @@ ParseResult MetaForOp::parse(OpAsmParser &parser, OperationState &result) {
       parser.parseOperand(step))
     return failure();
 
-  // Parse the optional "unsigned" keyword.
-  if (succeeded(parser.parseOptionalKeyword("unsigned")))
-    result.addAttribute("unsignedCmp", builder.getUnitAttr());
-
   // Parse the optional attribute dictionary.
   if (parser.parseOptionalAttrDict(result.attributes))
     return failure();
@@ -275,10 +268,7 @@ ParseResult MetaForOp::parse(OpAsmParser &parser, OperationState &result) {
 void MetaForOp::print(OpAsmPrinter &p) {
   p << " " << getInductionVar() << " = " << getLowerBound() << " to "
     << getUpperBound() << " step " << getStep();
-  if (getUnsignedCmp())
-    p << " unsigned";
-  p.printOptionalAttrDict(getOperation()->getAttrs(),
-                          /*elidedAttrs=*/{"unsignedCmp"});
+  p.printOptionalAttrDict(getOperation()->getAttrs());
   p << " ";
   p.printRegion(getRegion(),
                 /*printEntryBlockArgs=*/false,

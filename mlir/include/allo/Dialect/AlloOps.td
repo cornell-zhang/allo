@@ -1179,16 +1179,14 @@ def MetaForOp : Allo_Op<"meta_for",
   }];
   let arguments = (ins AnySignlessIntegerOrIndex:$lowerBound,
                        AnySignlessIntegerOrIndex:$upperBound,
-                       AnySignlessIntegerOrIndex:$step,
-                       UnitAttr:$unsignedCmp);
+                       AnySignlessIntegerOrIndex:$step);
   let regions = (region SizedRegion<1>:$region);
 
   let skipDefaultBuilders = 1;
   let builders = [OpBuilder<(ins "Value":$lowerBound, "Value":$upperBound,
       "Value":$step, CArg<"ValueRange", "{}">:$initArgs,
       CArg<"function_ref<void(OpBuilder &, Location, Value, ValueRange)>",
-           "nullptr">,
-      CArg<"bool", "false">:$unsignedCmp)>];
+           "nullptr">)>];
 
   let extraClassDeclaration = [{
     using BodyBuilderFn =
@@ -1202,10 +1200,6 @@ def MetaForOp : Allo_Op<"meta_for",
         "expected an index less than the number of region iter args");
       return getBody()->getArguments().drop_front(getNumInductionVars())[index];
     }
-
-    void setLowerBound(Value bound) { getOperation()->setOperand(0, bound); }
-    void setUpperBound(Value bound) { getOperation()->setOperand(1, bound); }
-    void setStep(Value step) { getOperation()->setOperand(2, step); }
 
     /// Number of induction variables, always 1 for scf::ForOp.
     unsigned getNumInductionVars() { return 1; }
