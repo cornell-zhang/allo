@@ -47,6 +47,8 @@ from .._mlir.dialects import (
     tensor as tensor_d,
     affine as affine_d,
     scf as scf_d,
+    sdy as sdy_d,
+    shard as shard_d,
     arith as arith_d,
     math as math_d,
     linalg as linalg_d,
@@ -1986,90 +1988,75 @@ class ASTTransformer(ASTBuilder):
             ctx.buffers = old_ctx.buffers.copy()
             ctx.scopes = old_ctx.scopes
             for decorator in node.decorator_list:
-                if isinstance(decorator, ast.Call):
-                    if isinstance(decorator.func, ast.Attribute):
-                        if decorator.func.attr == "kernel":
-                            assert len(decorator.keywords) > 0, "Missing kernel mapping"
-                            mapping = eval(
-                                ast.unparse(decorator.keywords[0].value),
-                                ctx.global_vars,
-                            )
-                            orig_name = node.name
-                            if orig_name not in ctx.func_tag2instance:
-                                ctx.func_tag2instance[orig_name] = {}
-                            # Initialize dict to store kernel instance names for call insertion
-                            if not hasattr(ctx, "_kernel_instance_names"):
-                                ctx._kernel_instance_names = {}
-                            for dim in np.ndindex(*mapping):
-                                if not ctx.unroll:
-                                    # If not unrolled, assign tag to each instance.
-                                    # Different tags indeicate different execution (control flow only)
-                                    predicate_tag = freeze_list(
-                                        ctx.func_predicate_tags[orig_name][dim]
-                                    )
-                                    if (
-                                        predicate_tag
-                                        in ctx.func_tag2instance[orig_name]
-                                    ):
-                                        continue
-                                new_ctx = old_ctx.copy()
-                                new_ctx.top_func = old_ctx.top_func
-                                new_ctx.set_ip(old_ctx.top_func)
-                                new_ctx.top_func_tree = node
-                                new_ctx.buffers = old_ctx.buffers.copy()
-                                new_ctx.scopes = old_ctx.scopes
-                                new_ctx.global_vars = old_ctx.global_vars.copy()
-                                for axis, val in enumerate(dim):
-                                    new_ctx.global_vars.update(
-                                        {"df.p" + str(axis): val}
-                                    )
-                                node.name = construct_kernel_name(orig_name, dim)
-                                # Append suffix from parent context to ensure uniqueness
-                                if hasattr(ctx, "func_suffix"):
-                                    node.name = f"{node.name}_{ctx.func_suffix}"
-                                # Store the kernel name for later call insertion
-                                # Use ctx since AST is reparsed for each region call
-                                ctx._kernel_instance_names[(orig_name, dim)] = node.name
+                if isinstance(decorator, ast.Call) and isinstance(
+                    decorator.func, ast.Attribute
+                ):
+                    if decorator.func.attr == "kernel":
+                        assert len(decorator.keywords) > 0, "Missing kernel mapping"
+                        mapping = eval(
+                            ast.unparse(decorator.keywords[0].value),
+                            ctx.global_vars,
+                        )
+                        orig_name = node.name
+                        # Initialize dict to store kernel instance names for call insertion
+                        if not hasattr(ctx, "_kernel_instance_names"):
+                            ctx._kernel_instance_names = {}
+                        for dim in np.ndindex(*mapping):
+                            new_ctx = old_ctx.copy()
+                            new_ctx.top_func = old_ctx.top_func
+                            new_ctx.set_ip(old_ctx.top_func)
+                            new_ctx.top_func_tree = node
+                            new_ctx.buffers = old_ctx.buffers.copy()
+                            new_ctx.scopes = old_ctx.scopes
+                            new_ctx.global_vars = old_ctx.global_vars.copy()
+                            for axis, val in enumerate(dim):
+                                new_ctx.global_vars.update({"df.p" + str(axis): val})
+                            node.name = construct_kernel_name(orig_name, dim)
+                            # [NOTE]: also doing 'unrolling' here
+                            # Append suffix from parent context to ensure uniqueness
+                            if hasattr(ctx, "func_suffix"):
+                                node.name = f"{node.name}_{ctx.func_suffix}"
+                            # Store the kernel name for later call insertion
+                            # Use ctx since AST is reparsed for each region call
+                            ctx._kernel_instance_names[(orig_name, dim)] = node.name
 
-                                # Update func_suffix for children
-                                instance_suffix = "_".join([str(x) for x in dim])
-                                if hasattr(ctx, "func_suffix"):
-                                    new_ctx.func_suffix = (
-                                        f"{instance_suffix}_{ctx.func_suffix}"
-                                    )
-                                else:
-                                    new_ctx.func_suffix = instance_suffix
-
-                                # Create a copy of the node to avoid modifying the original AST
-                                # and remove the kernel decorator to prevent infinite recursion
-                                new_node = copy.copy(node)
-                                new_node.decorator_list = [
-                                    d
-                                    for d in node.decorator_list
-                                    if not (
-                                        isinstance(d, ast.Call)
-                                        and isinstance(d.func, ast.Attribute)
-                                        and d.func.attr == "kernel"
-                                    )
-                                ]
-
-                                func_op = ASTTransformer.build_FunctionDef(
-                                    new_ctx, new_node
+                            # Update func_suffix for children
+                            instance_suffix = "_".join([str(x) for x in dim])
+                            if hasattr(ctx, "func_suffix"):
+                                new_ctx.func_suffix = (
+                                    f"{instance_suffix}_{ctx.func_suffix}"
                                 )
-                                func_op.attributes["df.kernel"] = UnitAttr.get()
-                                # Mark kernels inside sub-regions so they aren't called from top
-                                if hasattr(ctx, "func_suffix"):
-                                    func_op.attributes["df.nested_kernel"] = (
-                                        UnitAttr.get()
-                                    )
-                                # Restore original name for next iteration
-                                node.name = orig_name
+                            else:
+                                new_ctx.func_suffix = instance_suffix
 
-                            return
+                            # Create a copy of the node to avoid modifying the original AST
+                            # and remove the kernel decorator to prevent infinite recursion
+                            new_node = copy.copy(node)
+                            new_node.decorator_list = [
+                                d
+                                for d in node.decorator_list
+                                if not (
+                                    isinstance(d, ast.Call)
+                                    and isinstance(d.func, ast.Attribute)
+                                    and d.func.attr == "kernel"
+                                )
+                            ]
 
-                        if decorator.func.attr == "region":
-                            # If it is a region, we should insert the calls to the kernels
-                            pass
+                            func_op = ASTTransformer.build_FunctionDef(
+                                new_ctx, new_node
+                            )
+                            func_op.attributes["df.kernel"] = UnitAttr.get()
+                            # Mark kernels inside sub-regions so they aren't called from top
+                            if hasattr(ctx, "func_suffix"):
+                                func_op.attributes["df.nested_kernel"] = UnitAttr.get()
+                            # Restore original name for next iteration
+                            node.name = orig_name
+
+                        return
+
+                    if decorator.func.attr == "region":
+                        # If it is a region, we should insert the calls to the kernels
+                        pass
         else:
             old_ctx = None
 
