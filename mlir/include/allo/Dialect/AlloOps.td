@@ -19,6 +19,7 @@ include "mlir/Interfaces/ControlFlowInterfaces.td"
 include "mlir/Interfaces/FunctionInterfaces.td"
 include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
+include "mlir/Interfaces/LoopLikeInterface.td"
 include "mlir/IR/SymbolInterfaces.td"
 
 //===----------------------------------------------------------------------===//
@@ -1158,6 +1159,75 @@ def MetaIfOp : Allo_Op<"meta_if", [SingleBlockImplicitTerminator<"allo::YieldOp"
   let hasCanonicalizer = 1; // rewrite / fold
   let hasCustomAssemblyFormat = 1; // print
   let hasVerifier = 1; // verify
+}
+
+def MetaForOp : Allo_Op<"meta_for",
+      [LoopLikeOpInterface, AutomaticAllocationScope,
+       RecursiveMemoryEffects,
+       SingleBlockImplicitTerminator<"allo::YieldOp">,
+       AllTypesMatch<["lowerBound", "upperBound", "step"]>]> {
+  let summary = "meta for operation";
+  let description = [{
+    The `allo.meta_for` operation represents a loop taking 3 SSA value as operands
+    that represent the lower bound, upper bound and step respectively.
+
+    ```mlir
+    allo.meta_for %iv = %lb to %ub step %step {
+      ... // body
+    }
+    ```
+  }];
+  let arguments = (ins AnySignlessIntegerOrIndex:$lowerBound,
+                       AnySignlessIntegerOrIndex:$upperBound,
+                       AnySignlessIntegerOrIndex:$step,
+                       UnitAttr:$unsignedCmp);
+  let regions = (region SizedRegion<1>:$region);
+
+  let skipDefaultBuilders = 1;
+  let builders = [OpBuilder<(ins "Value":$lowerBound, "Value":$upperBound,
+      "Value":$step, CArg<"ValueRange", "{}">:$initArgs,
+      CArg<"function_ref<void(OpBuilder &, Location, Value, ValueRange)>",
+           "nullptr">,
+      CArg<"bool", "false">:$unsignedCmp)>];
+
+  let extraClassDeclaration = [{
+    using BodyBuilderFn =
+        function_ref<void(OpBuilder &, Location, Value, ValueRange)>;
+
+    Value getInductionVar() { return getBody()->getArgument(0); }
+
+    /// Return the `index`-th region iteration argument.
+    BlockArgument getRegionIterArg(unsigned index) {
+      assert(index < getNumRegionIterArgs() &&
+        "expected an index less than the number of region iter args");
+      return getBody()->getArguments().drop_front(getNumInductionVars())[index];
+    }
+
+    void setLowerBound(Value bound) { getOperation()->setOperand(0, bound); }
+    void setUpperBound(Value bound) { getOperation()->setOperand(1, bound); }
+    void setStep(Value step) { getOperation()->setOperand(2, step); }
+
+    /// Number of induction variables, always 1 for scf::ForOp.
+    unsigned getNumInductionVars() { return 1; }
+    /// Number of region arguments for loop-carried values
+    unsigned getNumRegionIterArgs() {
+      return getBody()->getNumArguments() - getNumInductionVars();
+    }
+    /// Number of operands controlling the loop: lb, ub, step
+    unsigned getNumControlOperands() { return 3; }
+
+    /// Returns the step as an `APInt` if it is constant.
+    std::optional<APInt> getConstantStep();
+
+    SmallVector<Region *> getLoopRegions() {
+        return { &getRegion() };
+    }
+  }];
+
+  let hasCanonicalizer = 1;
+  let hasCustomAssemblyFormat = 1;
+  let hasVerifier = 1;
+  let hasRegionVerifier = 1;
 }
 
 #endif // ALLO_OPS

@@ -2062,13 +2062,6 @@ class ASTTransformer(ASTBuilder):
                                     func_op.attributes["df.nested_kernel"] = (
                                         UnitAttr.get()
                                     )
-                                if not ctx.unroll:
-                                    func_op.attributes["tag"] = StringAttr.get(
-                                        f"{orig_name}_{str(predicate_tag)}"
-                                    )
-                                    ctx.func_tag2instance[orig_name][
-                                        predicate_tag
-                                    ] = func_op
                                 # Restore original name for next iteration
                                 node.name = orig_name
 

@@ -18,6 +18,7 @@
 #include "mlir/Interfaces/FunctionInterfaces.h"
 #include "mlir/Interfaces/InferTypeOpInterface.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
+#include "mlir/Interfaces/LoopLikeInterface.h"
 
 #include "allo/Dialect/AlloAttrs.h"
 #include "allo/Dialect/AlloTypes.h"

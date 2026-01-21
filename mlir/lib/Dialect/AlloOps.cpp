@@ -21,6 +21,7 @@
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/OpImplementation.h"
 #include "mlir/IR/PatternMatch.h"
+#include "mlir/IR/Matchers.h"
 #include "mlir/IR/TypeUtilities.h"
 #include "mlir/Interfaces/FunctionImplementation.h"
 
@@ -207,6 +208,121 @@ void MetaIfOp::getCanonicalizationPatterns(RewritePatternSet &results,
     // TODO
 }
 
+
+
+//===----------------------------------------------------------------------===//
+// MetaForOp
+//===----------------------------------------------------------------------===//
+
+void MetaForOp::build(OpBuilder &builder, OperationState &result,
+                      Value lowerBound, Value upperBound, Value step,
+                      ValueRange initArgs,
+                      BodyBuilderFn bodyBuilder,
+                      bool unsignedCmp) {
+  result.addOperands({lowerBound, upperBound, step});
+  if (unsignedCmp)
+    result.addAttribute("unsignedCmp", builder.getUnitAttr());
+
+  Region *bodyRegion = result.addRegion();
+  Block *bodyBlock = builder.createBlock(bodyRegion);
+  // Add induction variable
+  bodyBlock->addArgument(builder.getIndexType(), result.location);
+
+  if (bodyBuilder) {
+    OpBuilder::InsertionGuard guard(builder);
+    builder.setInsertionPointToStart(bodyBlock);
+    bodyBuilder(builder, result.location, bodyBlock->getArgument(0), {});
+  }
+  MetaForOp::ensureTerminator(*bodyRegion, builder, result.location);
+}
+
+ParseResult MetaForOp::parse(OpAsmParser &parser, OperationState &result) {
+  auto &builder = parser.getBuilder();
+  OpAsmParser::Argument inductionVariable;
+  OpAsmParser::UnresolvedOperand lb, ub, step;
+
+  // Parse the induction variable followed by '='.
+  if (parser.parseArgument(inductionVariable) || parser.parseEqual() ||
+      parser.parseOperand(lb) || parser.parseKeyword("to") ||
+      parser.parseOperand(ub) || parser.parseKeyword("step") ||
+      parser.parseOperand(step))
+    return failure();
+
+  // Parse the optional "unsigned" keyword.
+  if (succeeded(parser.parseOptionalKeyword("unsigned")))
+    result.addAttribute("unsignedCmp", builder.getUnitAttr());
+
+  // Parse the optional attribute dictionary.
+  if (parser.parseOptionalAttrDict(result.attributes))
+    return failure();
+
+  // Parse the body region.
+  Region *body = result.addRegion();
+  if (parser.parseRegion(*body, inductionVariable))
+    return failure();
+
+  MetaForOp::ensureTerminator(*body, builder, result.location);
+
+  // Resolve operands.
+  if (parser.resolveOperand(lb, builder.getIndexType(), result.operands) ||
+      parser.resolveOperand(ub, builder.getIndexType(), result.operands) ||
+      parser.resolveOperand(step, builder.getIndexType(), result.operands))
+    return failure();
+
+  return success();
+}
+
+void MetaForOp::print(OpAsmPrinter &p) {
+  p << " " << getInductionVar() << " = " << getLowerBound() << " to "
+    << getUpperBound() << " step " << getStep();
+  if (getUnsignedCmp())
+    p << " unsigned";
+  p.printOptionalAttrDict(getOperation()->getAttrs(),
+                          /*elidedAttrs=*/{"unsignedCmp"});
+  p << " ";
+  p.printRegion(getRegion(),
+                /*printEntryBlockArgs=*/false,
+                /*printBlockTerminators=*/false);
+}
+
+LogicalResult MetaForOp::verify() {
+  IntegerAttr lb;
+  if (!matchPattern(getLowerBound(), m_Constant(&lb)))
+    return emitOpError("lower bound must be constant");
+  
+  IntegerAttr ub;
+  if (!matchPattern(getUpperBound(), m_Constant(&ub)))
+    return emitOpError("upper bound must be constant");
+
+  IntegerAttr step;
+  if (!matchPattern(getStep(), m_Constant(&step)))
+    return emitOpError("step must be constant");
+
+  if (step.getValue().isZero())
+    return emitOpError("constant step operand must be non-zero");
+
+  return success();
+}
+
+LogicalResult MetaForOp::verifyRegions() {
+  if (getRegion().empty())
+    return emitOpError("region must not be empty");
+  if (getRegion().front().getNumArguments() != 1)
+    return emitOpError("region must have exactly one argument");
+  return success();
+}
+
+std::optional<APInt> MetaForOp::getConstantStep() {
+  IntegerAttr step;
+  if (matchPattern(getStep(), m_Constant(&step)))
+    return step.getValue();
+  return std::nullopt;
+}
+
+void MetaForOp::getCanonicalizationPatterns(RewritePatternSet &results,
+                                            MLIRContext *context) {
+    // TODO
+}
 
 } // namespace allo
 } // namespace mlir
