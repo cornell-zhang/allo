@@ -1410,5 +1410,35 @@ def test_constexpr_with_helper_functions():
     np.testing.assert_allclose(np_B, expected, rtol=1e-5)
 
 
+def test_constant_tensor_slice():
+    """Test loading a slice of a constant numpy array."""
+    np_A = np.array([[1, 2, 3, 4], [5, 6, 7, 8]], dtype=np.int32)
+
+    def kernel() -> int32[4]:
+        A: int32[4] = np_A[1]  # Load second row as constant
+        return A
+
+    s = allo.customize(kernel)
+    print(s.module)
+    mod = s.build()
+    result = mod()
+    np.testing.assert_array_equal(result, np_A[1])
+
+
+def test_constant_tensor_slice_2d():
+    """Test loading a 2D slice of a constant numpy 3D array."""
+    np_A = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
+
+    def kernel() -> float32[3, 4]:
+        A: float32[3, 4] = np_A[1]  # Load second 2D slice
+        return A
+
+    s = allo.customize(kernel)
+    print(s.module)
+    mod = s.build()
+    result = mod()
+    np.testing.assert_allclose(result, np_A[1], rtol=1e-5)
+
+
 if __name__ == "__main__":
     pytest.main([__file__])
