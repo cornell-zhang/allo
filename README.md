@@ -20,6 +20,8 @@ Allo is a Python-embedded, MLIR-based language and compiler designed to facilita
 Please check out the [Allo documentation](https://cornell-zhang.github.io/allo) for installation instructions and tutorials.
 If you encounter any problems, please feel free to open an [issue](https://github.com/cornell-zhang/allo/issues).
 
+**IMPORTANT:** If you are using a coding agent for our codebase, please import [AGENTS.md](AGENTS.md).
+
 
 ## Publications
 Please refer to our [PLDI'24 paper](https://dl.acm.org/doi/10.1145/3656401) for more details. If you use Allo in your research, please cite our paper:
