@@ -1,6 +1,8 @@
 # Building
 - Run `pip install -v -e .` to build the full project (includes MLIR/C++ backend)
 - Always `conda activate allo` before building or running tests
+- Read `docs/source/dive/frontend_syntax.rst` for comprehensive Allo frontend syntax reference
+- Read `docs/source/dive/dataflow.rst` for the dataflow programming model (regions, kernels, streams)
 
 # Testing
 - Run `bash scripts/lint/task_lint.sh` for formatting checks
@@ -14,7 +16,7 @@
 - Prefer general solutions instead of one-off `if/else` patches
 - Place Python frontend code in `allo/`
 - Place MLIR dialects and passes code in `mlir/`
-- Add tests for new features in `tests/`
+- Add tests and documentation for new features in `tests/` and `docs/`
 
 # Don'ts
 - Do not modify repository structure without approval
