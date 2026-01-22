@@ -46,11 +46,16 @@ def get_feather_top(AW: int, AH: int, Ty: AlloType):
     P1 = AW // 2  # Number of switches in a stage
 
     @df.region()
-    def top():
+    def top(
+        iActs: Ty[AH, AW],
+        weights: Ty[AH, AW, AH],
+        inst: int8[P0, P1],
+        output_buffer: Ty[AH, AW],
+    ):
         nest_out: Stream[TyPacked, AH]
 
-        @df.kernel(mapping=[1])
-        def NEST(iActs: Ty[AH, AW], weights: Ty[AH, AW, AH]):
+        @df.kernel(mapping=[1], args=[iActs, weights])
+        def NEST(local_iActs: Ty[AH, AW], local_weights: Ty[AH, AW, AH]):
             for i in allo.grid(AH, name="nest"):  # Rows, can be pipelined
                 local_buffer: Ty[AW] = 0
                 for j in range(AW):  # Cols, can be fully parallelized
@@ -58,8 +63,8 @@ def get_feather_top(AW: int, AH: int, Ty: AlloType):
                     end: int8 = start + Ty.bits
                     temp: Ty = 0
                     for k in range(AH):  # Iterations of a local reduction
-                        iAct: Ty = iActs[k, j]
-                        weight: Ty = weights[i, j, k]
+                        iAct: Ty = local_iActs[k, j]
+                        weight: Ty = local_weights[i, j, k]
                         temp += iAct * weight
                     local_buffer[j] = temp
                 local_result: TyPacked = 0
@@ -78,28 +83,28 @@ def get_feather_top(AW: int, AH: int, Ty: AlloType):
 
         inst_input: Stream[int8, 1][P0, P1]
 
-        @df.kernel(mapping=[1])
-        def inst_rw(inst: int8[P0, P1]):
+        @df.kernel(mapping=[1], args=[inst])
+        def inst_rw(local_inst: int8[P0, P1]):
             with allo.meta_for(P0) as i:
                 with allo.meta_for(P1) as j:
-                    inst_input[i, j].put(inst[i, j])
+                    inst_input[i, j].put(local_inst[i, j])
 
         @df.kernel(mapping=[P0, P1])
         def BIRRD():
             i, j = df.get_pid()
-            inst = inst_input[i, j].get()
+            inst_val = inst_input[i, j].get()
             for _ in range(AH):
                 in_left: Ty = connection[i, 2 * j].get()
                 in_right: Ty = connection[i, 2 * j + 1].get()
                 out_left: Ty = 0
                 out_right: Ty = 0
-                if inst == 0:  # pass
+                if inst_val == 0:  # pass
                     out_left = in_left
                     out_right = in_right
-                elif inst == 1:  # add-right
+                elif inst_val == 1:  # add-right
                     out_left = in_left
                     out_right = in_left + in_right
-                elif inst == 2:  # add-left
+                elif inst_val == 2:  # add-left
                     out_left = in_left + in_right
                     out_right = in_right
                 else:  # swap
@@ -124,12 +129,12 @@ def get_feather_top(AW: int, AH: int, Ty: AlloType):
                     connection[P0, 2 * j].put(out_left)
                     connection[P0, 2 * j + 1].put(out_right)
 
-        @df.kernel(mapping=[1])
-        def output(output_buffer: Ty[AH, AW]):
+        @df.kernel(mapping=[1], args=[output_buffer])
+        def output(local_output: Ty[AH, AW]):
             for d in range(AH):
                 with allo.meta_for(AW) as i:
                     # TODO: Do reduction on-chip
-                    output_buffer[d, i] = connection[P0, i].get()
+                    local_output[d, i] = connection[P0, i].get()
 
     return top
 
