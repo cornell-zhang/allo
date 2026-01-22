@@ -48,6 +48,16 @@ jobs:
         export OMP_NUM_THREADS=128
         python3 -m pytest --ignore=tests/dataflow/aie tests/dataflow -v
         unset OMP_NUM_THREADS
+    - name: Accelerators
+      shell: bash
+      run: |
+        source activate allo
+        export PATH=/root/llvm-project/build/bin:${PATH}
+        export LLVM_BUILD_DIR=/root/llvm-project/build
+        export OMP_NUM_THREADS=128
+        python3 examples/feather/gemm.py
+        python3 examples/feather/convolution.py
+        unset OMP_NUM_THREADS
     - name: Tutorial
       shell: bash
       run: |
