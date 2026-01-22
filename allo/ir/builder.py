@@ -1117,7 +1117,12 @@ class ASTTransformer(ASTBuilder):
                     assert idx is None, "Not Supported"
                     ctx.buffers[target.id] = rhs
                     # FIXME (Shihan): GetGlobalOp has a "name" attribute, which may have assignment conflict
-                    if "name" in rhs.attributes:
+                    # For GetGlobalOp (constant tensors), the name is the global symbol reference,
+                    # not the target variable name. Skip the assertion check for GetGlobalOp.
+                    if isinstance(rhs, memref_d.GetGlobalOp):
+                        # GetGlobalOp's name is a symbol reference - don't try to set/check attributes
+                        pass
+                    elif "name" in rhs.attributes:
                         assert rhs.attributes["name"].value == target.id
                     else:
                         rhs.attributes["name"] = StringAttr.get(target.id)

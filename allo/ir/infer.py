@@ -652,6 +652,32 @@ class TypeInferer(ASTVisitor):
                 ctx, value, ctx.global_vars[value.id], dtype=target_dtype
             )
             value.dtype = target_dtype
+        elif isinstance(value, ast.Subscript) and isinstance(value.value, ast.Name):
+            # Handle slicing of a constant numpy array, e.g., np_array[i]
+            array_name = value.value.id
+            if array_name in ctx.global_vars and isinstance(
+                ctx.global_vars[array_name], np.ndarray
+            ):
+                assert target_shape is not None and target_dtype is not None
+                np_array = ctx.global_vars[array_name]
+                # Evaluate the slice at compile time
+                slice_expr = compile(ast.Expression(value.slice), "", "eval")
+                # pylint: disable=eval-used
+                slice_val = eval(slice_expr, ctx.global_vars)
+                # Extract the slice
+                sliced_array = np_array[slice_val]
+                # Ensure it's still a numpy array (scalar case)
+                if not isinstance(sliced_array, np.ndarray):
+                    sliced_array = np.array([sliced_array], dtype=np_array.dtype)
+                assert (
+                    sliced_array.shape == target_shape
+                ), f"Slice shape mismatch, got {sliced_array.shape} and {target_shape}"
+                TypeInferer.visit_constant_tensor(
+                    ctx, value, sliced_array, dtype=target_dtype
+                )
+                value.dtype = target_dtype
+            else:
+                visit_stmt(ctx, value)
         else:
             visit_stmt(ctx, value)
         return value
@@ -673,25 +699,30 @@ class TypeInferer(ASTVisitor):
             assert (
                 target_.dtype == target_dtype and target_.shape == target_shape
             ), f"Invalid assignment to {node.target.id}, type mismatch."
-            assert not getattr(
-                target_dtype, "constexpr", False
-            ), "Cannot reassign constants."
-        # rhs
-        rhs = TypeInferer.visit_assignment_val(
-            ctx, node.value, target_shape, target_dtype
-        )
-        if target_ is None:
-            # new def
+
+        # If the variable is a compile-time constant (ConstExpr), we should evaluate
+        # the RHS at Python level using ASTResolver.resolve() BEFORE calling
+        # visit_assignment_val, which would otherwise try to compile function calls.
+        if getattr(target_dtype, "constexpr", False):
+            val = ASTResolver.resolve(node.value, ctx.global_vars)
+            ctx.global_vars[node.target.id] = val
+            # Set value attributes for downstream processing
+            node.value.dtype = target_dtype
+            node.value.shape = target_shape
+            rhs = node.value
+        else:
+            # rhs - normal processing
+            rhs = TypeInferer.visit_assignment_val(
+                ctx, node.value, target_shape, target_dtype
+            )
+
+        if target_ is None and not getattr(target_dtype, "constexpr", False):
+            # new def - but NOT for ConstExpr, which should only be in global_vars
             ctx.put_symbol(name=node.target.id, val=node.target)
         node.target.dtype = node.dtype = target_dtype
         node.target.shape = node.shape = target_shape
         # Store the memory/layout spec for local variables
         node.target.spec = node.spec = spec
-        # If the variable is a compile-time constant, we need to register it in the global_vars
-        # so that it can be used in the type hint of the following statements.
-        if getattr(target_dtype, "constexpr", False):
-            val = ASTResolver.resolve(node.value, ctx.global_vars)
-            ctx.global_vars[node.target.id] = val
         final_shape, lhs_dims, rhs_dims = TypeInferer.visit_broadcast(
             ctx,
             node.target.shape,
