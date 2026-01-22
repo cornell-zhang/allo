@@ -699,7 +699,9 @@ class TypeInferer(ASTVisitor):
             assert (
                 target_.dtype == target_dtype and target_.shape == target_shape
             ), f"Invalid assignment to {node.target.id}, type mismatch."
-
+            assert not getattr(
+                target_dtype, "constexpr", False
+            ), "Cannot reassign constants."
         # If the variable is a compile-time constant (ConstExpr), we should evaluate
         # the RHS at Python level using ASTResolver.resolve() BEFORE calling
         # visit_assignment_val, which would otherwise try to compile function calls.
@@ -716,8 +718,7 @@ class TypeInferer(ASTVisitor):
                 ctx, node.value, target_shape, target_dtype
             )
 
-        if target_ is None and not getattr(target_dtype, "constexpr", False):
-            # new def - but NOT for ConstExpr, which should only be in global_vars
+        if target_ is None:
             ctx.put_symbol(name=node.target.id, val=node.target)
         node.target.dtype = node.dtype = target_dtype
         node.target.shape = node.shape = target_shape
