@@ -30,7 +30,7 @@ from .types import (
     float64,
     Struct,
     Stream,
-    stateful,
+    Stateful,
     ConstExpr,
 )
 from .typing_rule import get_typing_rule
@@ -159,12 +159,12 @@ class TypeInferer(ASTVisitor):
         if isinstance(node, ast.BinOp):
             # memory refinement
             # or, stateful variable
-            # e.g., A: Ty[M] @ stateful
+            # e.g., A: Ty[M] @ Stateful
             dtype, shape, node_left_layout = TypeInferer.visit_type_hint(ctx, node.left)
             spec = ASTResolver.resolve(node.right, ctx.global_vars)
             if isinstance(spec, list):
                 spec = Layout(spec)
-            if spec is stateful:
+            if spec is Stateful:
                 # Create a copy with stateful=True
                 stateful_dtype = copy.deepcopy(dtype)
                 stateful_dtype.stateful = True

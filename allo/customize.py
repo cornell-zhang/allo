@@ -4,7 +4,6 @@
 
 import re
 import inspect
-import textwrap
 import copy
 from dataclasses import dataclass
 from functools import wraps
@@ -1329,15 +1328,8 @@ def customize(
             Defaults to `"default"`.
     """
     # Get Python AST
-    if isinstance(fn, str):
-        src, starting_line_no = fn, 1
-        file_name = None
-    else:
-        src, starting_line_no = inspect.getsourcelines(fn)
-        src = [textwrap.fill(line, tabsize=4, width=9999) for line in src]
-        src = textwrap.dedent("\n".join(src))
-        file_name = inspect.getfile(fn)
-    tree = parse_ast(src, starting_line_no=starting_line_no, verbose=verbose)
+    file_name = None if isinstance(fn, str) else inspect.getfile(fn)
+    tree = parse_ast(fn, verbose=verbose)
     if instantiate is None:
         instantiate = []
     if global_vars is None:
@@ -1414,103 +1406,4 @@ def customize(
     #     "All live operations = 1 (top_func) + 1 (top_func_ip), "
     #     f"expected 2, but got {module.context._get_live_operation_count()}"
     # )
-    return sch
-
-
-def build_spmw(
-    fn: Union[Callable, str],
-    verbose: bool = False,
-    global_vars: dict = None,
-    context: Context = None,
-    unroll: bool = True,
-) -> Schedule:
-    """
-    Args:
-        - typing_rule_set (str): Identifier of the typing rule set used during IR building.
-            This controls implicit type casting behavior.
-            Currently supported values include `"default"`, which is primarily intended for HLS backends, and
-            `"cpp-style"`, which follows C++-like typing rules and is used for the AIE backend.
-            Defaults to `"default"`.
-    """
-    from .ir.spmw_builder import ASTTransformer as SPMW_Builder
-    from .ir.spmw_infer import TypeInferer as SPMW_TypeInferer
-
-    # Get Python AST
-    if isinstance(fn, str):
-        src, starting_line_no = fn, 1
-        file_name = None
-    else:
-        src, starting_line_no = inspect.getsourcelines(fn)
-        src = [textwrap.fill(line, tabsize=4, width=9999) for line in src]
-        src = textwrap.dedent("\n".join(src))
-        file_name = inspect.getfile(fn)
-    tree = parse_ast(src, starting_line_no=starting_line_no, verbose=verbose)
-    instantiate = []
-    if global_vars is None:
-        global_vars = get_global_vars(fn)
-    # Type construction
-    ctx_type_inf = ASTContext(
-        tree=tree,
-        global_vars=global_vars.copy(),
-        mlir_ctx=Context() if context is None else context,
-        inst=instantiate,
-        unroll=unroll,
-        enable_tensor=False,
-        typing_rule_set="cpp-style",
-        verbose=verbose,
-    )
-    tree = SPMW_TypeInferer()(ctx_type_inf, tree)
-    # Start building IR
-    ctx = ASTContext(
-        tree=tree,
-        global_vars=global_vars,
-        mlir_ctx=Context() if context is None else context,
-        inst=instantiate,
-        func_predicate_tags=ctx_type_inf.func_predicate_tags,
-        unroll=unroll,
-        meta_fors_to_unroll=ctx_type_inf.meta_fors_to_unroll,
-        enable_tensor=False,
-        verbose=verbose,
-    )
-    module = SPMW_Builder()(ctx, tree, file_name)
-    func_instances = {
-        orig_name: {
-            dim: f"{orig_name}_{str(freeze_list(predicate_tag))}"
-            for dim, predicate_tag in kernel_instance_info.items()
-        }
-        for orig_name, kernel_instance_info in ctx.func_predicate_tags.items()
-    }
-    sch = Schedule(
-        module,
-        ctx.top_func,
-        ctx.func_args,
-        InsertionPoint.at_block_terminator(ctx.top_func.entry_block),
-        ext_libs=ctx.ext_libs,
-        inst_list=instantiate,
-        func_instances=func_instances,
-    )
-    sch.stateful_var_map = getattr(ctx, "stateful_var_map", {})
-    # Attach buffers to schedule:
-    # The reason why we do not attach buffers to function is that
-    # we may have multiple schedules referring to the same function,
-    # which will cause conflicts of different buffers in different contexts.
-    if isinstance(fn, Callable):
-        for name, buffer in ctx.buffers.items():
-            if isinstance(buffer, MockArg):  # Function arguments
-                setattr(
-                    sch,
-                    name,
-                    MockBuffer(fn.__name__, name, buffer.idx),
-                )
-            elif isinstance(
-                buffer, (memref_d.AllocOp, func_d.CallOp, memref_d.GetGlobalOp)
-            ):  # Intermediate buffers
-                setattr(sch, name, MockBuffer(fn.__name__, name))
-    # Check if there are memory leaks
-    # All live operations = {top_func} + {top_func_ip}
-    buffer = None
-    ctx.buffers = None
-    global_vars = {}
-    # Functions are stored in ctx.global_vars, which should also be removed
-    ctx = None
     return sch

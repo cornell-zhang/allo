@@ -50,6 +50,7 @@ class ASTContext:
         tree,
         global_vars,
         mlir_ctx,
+        function_table=None,
         inst=None,
         func_args=None,
         func_predicate_tags=None,
@@ -68,6 +69,8 @@ class ASTContext:
         self.top_func = None
         self.top_func_tree = None
         self.global_vars = global_vars
+        # functions defined in current module
+        self.function_table = function_table if function_table is not None else {}
         self.mlir_ctx = mlir_ctx
         self.file_name = None
         register_dialect(mlir_ctx, dataflow=True)
@@ -125,10 +128,11 @@ class ASTContext:
             self.tree,
             self.global_vars.copy(),
             self.mlir_ctx,
-            self.inst,
-            self.func_args,
-            self.func_predicate_tags,
-            self.func_tag2instance,
+            function_table=self.function_table,
+            inst=self.inst,
+            func_args=self.func_args,
+            func_predicate_tags=self.func_predicate_tags,
+            func_tag2instance=self.func_tag2instance,
             unroll=self.unroll,
             enable_tensor=self.enable_tensor,
             typing_rule_set=self.typing_rule_set,
@@ -409,8 +413,6 @@ class ReplaceNames(ast.NodeTransformer):
         self.special_symbol = set()
 
     def visit_Name(self, node):
-        if node.id in self.variables:
-            raise ValueError("Fail to resolve the expression as symbolic expression.")
         if node.id in self.symbolic_mapping:
             symbol_var = self.symbolic_mapping[node.id]
             if isinstance(symbol_var, str):
@@ -424,6 +426,8 @@ class ReplaceNames(ast.NodeTransformer):
             return new_node
         if node.id in self.var_map:
             return ast.Constant(self.var_map[node.id])
+        if node.id in self.variables:
+            raise ValueError("Fail to resolve the expression as symbolic expression.")
         return node
 
 
