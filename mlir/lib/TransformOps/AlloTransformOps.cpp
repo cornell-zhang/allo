@@ -964,9 +964,17 @@ transform::PartitionOp::apply(transform::TransformRewriter &rewriter,
       return emitSilenceableError() << "dimension out of bounds";
     }
     unsigned factor = getFactor().value_or(0);
-    if (factor > memrefType.getShape()[targetDim]) {
+    if (targetDim > 0 && factor > memrefType.getShape()[targetDim - 1]) {
       return emitSilenceableError()
              << "partition factor is larger than the dimension size";
+    }
+    if (targetDim == 0) {
+      for (unsigned i = 0; i < rank; ++i) {
+        if (factor > memrefType.getShape()[i]) {
+          return emitSilenceableError()
+                 << "partition factor is larger than the dimension size";
+        }
+      }
     }
     auto type = getPartitionType();
     SmallVector<AffineExpr, 8> partitionIndices;
