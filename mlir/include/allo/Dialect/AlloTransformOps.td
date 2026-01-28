@@ -79,6 +79,7 @@ def LoopTileOp : Op<Transform_Dialect, "allo.loop_tile", [
     let assemblyFormat = [{
         $loops `,` $tile_sizes attr-dict `:` functional-type(operands, results)
     }];
+    let hasVerifier = 1;
 }
 
 def LoopReorderOp : Op<Transform_Dialect, "allo.loop_reorder", [
@@ -306,6 +307,102 @@ def ComputeAtOp : Op<Transform_Dialect, "allo.compute_at", [
     let results = (outs TransformHandleTypeInterface:$attached_stage);
     let assemblyFormat = [{
         $compute_stage `at` $target_loop attr-dict `:` functional-type(operands, results)
+    }];
+}
+
+def PartitionOp : Op<Transform_Dialect, "allo.partition", [
+                     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>,
+                     DeclareOpInterfaceMethods<TransformOpInterface>,
+                     ReportTrackingListenerFailuresOpTrait
+                     ]> {
+    let summary = "Partition the given buffer with specified partitioning scheme";
+    let description = [{
+        allo.partition(target, partition_type=0, dim=0, factor=0)
+
+        Partition a Tensor into smaller Tensors or even registers
+
+        Users can specify the partition type, which includes Complete, Block, and Cyclic. The default type is Complete, which means we completely partition the specified dimension. If Block is specified, the tensor is partitioned into N blocks with equal size. The number N is specified by the factor. Otherwise, if Cyclic is specified, the elements of the tensor is partition in a cyclic manner. For example, if the factor is three, the 1st element will be assigned to the 1st partitioned tensor; the 2nd element will be assigned to the 2nd one; and so on. Finally, if Complete is specified, the factor will be ignored. If dim is set to 0, it means we partition all dimensions.
+
+        Parameters
+        * target (Tensor) - The tensor to be partitioned
+        * partition_type ({Complete, Block, Cyclic}, optional) - The partition type
+        * dim (int, optional) - The dimension to be partitioned
+        * factor (int, optional) - The partition factor
+    }];
+
+    let arguments = (ins TransformHandleTypeInterface:$buffer,
+                     OptionalAttr<PartitionKindEnum>:$partition_type,
+                     OptionalAttr<UI32Attr>:$dim,
+                     OptionalAttr<UI32Attr>:$factor);
+    let results = (outs TransformHandleTypeInterface:$partitioned);
+    let assemblyFormat = [{
+        $buffer `,` $partition_type `,` $dim `,` $factor attr-dict `:` functional-type(operands, results)
+    }];
+}
+
+def ReuseAtOp : Op<Transform_Dialect, "allo.reuse_at", [
+                     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>,
+                     DeclareOpInterfaceMethods<TransformOpInterface>,
+                     ReportTrackingListenerFailuresOpTrait
+                     ]> {
+    let summary = "";
+    let description = [{
+        allo.reuse_at(target, parent, axis, name=None)
+
+        Create a reuse buffer reusing the output of current stage
+
+        This returns a new tensor representing the reuse buffer. A stage is also built correspondingly. The new stage will be a sub-stage of the parent stage under the specified axis. Thus, the axis must be inside the axis list of the parent stage.
+
+        Parameters
+        * target (Tensor) - The tensor whose values will be reused
+        * parent (Stage) - The stage that reuses the output of the current stage
+        * axis (IterVar) - The axis that generates the reuse values
+        * name (string, optional) - The name of the reuse buffer
+    }];
+    let arguments = (ins TransformHandleTypeInterface:$target, TransformHandleTypeInterface:$axis);
+    let results = (outs TransformHandleTypeInterface:$result);
+    let assemblyFormat = [{
+        $target `at` $axis attr-dict `:` functional-type(operands, results)
+    }];
+}
+
+def ReshapeOp: Op<Transform_Dialect, "allo.reshape", [
+                     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>,
+                     DeclareOpInterfaceMethods<TransformOpInterface>,
+                     ReportTrackingListenerFailuresOpTrait
+                     ]> {
+    let summary = "Reshape the given tensor to the specified shape";
+    let description = [{
+        allo.reshape(target)
+
+        Reshape the tensor by modifying the memref
+    }];
+
+    let arguments = (ins TransformHandleTypeInterface:$tensor,
+                     DenseI64ArrayAttr:$newshape);
+    let results = (outs TransformHandleTypeInterface:$reshaped);
+    let assemblyFormat = [{
+        $tensor `,` $newshape attr-dict `:` functional-type(operands, results)
+    }];
+}
+
+def ReformOp : Op<Transform_Dialect, "allo.reform", [
+                     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>,
+                     DeclareOpInterfaceMethods<TransformOpInterface>,
+                     ReportTrackingListenerFailuresOpTrait
+                     ]> {
+    let summary = "Reform the layout of the given buffer";
+    let description = [{
+        allo.reform(target, layout)
+
+        Change the layout of the target tensor based on the provided affine map.
+    }];
+
+    let arguments = (ins TransformHandleTypeInterface:$target,
+                     AffineMapAttr:$layout);
+    let results = (outs TransformHandleTypeInterface:$reformed);
+    let assemblyFormat = [{
+        $target `,` $layout attr-dict `:` functional-type(operands, results)
     }];
 }
 

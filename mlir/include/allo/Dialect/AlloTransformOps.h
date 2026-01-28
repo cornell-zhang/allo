@@ -7,6 +7,7 @@
 #define ALLO_TRANSFORMOPS_H
 
 #include "allo/Dialect/AlloDialect.h"
+#include "allo/Dialect/AlloAttrs.h"
 #include "mlir/Dialect/Transform/Interfaces/TransformInterfaces.h"
 
 #define GET_OP_CLASSES

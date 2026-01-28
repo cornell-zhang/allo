@@ -2,8 +2,10 @@
  * Copyright Allo authors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
-#include "allo/Dialect/AlloTransformOps.h"
-#include "mlir/Dialect/Transform/IR/TransformDialect.h"
+#include "allo/Dialect/AlloAttrs.h"
+#include "allo/Dialect/AlloDialect.h"
+#include "allo/Dialect/AlloOps.h"
+#include "allo/Dialect/AlloTypes.h"
 
 #include "mlir/Dialect/Affine/Analysis/Utils.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
@@ -13,10 +15,11 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/Dialect/Transform/IR/TransformDialect.h"
 #include "mlir/IR/Dominance.h"
 #include "mlir/IR/IntegerSet.h"
 
-#include <ranges>
+#include "allo/Dialect/AlloTransformOps.h"
 
 using namespace mlir;
 
@@ -284,6 +287,17 @@ transform::LoopTileOp::apply(transform::TransformRewriter &rewriter,
   return DiagnosedSilenceableFailure::success();
 }
 
+LogicalResult transform::LoopTileOp::verify() {
+  unsigned nInputs = getLoops().size();
+  unsigned nResults = getTiledLoops().size();
+  if (nInputs != nResults) {
+    return emitOpError(
+               "number of tiled loops must match the number of input loops")
+           << ", got " << nResults << " results for " << nInputs << " loops";
+  }
+  return success();
+}
+
 void transform::LoopTileOp::getEffects(
     SmallVectorImpl<MemoryEffects::EffectInstance> &effects) {
   transform::consumesHandle(getLoopsMutable(), effects);
@@ -341,7 +355,7 @@ transform::LoopReorderOp::apply(transform::TransformRewriter &rewriter,
     selectedOrgIndices.push_back(idx);
   }
   SmallVector<unsigned> permMap(band.size());
-  std::ranges::iota(permMap, 0u);
+  std::iota(permMap.begin(), permMap.end(), 0u);
   for (unsigned i = 0; i < nPerm; ++i) {
     unsigned targetPos = selectedOrgIndices[i];
     unsigned srcPos = selectedOrgIndices[permutation[i]];
@@ -357,7 +371,9 @@ transform::LoopReorderOp::apply(transform::TransformRewriter &rewriter,
   // record results
   // actually we don't need to update the loop handles, they are still valid
   // after affine::permuteLoops
-  results.set(cast<OpResult>(getReorderedLoops()), loops);
+  for (unsigned i = 0; i < loops.size(); i++) {
+    results.set(cast<OpResult>(getReorderedLoops()[i]), {loops[i]});
+  }
   return DiagnosedSilenceableFailure::success();
 }
 
@@ -383,6 +399,13 @@ LogicalResult transform::LoopReorderOp::verify() {
                << permutation[i];
       }
     }
+  }
+  unsigned nLoops = getLoops().size();
+  unsigned nResults = getReorderedLoops().size();
+  if (nLoops != nResults) {
+    return emitOpError(
+               "number of reordered loops must match the number of input loops")
+           << ", got " << nResults << " results for " << nLoops << " loops";
   }
   return success();
 }
@@ -915,6 +938,833 @@ void transform::ComputeAtOp::getEffects(
     SmallVectorImpl<MemoryEffects::EffectInstance> &effects) {
   transform::consumesHandle(getTargetLoopMutable(), effects);
   transform::consumesHandle(getComputeStageMutable(), effects);
+  transform::producesHandle(getOperation()->getOpResults(), effects);
+  transform::modifiesPayload(effects);
+}
+
+/// --------------------------------------------------------------
+/// Partition Op
+/// --------------------------------------------------------------
+
+DiagnosedSilenceableFailure
+transform::PartitionOp::apply(transform::TransformRewriter &rewriter,
+                              transform::TransformResults &results,
+                              transform::TransformState &state) {
+  auto payloadValues = state.getPayloadValues(getBuffer());
+  SmallVector<Value, 4> transformed;
+
+  for (Value value : payloadValues) {
+    auto memrefType = dyn_cast<MemRefType>(value.getType());
+    if (!memrefType) {
+      return emitSilenceableError() << "expected memref type";
+    }
+    unsigned targetDim = getDim().value_or(0);
+    unsigned rank = memrefType.getRank();
+    if (targetDim >= rank) {
+      return emitSilenceableError() << "dimension out of bounds";
+    }
+    unsigned factor = getFactor().value_or(0);
+    if (factor > memrefType.getShape()[targetDim]) {
+      return emitSilenceableError()
+             << "partition factor is larger than the dimension size";
+    }
+    auto type = getPartitionType();
+    SmallVector<AffineExpr, 8> partitionIndices;
+    SmallVector<AffineExpr, 8> addressIndices;
+
+    for (unsigned i = 0; i < rank; ++i) {
+      AffineExpr dimExpr = rewriter.getAffineDimExpr(i);
+      AffineMap existingLayout = memrefType.getLayout().getAffineMap();
+      bool hasExistingLayout = existingLayout.getNumResults() > rank;
+      // dim=0 means all dims, dim>0 means specific dim (1-based)
+      if (targetDim == 0 || (targetDim > 0 && i == targetDim - 1)) {
+        if (type == allo::PartitionKindEnum::BlockPartition) {
+          int64_t blockSize = (memrefType.getShape()[i] + factor - 1) / factor;
+          partitionIndices.push_back(dimExpr.floorDiv(blockSize));
+          addressIndices.push_back(dimExpr % blockSize);
+        } else if (type == allo::PartitionKindEnum::CyclicPartition) {
+          partitionIndices.push_back(dimExpr % factor);
+          addressIndices.push_back(dimExpr.floorDiv(factor));
+        } else if (type == allo::PartitionKindEnum::CompletePartition) {
+          partitionIndices.push_back(dimExpr);
+          addressIndices.push_back(rewriter.getAffineConstantExpr(0));
+        }
+      } else {
+        if (hasExistingLayout) {
+          partitionIndices.push_back(existingLayout.getResult(i));
+          addressIndices.push_back(existingLayout.getResult(i + rank));
+        } else {
+          partitionIndices.push_back(rewriter.getAffineConstantExpr(0));
+          addressIndices.push_back(dimExpr);
+        }
+      }
+    }
+    partitionIndices.append(addressIndices);
+    auto layoutMap =
+        AffineMap::get(rank, 0, partitionIndices, rewriter.getContext());
+    auto newType =
+        MemRefType::get(memrefType.getShape(), memrefType.getElementType(),
+                        layoutMap, memrefType.getMemorySpace());
+    rewriter.modifyOpInPlace(value.getDefiningOp()
+                                 ? value.getDefiningOp()
+                                 : value.getParentRegion()->getParentOp(),
+                             [&]() { value.setType(newType); });
+
+    if (auto arg = dyn_cast<BlockArgument>(value)) {
+      auto func = dyn_cast<func::FuncOp>(arg.getOwner()->getParentOp());
+      if (func) {
+        auto inputTypes = llvm::to_vector(func.getArgumentTypes());
+        inputTypes[arg.getArgNumber()] = newType;
+        auto newFuncType = FunctionType::get(rewriter.getContext(), inputTypes,
+                                             func.getResultTypes());
+        func.setFunctionType(newFuncType);
+      }
+    }
+    transformed.push_back(value);
+  }
+  results.setValues(cast<OpResult>(getPartitioned()), transformed);
+  return DiagnosedSilenceableFailure::success();
+}
+
+void transform::PartitionOp::getEffects(
+    SmallVectorImpl<MemoryEffects::EffectInstance> &effects) {
+  transform::consumesHandle(getBufferMutable(), effects);
+  transform::producesHandle(getOperation()->getOpResults(), effects);
+  transform::modifiesPayload(effects);
+}
+
+/// --------------------------------------------------------------
+/// ReuseAt Op
+/// --------------------------------------------------------------
+
+struct ExprCompare {
+  static int64_t findConstantExpr(const AffineExpr &exp) {
+    int64_t value = -1;
+    // TODO: only support one constant now
+    exp.walk([&](AffineExpr inner) {
+      if (llvm::isa<AffineConstantExpr>(inner))
+        value = llvm::cast<AffineConstantExpr>(inner).getValue();
+    });
+    return value;
+  }
+  bool operator()(const AffineExpr &exp1, const AffineExpr &exp2) const {
+    int64_t val1 = findConstantExpr(exp1);
+    int64_t val2 = findConstantExpr(exp2);
+    return val1 < val2;
+  }
+};
+
+static int findMemRefAxisFromIV(affine::AffineStoreOp storeOp, Value iv) {
+  AffineMap map = storeOp.getAffineMap();
+  auto operands = storeOp.getMapOperands();
+  for (unsigned i = 0; i < map.getNumResults(); ++i) {
+    AffineExpr expr = map.getResult(i);
+    bool found = false;
+    expr.walk([&](AffineExpr e) {
+      if (auto d = dyn_cast<AffineDimExpr>(e)) {
+        if (d.getPosition() < operands.size() &&
+            operands[d.getPosition()] == iv) {
+          found = true;
+        }
+      }
+    });
+    if (found)
+      return static_cast<int>(i);
+  }
+  return -1;
+}
+
+DiagnosedSilenceableFailure
+transform::ReuseAtOp::apply(transform::TransformRewriter &rewriter,
+                            transform::TransformResults &results,
+                            transform::TransformState &state) {
+  auto payloadValues = state.getPayloadValues(getTarget());
+  auto payloadOps = state.getPayloadOps(getAxis());
+  if (!llvm::hasSingleElement(payloadValues) ||
+      !llvm::hasSingleElement(payloadOps)) {
+    return emitSilenceableError() << "expected single operand";
+  }
+  Value target = *payloadValues.begin();
+  auto memrefType = dyn_cast<MemRefType>(target.getType());
+  if (!memrefType) {
+    return emitSilenceableError() << "expected memref type";
+  }
+  auto reuseLoop = dyn_cast<affine::AffineForOp>(*payloadOps.begin());
+  if (!reuseLoop) {
+    return emitSilenceableError() << "expected an affine.for operation as axis";
+  }
+
+  unsigned int rank = memrefType.getRank();
+
+  // Find root loop (stage)
+  affine::AffineForOp rootForOp = reuseLoop;
+  while (auto parent = rootForOp->getParentOfType<affine::AffineForOp>()) {
+    rootForOp = parent;
+  }
+
+  // Find (non-)reduction loops
+  SmallVector<affine::AffineForOp> nonReductionLoops;
+  DenseMap<Value, int64_t> reductionVars;
+  WalkResult result = rootForOp.walk([&](affine::AffineForOp forOp) {
+    if (forOp.getStepAsInt() != 1 || !forOp.hasConstantBounds() ||
+        forOp.getConstantLowerBound() != 0) {
+      return WalkResult::interrupt();
+    }
+    if (!forOp->hasAttr("reduction") && !forOp->hasAttr("spatial") &&
+        !forOp->hasAttr("buffer")) {
+      nonReductionLoops.push_back(forOp);
+    } else if (forOp->hasAttr("reduction")) {
+      reductionVars[forOp.getInductionVar()] = forOp.getConstantUpperBound();
+    }
+    return WalkResult::advance();
+  });
+
+  if (result.wasInterrupted()) {
+    return emitSilenceableError()
+           << "loops must have constant bounds (lb=0) and step 1";
+  }
+  std::reverse(nonReductionLoops.begin(), nonReductionLoops.end());
+
+  // Find the requested loop axis
+  int loopAxis = -1;
+  for (size_t i = 0; i < nonReductionLoops.size(); ++i) {
+    if (nonReductionLoops[i] == reuseLoop) {
+      loopAxis = i;
+      break;
+    }
+  }
+  if (loopAxis == -1) {
+    return emitSilenceableError()
+           << "the axis loop is not found in non-reduction loops";
+  }
+
+  // 5) Get span of each dimension (also stride)
+  SmallVector<SmallVector<AffineExpr>> originalLoadExprs(rank);
+  int cntLoad = 0;
+  DenseMap<AffineExpr, Value> dim2iv;
+
+  reuseLoop.walk([&](affine::AffineLoadOp loadOp) {
+    if (loadOp.getOperand(0) != target)
+      return WalkResult::advance();
+    cntLoad++;
+    for (int i = 0; i < (int)rank; ++i) {
+      originalLoadExprs[i].push_back(loadOp.getAffineMap().getResult(i));
+    }
+    OpBuilder builder(loadOp);
+    for (auto operandItem : llvm::enumerate(loadOp.getMapOperands())) {
+      dim2iv[builder.getAffineDimExpr(operandItem.index())] =
+          operandItem.value();
+    }
+    return WalkResult::advance();
+  });
+
+  SmallVector<int64_t> spans;
+  int64_t stride = 1;
+  for (int i = 0; i < rank; ++i) {
+    int64_t span = 0;
+    // TODO: require strict load order
+    if (originalLoadExprs[i].empty()) {
+      spans.push_back(1);
+      continue;
+    }
+    AffineExpr baseExpr = originalLoadExprs[i][0];
+    int64_t baseCst = 0;
+    if (llvm::isa<AffineDimExpr>(baseExpr)) {
+      bool allAffineDimExpr = true;
+      for (int j = 0; j < cntLoad; ++j) {
+        auto diff = originalLoadExprs[i][j] - baseExpr;
+        if (!llvm::isa<AffineDimExpr>(originalLoadExprs[i][j]))
+          allAffineDimExpr = false;
+        if (llvm::isa<AffineConstantExpr>(diff)) {
+          span = std::max(
+              span, llvm::dyn_cast<AffineConstantExpr>(diff).getValue() + 1);
+        }
+      }
+      if (allAffineDimExpr &&
+          reductionVars.count(dim2iv[llvm::dyn_cast<AffineDimExpr>(baseExpr)]) >
+              0) {
+        span = reductionVars[dim2iv[llvm::dyn_cast<AffineDimExpr>(baseExpr)]];
+      }
+    } else if (llvm::isa<AffineConstantExpr>(baseExpr)) {
+      for (int j = 0; j < cntLoad; ++j) {
+        auto diff = originalLoadExprs[i][j] - baseExpr;
+        if (llvm::isa<AffineConstantExpr>(diff)) {
+          span = std::max(
+              span, llvm::dyn_cast<AffineConstantExpr>(diff).getValue() + 1);
+        }
+      }
+    } else { // AffineBinaryOpExpr, reduction
+      auto binaryExpr = llvm::dyn_cast<AffineBinaryOpExpr>(baseExpr);
+      auto lhs = binaryExpr.getLHS();
+      auto rhs = binaryExpr.getRHS();
+      // d0 * s + d1, d1 is the reduction variable
+      if (llvm::isa<AffineDimExpr>(rhs)) {
+        auto dimExpr = llvm::dyn_cast<AffineDimExpr>(rhs);
+        if (reductionVars.count(dim2iv[dimExpr]) > 0) {
+          span = reductionVars[dim2iv[dimExpr]];
+        }
+      } else if (llvm::isa<AffineConstantExpr>(rhs)) {
+        int64_t cst = llvm::dyn_cast<AffineConstantExpr>(rhs).getValue();
+        if (baseCst == 0)
+          baseCst = cst;
+        span = std::max(span, cst - baseCst + 1);
+      }
+      if (llvm::isa<AffineBinaryOpExpr>(lhs)) {
+        auto binLHS = llvm::dyn_cast<AffineBinaryOpExpr>(lhs);
+        if (llvm::isa<AffineConstantExpr>(binLHS.getRHS()))
+          stride =
+              llvm::dyn_cast<AffineConstantExpr>(binLHS.getRHS()).getValue();
+      }
+    }
+    if (span == 0)
+      span = 1;
+    spans.push_back(span);
+  }
+
+  // 6) Obtain AffineMaps of load instructions
+  std::set<AffineExpr, ExprCompare> requestedVars;
+  SmallVector<affine::AffineLoadOp> allLoadOps;
+  std::map<int, int> dimBounds; // dim expr->reduction bound
+  int axis = -1;
+  int distance = -1;
+
+  reuseLoop.walk([&](affine::AffineLoadOp loadOp) {
+    if (loadOp.getOperand(0) != target)
+      return WalkResult::advance();
+    auto loadMap = loadOp.getAffineMap();
+    unsigned numDims = loadMap.getNumDims();
+    auto operands = loadOp.getMapOperands();
+    int rDim = -1;
+    int operandIdx = 0;
+    for (int j = 0; j < loadMap.getNumResults(); ++j) {
+      AffineExpr expr = loadMap.getResult(j);
+      if (axis == -1) {
+        if (llvm::isa<AffineDimExpr>(expr)) {
+          if (operands[operandIdx++] ==
+              nonReductionLoops[loopAxis].getInductionVar()) {
+            axis = j;
+          }
+        } else if (llvm::isa<AffineBinaryOpExpr>(expr)) {
+          auto targetIV = nonReductionLoops[loopAxis].getInductionVar();
+          if (operands[operandIdx] == targetIV) {
+            axis = j;
+          } else if (!llvm::isa<BlockArgument>(operands[operandIdx]) &&
+                     llvm::isa<affine::AffineApplyOp>(
+                         operands[operandIdx].getDefiningOp())) {
+            auto applyOp = llvm::dyn_cast<affine::AffineApplyOp>(
+                operands[operandIdx].getDefiningOp());
+            for (auto applyOpOperand : applyOp.getOperands()) {
+              if (applyOpOperand == targetIV) {
+                axis = j;
+                break;
+              }
+            }
+          }
+
+          operandIdx++;
+          int cntDim = 0;
+          for (int i = 0; i < numDims; ++i)
+            if (expr.isFunctionOfDim(i))
+              cntDim++;
+          if (cntDim > 1)
+            if (operands[operandIdx++] ==
+                nonReductionLoops[loopAxis].getInductionVar())
+              axis = j;
+        }
+      }
+      for (int i = 0; i < numDims; ++i) {
+        if (expr.isFunctionOfDim(i) && reductionVars.count(operands[i]) > 0) {
+          dimBounds[i] = reductionVars[operands[i]];
+          if (j == axis) // target reuse axis
+            rDim = i;
+        }
+      }
+    }
+    OpBuilder builder(loadOp);
+    AffineExpr expr = loadMap.getResult(axis);
+    auto insertLoadOp = [&](affine::AffineLoadOp loadOp) {
+      unsigned size = allLoadOps.size();
+      auto exp1 = loadOp.getAffineMap().getResult(axis);
+      for (int i = 0; i < size; ++i) {
+        int64_t val1 = ExprCompare::findConstantExpr(exp1);
+        auto exp2 = allLoadOps[i].getAffineMap().getResult(axis);
+        int64_t val2 = ExprCompare::findConstantExpr(exp2);
+        if (val1 < val2) {
+          allLoadOps.insert(allLoadOps.begin() + i, loadOp);
+          return;
+        }
+      }
+      allLoadOps.push_back(loadOp);
+    };
+    insertLoadOp(loadOp);
+    if (rDim != -1) {
+      int ub = reductionVars[operands[rDim]];
+      distance = ub - 1;
+      for (int j = 0; j < ub; j++) {
+        auto ubCstExpr = builder.getAffineConstantExpr(j);
+        auto newExpr = expr.replace(builder.getAffineDimExpr(rDim), ubCstExpr);
+        requestedVars.insert(newExpr);
+      }
+    } else {
+      requestedVars.insert(expr);
+      auto var = expr - *(requestedVars.begin());
+      distance = std::max(
+          distance, (int)(llvm::dyn_cast<AffineConstantExpr>(var).getValue()));
+    }
+    return WalkResult::advance();
+  });
+  if (axis == -1) {
+    return emitSilenceableError() << "Cannot find reuse axis";
+  }
+
+  // 7) Try to find reuse pattern
+  bool canReuse = false;
+  for (auto var : requestedVars) {
+    if (requestedVars.find(var + 1) != requestedVars.end()) {
+      canReuse = true;
+      break;
+    }
+  }
+  if (!canReuse) {
+    return emitSilenceableError()
+           << "Cannot find reuse pattern on axis " << std::to_string(loopAxis)
+           << ". Only support stride 1 reuse pattern now";
+  }
+
+  // 8) Obtain indices and strides in load instructions
+  SmallVector<AffineMap> allLoadAffineMaps;
+  SmallVector<SmallVector<Value>> allLoadOperands;
+  SmallVector<int> preRDim;
+  SmallVector<int> preRDimAxis;
+  int rDim = -1;
+  auto baseVar = *(requestedVars.begin());
+
+  for (auto loadOp : allLoadOps) {
+    auto loadMap = loadOp.getAffineMap();
+    auto var = loadMap.getResult(axis);
+    auto diff = var - baseVar;
+
+    auto getReductionDim = [&](AffineExpr expr) {
+      for (auto item : dimBounds)
+        if (expr.isFunctionOfDim(item.first))
+          return item.first;
+      return -1;
+    };
+    rDim = getReductionDim(diff);
+
+    OpBuilder builder(loadOp);
+    if (rDim != -1) { // is reduction
+      return emitSilenceableError() << "Reduction reuse not fully implemented";
+    } else {
+      int loadRank = 0;
+      int operandIdx = 0;
+      auto operands = loadOp.getMapOperands();
+      SmallVector<Value> memAffineIndices;
+      SmallVector<AffineExpr> singleLoadAffineExpr;
+      for (int i = 0; i < axis; ++i) {
+        if (spans[i] > 1) {
+          singleLoadAffineExpr.push_back(builder.getAffineDimExpr(loadRank++));
+          memAffineIndices.push_back(operands[operandIdx]);
+        }
+      }
+      if (llvm::isa<AffineConstantExpr>(diff)) {
+        singleLoadAffineExpr.push_back(diff);
+      } else {
+        return emitSilenceableError() << "Cannot support non-constant stride";
+      }
+      for (unsigned int i = axis + 1; i < rank; ++i) {
+        singleLoadAffineExpr.push_back(builder.getAffineDimExpr(loadRank++));
+        memAffineIndices.push_back(operands[operandIdx++]);
+      }
+      auto affineMap = AffineMap::get(loadRank, 0, singleLoadAffineExpr,
+                                      builder.getContext());
+      if (std::find(allLoadAffineMaps.begin(), allLoadAffineMaps.end(),
+                    affineMap) == allLoadAffineMaps.end()) {
+        allLoadAffineMaps.push_back(affineMap);
+        allLoadOperands.push_back(memAffineIndices);
+      }
+    }
+  }
+
+  // 9) Create reuse buffer
+  SmallVector<int64_t> shape;
+  for (int i = 0; i < axis; ++i)
+    if (spans[i] > 1)
+      shape.push_back(spans[i]);
+  shape.push_back(distance + 1);
+  for (unsigned int i = axis + 1; i < rank; ++i)
+    shape.push_back(memrefType.getShape()[i]);
+
+  rewriter.setInsertionPoint(rootForOp);
+  auto buf = memref::AllocOp::create(
+      rewriter, rootForOp.getLoc(),
+      MemRefType::get(shape, memrefType.getElementType()));
+  buf->setAttr("name", StringAttr::get(buf->getContext(),
+                                       "reuse_" + std::to_string(loopAxis)));
+  if (auto defOp = target.getDefiningOp()) {
+    if (defOp->hasAttr("unsigned"))
+      buf->setAttr("unsigned", rewriter.getUnitAttr());
+  }
+
+  // 11) Update loop bound
+  auto origLoopBound = nonReductionLoops[loopAxis].getConstantUpperBound();
+  nonReductionLoops[loopAxis].setConstantUpperBound(origLoopBound * stride +
+                                                    distance);
+
+  auto iv = nonReductionLoops[loopAxis].getInductionVar();
+  for (auto &use : llvm::make_early_inc_range(iv.getUses())) {
+    auto user = use.getOwner();
+    if (auto indexCastOp = dyn_cast<arith::IndexCastOp>(user)) {
+      for (auto &cast_user :
+           llvm::make_early_inc_range(indexCastOp.getResult().getUses())) {
+        auto muliOp = dyn_cast<arith::MulIOp>(cast_user.getOwner());
+        if (muliOp) {
+          rewriter.setInsertionPoint(muliOp);
+          Type dtype = muliOp.getResult().getType();
+          auto cst =
+              arith::ConstantOp::create(rewriter, muliOp.getLoc(), dtype,
+                                        rewriter.getIntegerAttr(dtype, stride));
+          auto subiOp = arith::SubIOp::create(rewriter, muliOp.getLoc(),
+                                              indexCastOp.getResult(), cst);
+          muliOp.replaceAllUsesWith(subiOp.getResult());
+          muliOp.erase();
+        }
+      }
+    }
+  }
+
+  // 12) Update store index
+  SmallVector<Operation *> opToRemove;
+  reuseLoop.walk([&](affine::AffineStoreOp op) {
+    auto arrayType = llvm::dyn_cast<MemRefType>(op.getOperand(1).getType());
+    if (arrayType.getRank() == 1 && arrayType.getShape()[0] == 1) {
+      return WalkResult::advance();
+    }
+    rewriter.setInsertionPoint(op);
+    SmallVector<AffineExpr> memAffineIndices;
+    auto oldAffineMap = op.getAffineMap();
+    for (unsigned int i = 0, e = oldAffineMap.getResults().size(); i < e; ++i) {
+      AffineExpr idx;
+      Value targetIV = nonReductionLoops[loopAxis].getInductionVar();
+      int targetAxis = findMemRefAxisFromIV(op, targetIV);
+      if ((int)i == targetAxis) {
+        if (stride != 1) {
+          auto strideCst = rewriter.getAffineConstantExpr(stride);
+          idx = (oldAffineMap.getResult(i) - distance).floorDiv(strideCst);
+        } else {
+          idx = oldAffineMap.getResult(i) - distance;
+        }
+      } else
+        idx = oldAffineMap.getResult(i);
+      memAffineIndices.push_back(idx);
+    }
+    auto affineMap = AffineMap::get(arrayType.getRank(), 0, memAffineIndices,
+                                    rewriter.getContext());
+    affine::AffineStoreOp::create(rewriter, op->getLoc(), op.getOperand(0),
+                                  op.getOperand(1), affineMap, op.getIndices());
+    opToRemove.push_back(op);
+    return WalkResult::advance();
+  });
+  for (auto op : opToRemove)
+    op->erase();
+
+  // Update if structure
+  nonReductionLoops[loopAxis].walk([&](affine::AffineIfOp ifOp) {
+    int operandIdx = -1;
+    for (auto item : llvm::enumerate(ifOp.getOperands())) {
+      if (item.value() == nonReductionLoops[loopAxis].getInductionVar()) {
+        operandIdx = item.index();
+        break;
+      }
+    }
+    if (operandIdx == -1)
+      return WalkResult::advance();
+
+    auto condSet = ifOp.getIntegerSet();
+    OpBuilder builder(ifOp);
+    auto distanceCst = builder.getAffineConstantExpr(distance);
+    SmallVector<AffineExpr> newConds;
+    for (auto cond : condSet.getConstraints()) {
+      bool sign = false;
+      cond.walk([&](AffineExpr expr) {
+        if (llvm::isa<AffineBinaryOpExpr>(expr) &&
+            expr.getKind() == AffineExprKind::Mul) {
+          auto binExpr = llvm::dyn_cast<AffineBinaryOpExpr>(expr);
+          if (llvm::isa<AffineConstantExpr>(binExpr.getRHS()) &&
+              llvm::dyn_cast<AffineConstantExpr>(binExpr.getRHS()).getValue() ==
+                  -1) {
+            sign = true;
+          }
+        }
+      });
+      if (cond.isFunctionOfDim(operandIdx)) {
+        if (!sign)
+          newConds.push_back(cond - distanceCst -
+                             builder.getAffineConstantExpr(stride - 1) *
+                                 builder.getAffineDimExpr(operandIdx));
+        else
+          newConds.push_back(cond + distanceCst +
+                             builder.getAffineConstantExpr(stride - 1) *
+                                 builder.getAffineDimExpr(operandIdx));
+      } else {
+        newConds.push_back(cond);
+      }
+    }
+    auto newCondSet = IntegerSet::get(condSet.getNumDims(), 0, newConds,
+                                      condSet.getEqFlags());
+    ifOp.setIntegerSet(newCondSet);
+    return WalkResult::advance();
+  });
+
+  // 13) Rewrite original memref to load from buffer
+  for (auto op : allLoadOps) {
+    rewriter.setInsertionPoint(op);
+    SmallVector<AffineExpr> loadAffineExpr;
+    SmallVector<Value> memAffineIndices;
+    SmallVector<Value> operands = op.getMapOperands();
+    auto loadMap = op.getAffineMap();
+
+    if (rDim == -1) {
+      auto diff = loadMap.getResult(axis) - baseVar;
+      loadAffineExpr.push_back(diff);
+      int loadRank = 0;
+      int operandIdx = 0;
+      for (int i = 0; i < axis; ++i) {
+        if (spans[i] > 1) {
+          loadAffineExpr.push_back(loadMap.getResult(i));
+        }
+      }
+      SmallVector<AffineExpr> dims;
+      for (int i = 0; i < axis + 1; ++i) {
+        auto expr = loadMap.getResult(i);
+        if (!llvm::isa<AffineConstantExpr>(expr)) {
+          operandIdx++;
+          dims.push_back(rewriter.getAffineDimExpr(0)); // placeholder
+        }
+      }
+      for (unsigned int i = axis + 1; i < rank; ++i) {
+        dims.push_back(rewriter.getAffineDimExpr(loadRank++));
+      }
+      for (unsigned int i = axis + 1; i < rank; ++i) {
+        auto expr = loadMap.getResult(i);
+        auto new_expr = expr.replaceDims(dims);
+        loadAffineExpr.push_back(new_expr);
+        memAffineIndices.push_back(operands[operandIdx++]);
+      }
+      auto affineMap =
+          AffineMap::get(loadRank, 0, loadAffineExpr, rewriter.getContext());
+      rewriter.replaceOpWithNewOp<affine::AffineLoadOp>(op, buf, affineMap,
+                                                        memAffineIndices);
+    }
+  }
+
+  results.setValues(cast<OpResult>(getResult()), {buf.getResult()});
+  return DiagnosedSilenceableFailure::success();
+}
+
+void transform::ReuseAtOp::getEffects(
+    SmallVectorImpl<MemoryEffects::EffectInstance> &effects) {
+  transform::consumesHandle(getTargetMutable(), effects);
+  transform::consumesHandle(getAxisMutable(), effects);
+  transform::producesHandle(getOperation()->getOpResults(), effects);
+  transform::modifiesPayload(effects);
+}
+
+/// --------------------------------------------------------------
+/// Reform Op
+/// --------------------------------------------------------------
+
+template <typename T>
+static void updateMemrefAccess(Operation *user,
+                               const SmallVector<AffineExpr> &dimExprs) {
+  if (auto op = dyn_cast<T>(user)) {
+    auto oldAffineMap = op.getAffineMap();
+    SmallVector<AffineExpr> memAffineIndices;
+    for (auto dim : dimExprs) {
+      auto pos = llvm::dyn_cast<AffineDimExpr>(dim).getPosition();
+      memAffineIndices.push_back(oldAffineMap.getResult(pos));
+    }
+    auto newAffineMap =
+        AffineMap::get(oldAffineMap.getNumDims(), 0 /* symbols */,
+                       memAffineIndices, op->getContext());
+    op->setAttr("map", AffineMapAttr::get(newAffineMap));
+  }
+}
+
+DiagnosedSilenceableFailure
+transform::ReformOp::apply(transform::TransformRewriter &rewriter,
+                           transform::TransformResults &results,
+                           transform::TransformState &state) {
+  auto payloadValues = state.getPayloadValues(getTarget());
+  SmallVector<Value> transformed;
+
+  for (Value value : payloadValues) {
+    auto memrefType = dyn_cast<MemRefType>(value.getType());
+    if (!memrefType) {
+      return emitSilenceableError() << "expected memref type";
+    }
+
+    AffineMap layoutMap = getLayout();
+    auto oldShape = memrefType.getShape();
+
+    // Get new shape
+    SmallVector<int64_t> newShape;
+    SmallVector<AffineExpr> dimExprs;
+    for (auto dim : layoutMap.getResults()) {
+      auto dimExpr = dyn_cast<AffineDimExpr>(dim);
+      if (!dimExpr) {
+        return emitSilenceableError()
+               << "layout map must contain only dim expressions";
+      }
+      unsigned pos = dimExpr.getPosition();
+      if (pos >= oldShape.size()) {
+        return emitSilenceableError() << "layout map dimension out of bounds";
+      }
+      newShape.push_back(oldShape[pos]);
+      dimExprs.push_back(dim);
+    }
+
+    // Set new type
+    auto newType = MemRefType::get(newShape, memrefType.getElementType(),
+                                   MemRefLayoutAttrInterface(),
+                                   memrefType.getMemorySpace());
+
+    rewriter.modifyOpInPlace(value.getDefiningOp()
+                                 ? value.getDefiningOp()
+                                 : value.getParentRegion()->getParentOp(),
+                             [&]() { value.setType(newType); });
+
+    // Update memory access
+    for (auto user : llvm::make_early_inc_range(value.getUsers())) {
+      rewriter.modifyOpInPlace(user, [&]() {
+        updateMemrefAccess<affine::AffineLoadOp>(user, dimExprs);
+        updateMemrefAccess<affine::AffineStoreOp>(user, dimExprs);
+      });
+    }
+
+    // Update function signature if it's an argument
+    if (auto arg = dyn_cast<BlockArgument>(value)) {
+      auto func = dyn_cast<func::FuncOp>(arg.getOwner()->getParentOp());
+      if (func) {
+        auto inputTypes = llvm::to_vector(func.getArgumentTypes());
+        inputTypes[arg.getArgNumber()] = newType;
+        auto newFuncType = FunctionType::get(rewriter.getContext(), inputTypes,
+                                             func.getResultTypes());
+        func.setFunctionType(newFuncType);
+      }
+    }
+    transformed.push_back(value);
+  }
+
+  results.setValues(cast<OpResult>(getReformed()), transformed);
+  return DiagnosedSilenceableFailure::success();
+}
+
+void transform::ReformOp::getEffects(
+    SmallVectorImpl<MemoryEffects::EffectInstance> &effects) {
+  transform::consumesHandle(getTargetMutable(), effects);
+  transform::producesHandle(getOperation()->getOpResults(), effects);
+  transform::modifiesPayload(effects);
+}
+
+/// --------------------------------------------------------------
+/// Reshape Op
+/// --------------------------------------------------------------
+
+static AffineMap computeReshapeMap(OpBuilder &builder,
+                                   ArrayRef<int64_t> oldShape,
+                                   ArrayRef<int64_t> newShape,
+                                   AffineMap oldMap) {
+  unsigned oldRank = oldShape.size();
+  unsigned newRank = newShape.size();
+  MLIRContext *ctx = builder.getContext();
+
+  // 1. compute old shape strides
+  SmallVector<int64_t> oldStrides(oldRank);
+  int64_t stride = 1;
+  for (int64_t i = oldRank - 1; i >= 0; --i) {
+    oldStrides[i] = stride;
+    stride *= oldShape[i];
+  }
+
+  // 2. map old multi-dimensional indices to linear address
+  auto linearAddr = builder.getAffineConstantExpr(0);
+  for (unsigned i = 0; i < oldRank; ++i) {
+    linearAddr = linearAddr + oldMap.getResult(i) * oldStrides[i];
+  }
+
+  // 3. map linear address to new multi-dimensional indices
+  SmallVector<AffineExpr> newExprs;
+  auto tempAddr = linearAddr;
+  for (unsigned i = newRank - 1; i > 0; --i) {
+    newExprs.push_back(tempAddr % newShape[i]);
+    tempAddr = tempAddr.floorDiv(newShape[i]);
+  }
+  newExprs.push_back(tempAddr);
+  std::reverse(newExprs.begin(), newExprs.end());
+
+  return AffineMap::get(oldMap.getNumDims(), oldMap.getNumSymbols(), newExprs,
+                        ctx);
+}
+
+DiagnosedSilenceableFailure
+transform::ReshapeOp::apply(transform::TransformRewriter &rewriter,
+                            transform::TransformResults &results,
+                            transform::TransformState &state) {
+  auto payloadValues = state.getPayloadValues(getTensor());
+  SmallVector<Value> transformed;
+
+  for (Value array : payloadValues) {
+    auto oldType = dyn_cast<MemRefType>(array.getType());
+    if (!oldType)
+      return emitSilenceableError() << "expected memref type";
+    auto newShape = llvm::to_vector(getNewshape());
+    auto newType =
+        MemRefType::get(newShape, oldType.getElementType(), oldType.getLayout(),
+                        oldType.getMemorySpace());
+    rewriter.modifyOpInPlace(array.getDefiningOp(),
+                             [&]() { array.setType(newType); });
+
+    for (auto user : llvm::make_early_inc_range(array.getUsers())) {
+      rewriter.setInsertionPoint(user);
+      if (auto loadOp = dyn_cast<affine::AffineLoadOp>(user)) {
+        auto newMap = computeReshapeMap(rewriter, oldType.getShape(), newShape,
+                                        loadOp.getAffineMap());
+        auto newLoad = affine::AffineLoadOp::create(rewriter, loadOp.getLoc(),
+                                                    loadOp.getMemRef(), newMap,
+                                                    loadOp.getMapOperands());
+        rewriter.replaceOp(loadOp, newLoad.getResult());
+      } else if (auto storeOp = dyn_cast<affine::AffineStoreOp>(user)) {
+        auto newMap = computeReshapeMap(rewriter, oldType.getShape(), newShape,
+                                        storeOp.getAffineMap());
+        affine::AffineStoreOp::create(
+            rewriter, storeOp.getLoc(), storeOp.getValueToStore(),
+            storeOp.getMemRef(), newMap, storeOp.getMapOperands());
+        rewriter.eraseOp(storeOp);
+      } else {
+        return emitSilenceableError()
+               << "only affine.load and affine.store users are supported";
+      }
+    }
+
+    if (auto arg = dyn_cast<BlockArgument>(array)) {
+      if (auto func = dyn_cast<func::FuncOp>(arg.getOwner()->getParentOp())) {
+        auto inputTypes = llvm::to_vector(func.getArgumentTypes());
+        inputTypes[arg.getArgNumber()] = newType;
+        auto newFuncType = FunctionType::get(rewriter.getContext(), inputTypes,
+                                             func.getResultTypes());
+        func.setFunctionType(newFuncType);
+      }
+    }
+    transformed.push_back(array);
+  }
+  results.setValues(cast<OpResult>(getReshaped()), transformed);
+  return DiagnosedSilenceableFailure::success();
+}
+
+void transform::ReshapeOp::getEffects(
+    SmallVectorImpl<MemoryEffects::EffectInstance> &effects) {
+  transform::consumesHandle(getTensorMutable(), effects);
   transform::producesHandle(getOperation()->getOpResults(), effects);
   transform::modifiesPayload(effects);
 }
