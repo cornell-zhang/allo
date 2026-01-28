@@ -73,15 +73,15 @@ inSamePerfectlyNestedLoopBand(const ArrayRef<affine::AffineForOp> &loops) {
   // create a temp copy and sort by depth
   auto tmp = llvm::to_vector(loops);
   DenseMap<affine::AffineForOp, unsigned> depthMap;
-  std::ranges::for_each(tmp, [&depthMap](auto op) {
+  std::for_each(tmp.begin(), tmp.end(), [&depthMap](auto op) {
     unsigned depth = 0;
     Operation *curr = op;
     while ((curr = curr->getParentOp()))
       depth++;
     depthMap[op] = depth;
   });
-  std::ranges::sort(
-      tmp, [&depthMap](auto a, auto b) { return depthMap[a] < depthMap[b]; });
+  std::sort(tmp.begin(), tmp.end(),
+            [&depthMap](auto a, auto b) { return depthMap[a] < depthMap[b]; });
 
   // no need to be contiguous
   // check perfectly nested
@@ -570,7 +570,7 @@ static void coalesceLoops(MutableArrayRef<affine::AffineForOp> loops,
   secondOutermostLoop.erase();
 
   // 5. Sink affine.apply operations.
-  std::ranges::reverse(opToSink);
+  std::reverse(opToSink.begin(), opToSink.end());
   outermost.walk([&](affine::AffineForOp nestedLoop) {
     if (nestedLoop == outermost)
       return;
@@ -784,7 +784,7 @@ transform::ComputeAtOp::apply(transform::TransformRewriter &rewriter,
     return emitSilenceableError()
            << "compute stage operation is not inside any affine.for loop";
   }
-  std::ranges::reverse(prodChain);
+  std::reverse(prodChain.begin(), prodChain.end());
   affine::AffineForOp computeRootForOp = prodChain.front();
   unsigned computeDepth = prodChain.size();
 
@@ -794,7 +794,7 @@ transform::ComputeAtOp::apply(transform::TransformRewriter &rewriter,
     targetChain.push_back(currTarget);
     currTarget = currTarget->getParentOfType<affine::AffineForOp>();
   }
-  std::ranges::reverse(targetChain);
+  std::reverse(targetChain.begin(), targetChain.end());
   unsigned targetDepth = targetChain.size();
   affine::AffineForOp targetRootForOp = targetChain.front();
 
