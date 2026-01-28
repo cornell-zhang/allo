@@ -18,6 +18,7 @@
 #include "mlir/Dialect/Transform/IR/TransformDialect.h"
 #include "mlir/IR/Dominance.h"
 #include "mlir/IR/IntegerSet.h"
+#include "mlir/Transforms/RegionUtils.h"
 
 #include "allo/Dialect/AlloTransformOps.h"
 
