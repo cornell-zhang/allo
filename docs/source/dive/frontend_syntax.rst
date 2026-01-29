@@ -37,13 +37,20 @@ Basic Function Signature
 ------------------------
 
 Allo kernels are defined as Python functions with explicit type annotations for all arguments and return types.
-The syntax follows Python's type hint notation:
+Arguments and return types can be scalar or tensor types. The syntax follows Python's type hint notation:
 
 .. code-block:: python
 
-    def kernel(arg1: Type1[Shape1], arg2: Type2[Shape2]) -> ReturnType[Shape]:
+    def kernel(arg1: Type1[Shape1], arg2: ScalarType) -> ReturnType[Shape]:
         # function body
         return result
+
+**Example: Scalar Arguments**
+
+.. code-block:: python
+
+    def kernel(A: int32) -> int32:
+        return A + 1
 
 **Example: Matrix Multiplication**
 
@@ -201,7 +208,7 @@ Standard Python ``range`` loops are supported with one, two, or three arguments:
 
 .. note::
 
-   Negative step values are **not supported** in Allo.
+   ``break`` and ``continue`` are **not supported** in Allo.
 
 Variable Loop Bounds
 --------------------
@@ -607,7 +614,18 @@ Python helper functions can compute ConstExpr values at compile time:
 Scoping Rules
 =============
 
-Allo enforces strict scoping rules to ensure well-defined behavior:
+Allo enforces C++-style **Block Scoping** rules, which differs from standard Python.
+
+*   **Scope Boundaries**: ``if``, ``elif``, ``else``, ``for``, ``while``, ``meta_if``, ``meta_for``, ``meta_else``.
+*   **Rule**: A variable declared for the first time inside a block is **local** to that block. It is not visible after the block exits.
+*   **Access**: Inner blocks can read/write variables defined in outer blocks.
+
+Reassignment Validity
+---------------------
+
+*   A variable can be reassigned.
+*   The new value must match the declared type of the variable.
+*   **Immutable Constants**: ``ConstExpr`` variables and values returned by ``df.get_pid()`` are compile-time constants and cannot be reassigned.
 
 Valid Scoping
 -------------
@@ -684,7 +702,7 @@ enabling conditional code generation and advanced optimizations.
 Meta If/Elif/Else
 -----------------
 
-Compile-time conditionals that generate different code based on conditions known at compile time:
+Compile-time conditionals that generate different code based on conditions known at compile time. The conditions must be compile-time constants:
 
 .. code-block:: python
 
@@ -709,7 +727,7 @@ These are useful for:
 Meta For (Compile-Time Loop Unrolling)
 --------------------------------------
 
-``allo.meta_for`` supports multiple argument formats similar to Python's ``range``:
+``allo.meta_for`` supports multiple argument formats similar to Python's ``range``. The loop bounds and step must be compile-time constants:
 
 .. code-block:: python
 

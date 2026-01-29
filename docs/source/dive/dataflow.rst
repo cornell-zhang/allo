@@ -162,7 +162,9 @@ Kernel Declaration
 **Parameters:**
 
 - ``mapping``: A list specifying the kernel's parallel instantiation shape
-- ``args``: A list of region-level arguments accessible by this kernel
+- ``args``: A list of region-level arguments accessible by this kernel.
+  The element at index ``i`` in the ``args`` list is passed as the ``i``-th argument to the kernel function (so the number and argument type must match).
+  ``args`` is optional and can be omitted if the kernel takes no arguments.
 
 Single Kernel Instance
 ----------------------
