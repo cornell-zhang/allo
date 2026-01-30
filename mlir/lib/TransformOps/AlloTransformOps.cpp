@@ -64,7 +64,6 @@ static bool checkSplitFactor(affine::AffineForOp forOp, unsigned factor) {
 // check if all loops are in the same perfectly nested loop band
 // the loops don't need to be in the order of depth nor adjacent
 // return the top-level loop of the band if true, otherwise return nullptr
-[[maybe_unused]]
 static affine::AffineForOp
 inSamePerfectlyNestedLoopBand(const ArrayRef<affine::AffineForOp> &loops) {
   if (loops.empty())
@@ -463,26 +462,6 @@ transform::LoopPipelineOp::applyToOne(transform::TransformRewriter &rewriter,
   }
   auto ii = getInterval().value_or(1); // default ii = 1
   target->setAttr("pipeline_ii", rewriter.getUI32IntegerAttr(ii));
-  results.push_back(target);
-  return DiagnosedSilenceableFailure::success();
-}
-
-/// --------------------------------------------------------------
-/// LoopBind Op
-/// --------------------------------------------------------------
-
-DiagnosedSilenceableFailure
-transform::LoopBindOp::applyToOne(transform::TransformRewriter &rewriter,
-                                  Operation *target,
-                                  transform::ApplyToEachResultList &results,
-                                  transform::TransformState &state) {
-  if (!isa<affine::AffineForOp, scf::ForOp>(target)) {
-    return emitSilenceableError()
-           << "expected an affine.for or scf.for operation";
-  }
-  auto targetDim = getDim();
-  target->setAttr("thread_axis", rewriter.getUI32IntegerAttr(
-                                     static_cast<uint32_t>(targetDim)));
   results.push_back(target);
   return DiagnosedSilenceableFailure::success();
 }
@@ -1575,103 +1554,6 @@ void transform::ReuseAtOp::getEffects(
     SmallVectorImpl<MemoryEffects::EffectInstance> &effects) {
   transform::consumesHandle(getTargetMutable(), effects);
   transform::consumesHandle(getAxisMutable(), effects);
-  transform::producesHandle(getOperation()->getOpResults(), effects);
-  transform::modifiesPayload(effects);
-}
-
-/// --------------------------------------------------------------
-/// Reform Op
-/// --------------------------------------------------------------
-
-template <typename T>
-static void updateMemrefAccess(Operation *user,
-                               const SmallVector<AffineExpr> &dimExprs) {
-  if (auto op = dyn_cast<T>(user)) {
-    auto oldAffineMap = op.getAffineMap();
-    SmallVector<AffineExpr> memAffineIndices;
-    for (auto dim : dimExprs) {
-      auto pos = llvm::dyn_cast<AffineDimExpr>(dim).getPosition();
-      memAffineIndices.push_back(oldAffineMap.getResult(pos));
-    }
-    auto newAffineMap =
-        AffineMap::get(oldAffineMap.getNumDims(), 0 /* symbols */,
-                       memAffineIndices, op->getContext());
-    op->setAttr("map", AffineMapAttr::get(newAffineMap));
-  }
-}
-
-DiagnosedSilenceableFailure
-transform::ReformOp::apply(transform::TransformRewriter &rewriter,
-                           transform::TransformResults &results,
-                           transform::TransformState &state) {
-  auto payloadValues = state.getPayloadValues(getTarget());
-  SmallVector<Value> transformed;
-
-  for (Value value : payloadValues) {
-    auto memrefType = dyn_cast<MemRefType>(value.getType());
-    if (!memrefType) {
-      return emitSilenceableError() << "expected memref type";
-    }
-
-    AffineMap layoutMap = getLayout();
-    auto oldShape = memrefType.getShape();
-
-    // Get new shape
-    SmallVector<int64_t> newShape;
-    SmallVector<AffineExpr> dimExprs;
-    for (auto dim : layoutMap.getResults()) {
-      auto dimExpr = dyn_cast<AffineDimExpr>(dim);
-      if (!dimExpr) {
-        return emitSilenceableError()
-               << "layout map must contain only dim expressions";
-      }
-      unsigned pos = dimExpr.getPosition();
-      if (pos >= oldShape.size()) {
-        return emitSilenceableError() << "layout map dimension out of bounds";
-      }
-      newShape.push_back(oldShape[pos]);
-      dimExprs.push_back(dim);
-    }
-
-    // Set new type
-    auto newType = MemRefType::get(newShape, memrefType.getElementType(),
-                                   MemRefLayoutAttrInterface(),
-                                   memrefType.getMemorySpace());
-
-    rewriter.modifyOpInPlace(value.getDefiningOp()
-                                 ? value.getDefiningOp()
-                                 : value.getParentRegion()->getParentOp(),
-                             [&]() { value.setType(newType); });
-
-    // Update memory access
-    for (auto user : llvm::make_early_inc_range(value.getUsers())) {
-      rewriter.modifyOpInPlace(user, [&]() {
-        updateMemrefAccess<affine::AffineLoadOp>(user, dimExprs);
-        updateMemrefAccess<affine::AffineStoreOp>(user, dimExprs);
-      });
-    }
-
-    // Update function signature if it's an argument
-    if (auto arg = dyn_cast<BlockArgument>(value)) {
-      auto func = dyn_cast<func::FuncOp>(arg.getOwner()->getParentOp());
-      if (func) {
-        auto inputTypes = llvm::to_vector(func.getArgumentTypes());
-        inputTypes[arg.getArgNumber()] = newType;
-        auto newFuncType = FunctionType::get(rewriter.getContext(), inputTypes,
-                                             func.getResultTypes());
-        func.setFunctionType(newFuncType);
-      }
-    }
-    transformed.push_back(value);
-  }
-
-  results.setValues(cast<OpResult>(getReformed()), transformed);
-  return DiagnosedSilenceableFailure::success();
-}
-
-void transform::ReformOp::getEffects(
-    SmallVectorImpl<MemoryEffects::EffectInstance> &effects) {
-  transform::consumesHandle(getTargetMutable(), effects);
   transform::producesHandle(getOperation()->getOpResults(), effects);
   transform::modifiesPayload(effects);
 }

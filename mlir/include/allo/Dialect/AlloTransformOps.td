@@ -12,7 +12,7 @@ include "mlir/IR/OpBase.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 include "allo/Dialect/AlloAttrs.td"
 
-def LoopSplitOp : Op<Transform_Dialect, "allo.loop_split", [
+def LoopSplitOp : Op<Transform_Dialect, "allo.split", [
                     FunctionalStyleTransformOpTrait,
                     MemoryEffectsOpInterface,
                     TransformOpInterface,
@@ -49,7 +49,7 @@ def LoopSplitOp : Op<Transform_Dialect, "allo.loop_split", [
     }];
 }
 
-def LoopTileOp : Op<Transform_Dialect, "allo.loop_tile", [
+def LoopTileOp : Op<Transform_Dialect, "allo.tile", [
                     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>,
                     DeclareOpInterfaceMethods<TransformOpInterface>,
                     ReportTrackingListenerFailuresOpTrait,
@@ -82,7 +82,7 @@ def LoopTileOp : Op<Transform_Dialect, "allo.loop_tile", [
     let hasVerifier = 1;
 }
 
-def LoopReorderOp : Op<Transform_Dialect, "allo.loop_reorder", [
+def LoopReorderOp : Op<Transform_Dialect, "allo.reorder", [
                        DeclareOpInterfaceMethods<MemoryEffectsOpInterface>,
                        DeclareOpInterfaceMethods<TransformOpInterface>,
                        ReportTrackingListenerFailuresOpTrait
@@ -104,7 +104,7 @@ def LoopReorderOp : Op<Transform_Dialect, "allo.loop_reorder", [
     let hasVerifier = 1;
 }
 
-def LoopUnrollOp : Op<Transform_Dialect, "allo.loop_unroll", [
+def LoopUnrollOp : Op<Transform_Dialect, "allo.unroll", [
                          FunctionalStyleTransformOpTrait,
                          MemoryEffectsOpInterface,
                          TransformOpInterface,
@@ -135,7 +135,7 @@ def LoopUnrollOp : Op<Transform_Dialect, "allo.loop_unroll", [
     }];
 }
 
-def LoopParallelOp : Op<Transform_Dialect, "allo.loop_parallel", [
+def LoopParallelOp : Op<Transform_Dialect, "allo.parallel", [
                            FunctionalStyleTransformOpTrait,
                            MemoryEffectsOpInterface,
                            TransformOpInterface,
@@ -166,7 +166,7 @@ def LoopParallelOp : Op<Transform_Dialect, "allo.loop_parallel", [
 }
 
 
-def LoopPipelineOp : Op<Transform_Dialect, "allo.loop_pipeline", [
+def LoopPipelineOp : Op<Transform_Dialect, "allo.pipeline", [
                             FunctionalStyleTransformOpTrait,
                             MemoryEffectsOpInterface,
                             TransformOpInterface,
@@ -197,38 +197,7 @@ def LoopPipelineOp : Op<Transform_Dialect, "allo.loop_pipeline", [
     }];
 }
 
-def LoopBindOp : Op<Transform_Dialect, "allo.loop_bind", [
-                       FunctionalStyleTransformOpTrait,
-                       MemoryEffectsOpInterface,
-                       TransformOpInterface,
-                       TransformEachOpTrait,
-                       ReportTrackingListenerFailuresOpTrait
-                       ]> {
-    let summary = "Tag the given loop with a specified thread axis for thread binding";
-    let description = [{
-        allo.bind(var, dim=1)
-
-        Bind the iteration to a specific NDRange dimension.
-
-        Parameters
-        * var (IterVar) - The iteration to be mapped.
-        * dim (Expr) - The NDRange dimension to be binded to the iteration.
-    }];
-    let arguments = (ins TransformHandleTypeInterface:$loop, NDRangeDimKindEnum:$dim);
-    let results = (outs TransformHandleTypeInterface:$tagged_loop);
-    let assemblyFormat = [{
-        $loop `,` $dim attr-dict `:` functional-type(operands, results)
-    }];
-    let extraClassDeclaration = [{
-        ::mlir::DiagnosedSilenceableFailure applyToOne(
-            ::mlir::transform::TransformRewriter &rewriter,
-            ::mlir::Operation *target,
-            ::mlir::transform::ApplyToEachResultList &results,
-            ::mlir::transform::TransformState &state);
-    }];
-}
-
-def LoopFlattenOp : Op<Transform_Dialect, "allo.loop_flatten", [
+def LoopFlattenOp : Op<Transform_Dialect, "allo.flatten", [
                        DeclareOpInterfaceMethods<MemoryEffectsOpInterface>,
                        DeclareOpInterfaceMethods<TransformOpInterface>,
                        ReportTrackingListenerFailuresOpTrait
@@ -254,7 +223,7 @@ def LoopFlattenOp : Op<Transform_Dialect, "allo.loop_flatten", [
     }];
 }
 
-def LoopUnfoldOp : Op<Transform_Dialect, "allo.loop_unfold", [
+def LoopUnfoldOp : Op<Transform_Dialect, "allo.unfold", [
                          FunctionalStyleTransformOpTrait,
                          MemoryEffectsOpInterface,
                          TransformOpInterface,
@@ -383,26 +352,6 @@ def ReshapeOp: Op<Transform_Dialect, "allo.reshape", [
     let results = (outs TransformHandleTypeInterface:$reshaped);
     let assemblyFormat = [{
         $tensor `,` $newshape attr-dict `:` functional-type(operands, results)
-    }];
-}
-
-def ReformOp : Op<Transform_Dialect, "allo.reform", [
-                     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>,
-                     DeclareOpInterfaceMethods<TransformOpInterface>,
-                     ReportTrackingListenerFailuresOpTrait
-                     ]> {
-    let summary = "Reform the layout of the given buffer";
-    let description = [{
-        allo.reform(target, layout)
-
-        Change the layout of the target tensor based on the provided affine map.
-    }];
-
-    let arguments = (ins TransformHandleTypeInterface:$target,
-                     AffineMapAttr:$layout);
-    let results = (outs TransformHandleTypeInterface:$reformed);
-    let assemblyFormat = [{
-        $target `,` $layout attr-dict `:` functional-type(operands, results)
     }];
 }
 

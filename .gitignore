@@ -62,7 +62,6 @@ rapidjson
 
 build
 .vscode
-.idea
 
 # MLIR intermediate results
 *.opt
