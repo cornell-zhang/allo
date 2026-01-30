@@ -197,7 +197,7 @@ def LoopPipelineOp : Op<Transform_Dialect, "allo.pipeline", [
     }];
 }
 
-def LoopFlattenOp : Op<Transform_Dialect, "allo.flatten", [
+def LoopFuseOp : Op<Transform_Dialect, "allo.fuse", [
                        DeclareOpInterfaceMethods<MemoryEffectsOpInterface>,
                        DeclareOpInterfaceMethods<TransformOpInterface>,
                        ReportTrackingListenerFailuresOpTrait

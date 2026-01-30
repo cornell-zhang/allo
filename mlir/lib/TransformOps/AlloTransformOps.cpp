@@ -467,7 +467,7 @@ transform::LoopPipelineOp::applyToOne(transform::TransformRewriter &rewriter,
 }
 
 /// --------------------------------------------------------------
-/// LoopFlatten Op
+/// LoopFuse Op
 /// --------------------------------------------------------------
 
 // modified from lib/Transforms/Utils/LoopUtils.cpp
@@ -575,9 +575,9 @@ static void coalesceLoops(MutableArrayRef<affine::AffineForOp> loops,
 }
 
 DiagnosedSilenceableFailure
-transform::LoopFlattenOp::apply(transform::TransformRewriter &rewriter,
-                                transform::TransformResults &results,
-                                transform::TransformState &state) {
+transform::LoopFuseOp::apply(transform::TransformRewriter &rewriter,
+                             transform::TransformResults &results,
+                             transform::TransformState &state) {
   SmallVector<affine::AffineForOp> loops;
   // validate input operation handles
   for (auto payload : getLoops()) {
@@ -614,7 +614,7 @@ transform::LoopFlattenOp::apply(transform::TransformRewriter &rewriter,
   return DiagnosedSilenceableFailure::success();
 }
 
-void transform::LoopFlattenOp::getEffects(
+void transform::LoopFuseOp::getEffects(
     SmallVectorImpl<MemoryEffects::EffectInstance> &effects) {
   transform::consumesHandle(getLoopsMutable(), effects);
   transform::producesHandle(getOperation()->getOpResults(), effects);
