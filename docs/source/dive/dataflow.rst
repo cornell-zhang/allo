@@ -532,7 +532,7 @@ Import and Setup
 Applying Layouts to Kernel Arguments
 ------------------------------------
 
-Use the ``@`` operator to annotate kernel arguments with their layout:
+Use the ``@`` operator to annotate kernel arguments with their layout. If no layout is specified, the default is **replicated** for all dimensions:
 
 .. code-block:: python
 
@@ -541,7 +541,7 @@ Use the ``@`` operator to annotate kernel arguments with their layout:
     @df.kernel(mapping=[P0, P1], args=[A, B])
     def kernel(local_A: Ty[M, N] @ LyA, local_B: Ty[M, N]):
         # local_A is automatically partitioned according to LyA
-        # local_B has no layout annotation (uses defaults)
+        # local_B has no layout annotation (defaults to Replicate)
         pass
 
 Layout Patterns

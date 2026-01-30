@@ -1,6 +1,6 @@
 # Building
+- Always run `conda activate allo` before building or running tests
 - Run `pip install -v -e .` to build the full project (includes MLIR/C++ backend)
-- Always `conda activate allo` before building or running tests
 - Read `docs/source/dive/frontend_syntax.rst` for comprehensive Allo frontend syntax reference
 - Read `docs/source/dive/dataflow.rst` for the dataflow programming model (regions, kernels, streams)
 
