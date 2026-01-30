@@ -72,6 +72,11 @@ Import the Dataflow Module
     from allo.ir.types import float32, Stream
     import allo.dataflow as df
 
+    # For AIE targets with tensor distribution:
+    from allo.memory import Layout
+    S = Layout.Shard       # Shorthand for sharding
+    R = Layout.Replicate   # Shorthand for replication
+
 Basic Structure
 ---------------
 
@@ -495,6 +500,169 @@ A complete example showing a simple producer-consumer pattern:
     sim_mod(A, B)
     np.testing.assert_allclose(B, A + 1)
     print("Passed!")
+
+
+Tensor Layouts
+==============
+
+When targeting hardware accelerators like AIE (AI Engine), tensors need to be
+distributed across multiple processing elements (PEs). The ``Layout`` class
+provides a declarative way to specify how global tensors are partitioned and
+mapped to local PE memories.
+
+Layout Concepts
+---------------
+
+The ``Layout`` class encodes a **partitioning scheme** for a tensor. For each
+*tensor dimension*, you specify either:
+
+- **Shard(axis)**: Partition this dimension across the specified *mesh axis*
+- **Replicate**: Keep this dimension fully replicated across all PEs
+
+Import and Setup
+----------------
+
+.. code-block:: python
+
+    from allo.memory import Layout
+
+    S = Layout.Shard   # Shorthand for sharding
+    R = Layout.Replicate  # Shorthand for replication
+
+Applying Layouts to Kernel Arguments
+------------------------------------
+
+Use the ``@`` operator to annotate kernel arguments with their layout:
+
+.. code-block:: python
+
+    LyA = [S(0), R]  # Shard first dim on mesh axis 0, replicate second dim
+
+    @df.kernel(mapping=[P0, P1], args=[A, B])
+    def kernel(local_A: Ty[M, N] @ LyA, local_B: Ty[M, N]):
+        # local_A is automatically partitioned according to LyA
+        # local_B has no layout annotation (uses defaults)
+        pass
+
+Layout Patterns
+---------------
+
+**1D Tensor Sharding:**
+
+.. code-block:: python
+
+    # Vector of size M, sharded across 4 PEs
+    Ly = [S(0)]  # Shard on mesh axis 0
+
+    @df.kernel(mapping=[4], args=[A, B])
+    def core(local_A: int32[M] @ Ly, local_B: int32[M] @ Ly):
+        # Each PE gets M/4 elements
+        local_B[:] = allo.add(local_A, 1)
+
+**2D Tensor Row Sharding:**
+
+.. code-block:: python
+
+    # Matrix [M, N], shard rows across mesh axis 0
+    LyA = [S(0), R]
+
+    @df.kernel(mapping=[4], args=[A])
+    def kernel(local_A: Ty[M, N] @ LyA):
+        # Each PE gets M/4 rows (full columns)
+        pass
+
+**2D Tensor Column Sharding:**
+
+.. code-block:: python
+
+    # Matrix [M, N], shard columns across mesh axis 0
+    LyB = [R, S(0)]
+
+    @df.kernel(mapping=[4], args=[B])
+    def kernel(local_B: Ty[M, N] @ LyB):
+        # Each PE gets full rows, N/4 columns
+        pass
+
+**2D Tensor Full Sharding (GEMM Example):**
+
+For matrix multiplication ``C = A @ B`` with 2D PE grid:
+
+.. code-block:: python
+
+    M, N, K = 64, 64, 64
+    P0, P1 = 2, 2  # 2x2 PE grid
+
+    # A[M, K]: shard M on axis 1 (for row parallelism), replicate K
+    LyA = [S(1), R]
+    # B[K, N]: replicate K, shard N on axis 0 (for column parallelism)
+    LyB = [R, S(0)]
+    # C[M, N]: shard both dimensions
+    LyC = [S(1), S(0)]
+
+    @df.region()
+    def top(A: Ty[M, K], B: Ty[K, N], C: Ty[M, N]):
+        @df.kernel(mapping=[P0, P1], args=[A, B, C])
+        def gemm(
+            local_A: Ty[M, K] @ LyA,
+            local_B: Ty[K, N] @ LyB,
+            local_C: Ty[M, N] @ LyC
+        ):
+            # Each PE computes a tile of C
+            local_C[:, :] = allo.matmul(local_A, local_B)
+
+**3D Sharding for Temporal Reduction (Split-K GEMM):**
+
+.. code-block:: python
+
+    M, N, K = 64, 64, 128
+    Pk, Pm, Pn = 4, 2, 2  # 4x2x2 PE grid
+
+    # A[M, K]: shard M on axis 1, shard K on axis 0
+    LyA = [S(1), S(0)]
+    # B[K, N]: shard K on axis 0, shard N on axis 2
+    LyB = [S(0), S(2)]
+    # C[M, N]: shard M on axis 1, shard N on axis 2
+    LyC = [S(1), S(2)]
+
+    @df.kernel(mapping=[Pk, Pm, Pn], args=[A, B, C])
+    def gemm(
+        local_A: Ty[M, K] @ LyA,
+        local_B: Ty[K, N] @ LyB,
+        local_C: Ty[M, N] @ LyC
+    ):
+        pk, pm, pn = df.get_pid()
+        # Each PE along the K dimension computes a partial sum
+
+Understanding Mesh Axis Mapping
+-------------------------------
+
+The ``Shard(axis)`` parameter refers to the **mesh dimension** (from the kernel's
+``mapping`` parameter), not the tensor dimension:
+
+.. code-block::
+
+    Kernel mapping: [P0, P1, P2] -> 3D mesh with axes 0, 1, 2
+                     |   |   |
+                     0   1   2  <- mesh axes
+
+    Layout [S(1), R] means:
+      - Tensor dim 0: sharded across mesh axis 1 (P1 partitions)
+      - Tensor dim 1: replicated (each PE has full dim)
+
+How Layouts Compute Local Shapes
+--------------------------------
+
+The local tensor shape at each PE is automatically computed:
+
+.. code-block:: python
+
+    # Global tensor: [64, 64]
+    # Layout: [S(0), S(1)]
+    # Mapping: [4, 2]  -> 4x2 PE grid
+    #
+    # Local shape per PE: [64/4, 64/2] = [16, 32]
+
+For replicated dimensions, the local shape equals the global shape for that dimension.
 
 
 Best Practices

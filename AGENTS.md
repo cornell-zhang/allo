@@ -12,7 +12,7 @@
   - If Vitis HLS tests are needed, ask the user to run them manually
 
 # Code style
-- Make small, targeted diffs rather than large refactors
+- Make small, targeted diffs rather than large refactors, and always be concise
 - Prefer general solutions instead of one-off `if/else` patches
 - Place Python frontend code in `allo/`
 - Place MLIR dialects and passes code in `mlir/`
