@@ -26,6 +26,8 @@ Installation
 
 To install and use Allo, we need to first install the latest `LLVM project <https://github.com/cornell-zhang/allo/tree/main/externals>`_. You can choose to use our provided docker or build from source.
 
+**IMPORTANT:** If you are using a coding agent for our codebase, please import ``AGENTS.md``.
+
 
 Install from Docker
 -------------------
