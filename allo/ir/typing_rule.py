@@ -609,6 +609,8 @@ def shift_rule():
         (UInt, Index): lambda t1, t2: t1,
     }
     index_rules = {
+        (Index, Int): lambda t1, t2: Index(),
+        (Index, UInt): lambda t1, t2: Index(),
         (Index, Index): lambda t1, t2: Index(),
     }
     fixed_rules = {
