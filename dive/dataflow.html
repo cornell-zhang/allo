@@ -1,0 +1,938 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Dataflow Programming &#8212; Allo Documentation</title>
+    <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=03e43079" />
+    <link rel="stylesheet" type="text/css" href="../_static/basic_mod.css?v=9b2032db" />
+    <link rel="stylesheet" type="text/css" href="../_static/graphviz.css?v=4ae1632d" />
+    <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../_static/sg_gallery.css?v=d2d258e8" />
+    <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-binder.css?v=f4aeca0c" />
+    <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-dataframe.css?v=2082cf3c" />
+    <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-rendered-html.css?v=1277b6f3" />
+    <script src="../_static/documentation_options.js?v=db78e746"></script>
+    <script src="../_static/doctools.js?v=9bcbadda"></script>
+    <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../_static/copybutton.js?v=30646c52"></script>
+    <script src="../_static/js/theme.js"></script>
+    <script src="../_static/js/petite-vue.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Data Types and Type Casting" href="../gallery/dive_01_data_types.html" />
+    <link rel="prev" title="Frontend Syntax Guide" href="frontend_syntax.html" /> 
+  </head><body data-dark_mode_code_blocks="true">
+
+<div id="top_nav">
+    
+
+    <nav>
+        
+            
+        
+
+        <p id="toggle_sidebar">
+            <a href="#" title="Toggle sidebar">|||</a>
+        </p>
+        <h1><a href="../index.html" title="Go to homepage">Allo Documentation</a></h1>
+            <a id="source_link" href="https://github.com/cornell-zhang/allo">
+    
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512">
+            <path fill="white" d="M 244.8,8 C 106.1,8 0,113.3 0,252 c 0,110.9 69.8,205.8 169.5,239.2 12.8,2.3 17.3,-5.6 17.3,-12.1 0,-6.2 -0.3,-40.4 -0.3,-61.4 0,0 -70,15 -84.7,-29.8 0,0 -11.4,-29.1 -27.8,-36.6 0,0 -22.9,-15.7 1.6,-15.4 0,0 24.9,2 38.6,25.8 21.9,38.6 58.6,27.5 72.9,20.9 2.3,-16 8.8,-27.1 16,-33.7 -55.9,-6.2 -112.3,-14.3 -112.3,-110.5 0,-27.5 7.6,-41.3 23.6,-58.9 -2.6,-6.5 -11.1,-33.3 2.6,-67.9 20.9,-6.5 69,27 69,27 20,-5.6 41.5,-8.5 62.8,-8.5 21.3,0 42.8,2.9 62.8,8.5 0,0 48.1,-33.6 69,-27 13.7,34.7 5.2,61.4 2.6,67.9 16,17.7 25.8,31.5 25.8,58.9 0,96.5 -58.9,104.2 -114.8,110.5 9.2,7.9 17,22.9 17,46.4 0,33.7 -0.3,75.4 -0.3,83.6 0,6.5 4.6,14.4 17.3,12.1 C 428.2,457.8 496,362.9 496,252 496,113.3 383.5,8 244.8,8 Z"/>
+        </svg>
+    
+</a>
+        
+
+        <a id="mode_toggle" href="#" @click.prevent="handleClick" :title="mode">
+    <template v-if="mode == 'light'">
+        <svg width="100%" height="100%" viewBox="0 0 79 80" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linejoin:round;stroke-miterlimit:2;"><g id="mode_light"><rect id="Bounds" x="0" y="-0" width="78.623" height="79.049" style="fill:none;"/><circle cx="39.311" cy="39.524" r="15.734" style="fill:#fff;"/><g id="beams"><g id="beam"><path id="beam1" serif:id="beam" d="M44.212,4.901c0,-2.705 -2.196,-4.901 -4.901,-4.901c-2.704,-0 -4.9,2.196 -4.9,4.901l-0,9.614c-0,2.705 2.196,4.901 4.9,4.901c2.705,0 4.901,-2.196 4.901,-4.901l0,-9.614Z" style="fill:#fff;"/></g><g id="beam2" serif:id="beam"><path id="beam3" serif:id="beam" d="M67.48,18.073c1.913,-1.912 1.913,-5.018 0,-6.931c-1.912,-1.912 -5.018,-1.912 -6.931,0l-6.798,6.799c-1.912,1.912 -1.912,5.018 0,6.931c1.913,1.912 5.018,1.912 6.931,-0l6.798,-6.799Z" style="fill:#fff;"/></g><g id="beam4" serif:id="beam"><path id="beam5" serif:id="beam" d="M25.728,61.108c1.912,-1.913 1.912,-5.018 -0,-6.931c-1.913,-1.913 -5.019,-1.913 -6.931,-0l-6.799,6.798c-1.912,1.913 -1.912,5.019 0,6.931c1.913,1.913 5.019,1.913 6.931,0l6.799,-6.798Z" style="fill:#fff;"/></g><g id="beam6" serif:id="beam"><path id="beam7" serif:id="beam" d="M60.682,54.177c-1.913,-1.913 -5.018,-1.913 -6.931,-0c-1.912,1.913 -1.912,5.018 0,6.931l6.798,6.798c1.913,1.913 5.019,1.913 6.931,0c1.913,-1.912 1.913,-5.018 0,-6.931l-6.798,-6.798Z" style="fill:#fff;"/></g><g id="beam8" serif:id="beam"><path id="beam9" serif:id="beam" d="M4.901,34.623c-2.705,0 -4.901,2.196 -4.901,4.901c0,2.705 2.196,4.901 4.901,4.901l9.614,0c2.705,0 4.901,-2.196 4.901,-4.901c0,-2.705 -2.196,-4.901 -4.901,-4.901l-9.614,0Z" style="fill:#fff;"/></g><g id="beam10" serif:id="beam"><path id="beam11" serif:id="beam" d="M44.212,64.534c0,-2.705 -2.196,-4.901 -4.901,-4.901c-2.704,-0 -4.9,2.196 -4.9,4.901l-0,9.614c-0,2.705 2.196,4.901 4.9,4.901c2.705,-0 4.901,-2.196 4.901,-4.901l0,-9.614Z" style="fill:#fff;"/></g><g id="beam12" serif:id="beam"><path id="beam13" serif:id="beam" d="M18.929,11.142c-1.912,-1.912 -5.018,-1.912 -6.931,0c-1.912,1.913 -1.912,5.019 0,6.931l6.799,6.799c1.912,1.912 5.018,1.912 6.931,-0c1.912,-1.913 1.912,-5.019 -0,-6.931l-6.799,-6.799Z" style="fill:#fff;"/></g><g id="beam14" serif:id="beam"><path id="beam15" serif:id="beam" d="M64.108,34.623c-2.705,0 -4.901,2.196 -4.901,4.901c-0,2.705 2.196,4.901 4.901,4.901l9.614,0c2.705,0 4.901,-2.196 4.901,-4.901c-0,-2.705 -2.196,-4.901 -4.901,-4.901l-9.614,0Z" style="fill:#fff;"/></g></g></g></svg>
+    </template>
+
+    <template v-if="mode == 'dark'">
+        <svg width="100%" height="100%" viewBox="0 0 79 80" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linejoin:round;stroke-miterlimit:2;"><g id="mode_dark"><rect id="Bounds" x="0" y="-0" width="78.623" height="79.049" style="fill:none;"/><circle cx="39.311" cy="39.524" r="15.734" style="fill:#fff;"/><g id="beams"><g id="beam"><path id="beam1" serif:id="beam" d="M44.212,14.515c0,-2.705 -2.196,-4.901 -4.901,-4.901c-2.704,0 -4.901,2.196 -4.901,4.901c0,2.705 2.197,4.901 4.901,4.901c2.705,0 4.901,-2.196 4.901,-4.901Z" style="fill:#fff;"/></g><g id="beam2" serif:id="beam"><path id="beam3" serif:id="beam" d="M60.662,24.892c1.902,-1.902 1.902,-4.99 0,-6.892l-0.04,-0.039c-1.901,-1.902 -4.989,-1.902 -6.891,-0c-1.901,1.901 -1.901,4.989 0,6.891l0.04,0.04c1.902,1.901 4.989,1.901 6.891,-0Z" style="fill:#fff;"/></g><g id="beam4" serif:id="beam"><path id="beam5" serif:id="beam" d="M25.732,61.103c1.91,-1.91 1.91,-5.011 0,-6.921l-0.009,-0.01c-1.91,-1.91 -5.012,-1.91 -6.921,-0c-1.91,1.91 -1.91,5.011 -0,6.921l0.01,0.01c1.909,1.91 5.011,1.91 6.92,-0Z" style="fill:#fff;"/></g><g id="beam6" serif:id="beam"><path id="beam7" serif:id="beam" d="M60.672,54.167c-1.907,-1.907 -5.004,-1.907 -6.911,0l-0.02,0.02c-1.907,1.907 -1.907,5.004 0,6.911c1.907,1.907 5.004,1.907 6.911,-0l0.02,-0.02c1.907,-1.907 1.907,-5.004 0,-6.911Z" style="fill:#fff;"/></g><g id="beam8" serif:id="beam"><path id="beam9" serif:id="beam" d="M14.52,34.623c-2.702,0 -4.896,2.194 -4.896,4.896l0,0.01c0,2.702 2.194,4.896 4.896,4.896c2.702,0 4.896,-2.194 4.896,-4.896l-0,-0.01c-0,-2.702 -2.194,-4.896 -4.896,-4.896Z" style="fill:#fff;"/></g><g id="beam10" serif:id="beam"><path id="beam11" serif:id="beam" d="M44.212,64.534c0,-2.705 -2.196,-4.901 -4.901,-4.901c-2.704,-0 -4.901,2.196 -4.901,4.901c0,2.704 2.197,4.9 4.901,4.9c2.705,0 4.901,-2.196 4.901,-4.9Z" style="fill:#fff;"/></g><g id="beam12" serif:id="beam"><path id="beam13" serif:id="beam" d="M25.73,17.943c-1.911,-1.911 -5.015,-1.911 -6.926,0l-0.005,0.005c-1.911,1.911 -1.911,5.015 0,6.926c1.911,1.911 5.015,1.911 6.926,0l0.005,-0.005c1.911,-1.911 1.911,-5.014 -0,-6.926Z" style="fill:#fff;"/></g><g id="beam14" serif:id="beam"><path id="beam15" serif:id="beam" d="M64.098,34.623c-2.699,0 -4.891,2.192 -4.891,4.892l-0,0.019c-0,2.699 2.192,4.891 4.891,4.891c2.7,0 4.892,-2.192 4.892,-4.891l0,-0.019c0,-2.7 -2.192,-4.892 -4.892,-4.892Z" style="fill:#fff;"/></g></g></g></svg>
+    </template>
+
+    <template v-if="mode == 'darkest'">
+        <svg width="100%" height="100%" viewBox="0 0 79 80" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linejoin:round;stroke-miterlimit:2;"><g id="mode_darkest"><rect id="Bounds" x="0" y="-0" width="78.623" height="79.049" style="fill:none;"/><path d="M39.315,23.791c8.684,-0 15.734,7.05 15.734,15.733c0,8.684 -7.05,15.734 -15.734,15.734c-8.683,0 -15.733,-7.05 -15.733,-15.734c-0,-8.683 7.05,-15.733 15.733,-15.733Zm0,4.737c6.069,0 10.997,4.927 10.997,10.996c-0,6.069 -4.928,10.996 -10.997,10.996c-6.068,0 -10.996,-4.927 -10.996,-10.996c0,-6.069 4.928,-10.996 10.996,-10.996Z" style="fill:#fff;"/><g id="beams"><g id="beam"><path id="beam1" serif:id="beam" d="M44.216,14.515c0,-2.705 -2.196,-4.901 -4.901,-4.901c-2.704,0 -4.9,2.196 -4.9,4.901c-0,2.705 2.196,4.901 4.9,4.901c2.705,0 4.901,-2.196 4.901,-4.901Z" style="fill:#fff;"/></g><g id="beam2" serif:id="beam"><path id="beam3" serif:id="beam" d="M60.666,24.892c1.902,-1.902 1.902,-4.99 0,-6.892l-0.04,-0.039c-1.901,-1.902 -4.989,-1.902 -6.891,-0c-1.901,1.901 -1.901,4.989 0,6.891l0.04,0.04c1.902,1.901 4.99,1.901 6.891,-0Z" style="fill:#fff;"/></g><g id="beam4" serif:id="beam"><path id="beam5" serif:id="beam" d="M25.737,61.103c1.909,-1.91 1.909,-5.011 -0,-6.921l-0.01,-0.01c-1.91,-1.91 -5.011,-1.91 -6.921,-0c-1.91,1.91 -1.91,5.011 -0,6.921l0.01,0.01c1.91,1.91 5.011,1.91 6.921,-0Z" style="fill:#fff;"/></g><g id="beam6" serif:id="beam"><path id="beam7" serif:id="beam" d="M60.676,54.167c-1.907,-1.907 -5.004,-1.907 -6.911,0l-0.02,0.02c-1.907,1.907 -1.907,5.004 0,6.911c1.907,1.907 5.004,1.907 6.911,-0l0.02,-0.02c1.907,-1.907 1.907,-5.004 0,-6.911Z" style="fill:#fff;"/></g><g id="beam8" serif:id="beam"><path id="beam9" serif:id="beam" d="M14.524,34.623c-2.702,0 -4.896,2.194 -4.896,4.896l0,0.01c0,2.702 2.194,4.896 4.896,4.896c2.702,0 4.896,-2.194 4.896,-4.896l0,-0.01c0,-2.702 -2.194,-4.896 -4.896,-4.896Z" style="fill:#fff;"/></g><g id="beam10" serif:id="beam"><path id="beam11" serif:id="beam" d="M44.216,64.534c0,-2.705 -2.196,-4.901 -4.901,-4.901c-2.704,-0 -4.9,2.196 -4.9,4.901c-0,2.704 2.196,4.9 4.9,4.9c2.705,0 4.901,-2.196 4.901,-4.9Z" style="fill:#fff;"/></g><g id="beam12" serif:id="beam"><path id="beam13" serif:id="beam" d="M25.734,17.943c-1.911,-1.911 -5.015,-1.911 -6.926,0l-0.005,0.005c-1.911,1.911 -1.911,5.015 0,6.926c1.911,1.911 5.015,1.911 6.926,0l0.005,-0.005c1.911,-1.911 1.911,-5.014 0,-6.926Z" style="fill:#fff;"/></g><g id="beam14" serif:id="beam"><path id="beam15" serif:id="beam" d="M64.103,34.623c-2.7,0 -4.892,2.192 -4.892,4.892l-0,0.019c-0,2.699 2.192,4.891 4.892,4.891c2.699,0 4.891,-2.192 4.891,-4.891l0,-0.019c0,-2.7 -2.192,-4.892 -4.891,-4.892Z" style="fill:#fff;"/></g></g></g></svg>
+    </template>
+</a>
+
+<script>
+(function() {
+    const LOCAL_STORAGE_KEY = 'piccoloThemeMode'
+
+    var initialMode = localStorage.getItem(LOCAL_STORAGE_KEY)
+
+    if (initialMode) {
+        // Make sure the value in local storage is valid
+        if (['light', 'dark', 'darkest'].indexOf(initialMode) == -1) {
+            initialMode = 'light'
+            localStorage.setItem(LOCAL_STORAGE_KEY, initialMode)
+        }
+    } else {
+        // Check if the client prefers dark mode
+        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            initialMode = 'dark'
+        } else {
+            initialMode = 'light'
+        }
+        localStorage.setItem(LOCAL_STORAGE_KEY, initialMode)
+    }
+
+    document.documentElement.dataset.mode = initialMode
+
+    PetiteVue.createApp({
+        'mode': initialMode,
+        handleClick() {
+            let currentMode = this.mode
+
+            if (currentMode == 'light') {
+                this.mode = 'dark'
+            } else if (currentMode == 'dark') {
+                this.mode = 'darkest'
+            } else if (currentMode == 'darkest') {
+                this.mode = 'light'
+            }
+
+            document.documentElement.dataset.mode = this.mode
+            localStorage.setItem(LOCAL_STORAGE_KEY, this.mode)
+
+            console.log(this.mode)
+        }
+    }).mount('#mode_toggle')
+})()
+</script>
+            <p class="mobile_search_link">
+                <a href="../search.html" title="Search">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 65 64" fill-rule="evenodd" stroke-linejoin="round" stroke-miterlimit="2">
+                        <path d="M14.873 40.009c-2.315-3.943-3.642-8.532-3.642-13.429C11.231 11.91 23.141 0 37.811 0s26.58 11.91 26.58 26.58-11.91 26.58-26.58 26.58a26.44 26.44 0 0 1-14.277-4.161L9.739 62.794a3.12 3.12 0 0 1-4.413 0L.913 58.382c-1.217-1.218-1.217-3.196 0-4.413l13.96-13.96zM37.811 8.054c10.225 0 18.526 8.301 18.526 18.526s-8.301 18.526-18.526 18.526-18.526-8.301-18.526-18.526S27.586 8.054 37.811 8.054z" fill="#fff" />
+                    </svg>
+                </a>
+            </p>
+        
+
+        <div class="searchbox_wrapper">
+            
+<search id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script>
+        </div>
+    </nav>
+</div>
+
+    
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper"><p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../setup/index.html">Installation</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../gallery/tutorial_01_get_started.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../gallery/tutorial_02_vhls.html">Vivado/Vitis HLS Backend</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Deep Dive</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="frontend_syntax.html">Frontend Syntax Guide</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Dataflow Programming</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../gallery/dive_01_data_types.html">Data Types and Type Casting</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../gallery/dive_02_template.html">Template Kernels</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../gallery/dive_03_composition.html">Kernel Composition</a></li>
+<li class="toctree-l1"><a class="reference internal" href="ip.html">IP Integration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pytorch.html">PyTorch Integration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../gallery/dive_05_verifier.html">Equivalence Checking</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../gallery/dive_04_features.html">Other Features</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Backends</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../backends/llvm.html">LLVM (CPU)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../backends/vitis.html">AMD Vitis HLS (FPGA)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../backends/tapa.html">RapidStream TAPA (FPGA)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../backends/xls.html">Google XLS (ASIC)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../backends/simulator.html">Multi-Threaded Simulator (CPU)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../backends/aie/index.html">AMD MLIR-AIE (AI Engine)</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Developer Guide</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../developer/index.html">Developer Setup</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../gallery/developer_01_ir_builder.html">IR Builder Walkthrough</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../gallery/developer_02_mlir.html">MLIR Translation Guide</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Python API</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../api/index.html">Schedule Primitives</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../api/index.html#data-types">Data Types</a></li>
+</ul>
+
+        </div>
+      </div>
+
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <section id="dataflow-programming">
+<h1>Dataflow Programming<a class="headerlink" href="#dataflow-programming" title="Link to this heading"><span>¶</span></a></h1>
+<p>This document describes the dataflow programming model in Allo, which enables
+spatial parallelism through explicit kernel decomposition and stream-based
+communication.</p>
+<nav class="contents local" id="table-of-contents">
+<p class="topic-title">Table of Contents</p>
+<ul class="simple">
+<li><p><a class="reference internal" href="#overview" id="id1">Overview</a></p>
+<ul>
+<li><p><a class="reference internal" href="#key-concepts" id="id2">Key Concepts</a></p></li>
+</ul>
+</li>
+<li><p><a class="reference internal" href="#getting-started" id="id3">Getting Started</a></p>
+<ul>
+<li><p><a class="reference internal" href="#import-the-dataflow-module" id="id4">Import the Dataflow Module</a></p></li>
+<li><p><a class="reference internal" href="#basic-structure" id="id5">Basic Structure</a></p></li>
+</ul>
+</li>
+<li><p><a class="reference internal" href="#regions" id="id6">Regions</a></p>
+<ul>
+<li><p><a class="reference internal" href="#region-declaration" id="id7">Region Declaration</a></p></li>
+<li><p><a class="reference internal" href="#parameterized-regions" id="id8">Parameterized Regions</a></p></li>
+</ul>
+</li>
+<li><p><a class="reference internal" href="#kernels" id="id9">Kernels</a></p>
+<ul>
+<li><p><a class="reference internal" href="#kernel-declaration" id="id10">Kernel Declaration</a></p></li>
+<li><p><a class="reference internal" href="#single-kernel-instance" id="id11">Single Kernel Instance</a></p></li>
+<li><p><a class="reference internal" href="#multi-dimensional-kernel-grid" id="id12">Multi-Dimensional Kernel Grid</a></p></li>
+<li><p><a class="reference internal" href="#getting-kernel-position" id="id13">Getting Kernel Position</a></p></li>
+</ul>
+</li>
+<li><p><a class="reference internal" href="#streams" id="id14">Streams</a></p>
+<ul>
+<li><p><a class="reference internal" href="#stream-declaration" id="id15">Stream Declaration</a></p></li>
+<li><p><a class="reference internal" href="#stream-arrays" id="id16">Stream Arrays</a></p></li>
+<li><p><a class="reference internal" href="#stream-of-blocks" id="id17">Stream of Blocks</a></p></li>
+<li><p><a class="reference internal" href="#stream-operations" id="id18">Stream Operations</a></p></li>
+</ul>
+</li>
+<li><p><a class="reference internal" href="#systolic-array-patterns" id="id19">Systolic Array Patterns</a></p>
+<ul>
+<li><p><a class="reference internal" href="#basic-systolic-structure" id="id20">Basic Systolic Structure</a></p></li>
+</ul>
+</li>
+<li><p><a class="reference internal" href="#tiled-computation" id="id21">Tiled Computation</a></p></li>
+<li><p><a class="reference internal" href="#hierarchical-regions" id="id22">Hierarchical Regions</a></p></li>
+<li><p><a class="reference internal" href="#building-and-execution" id="id23">Building and Execution</a></p>
+<ul>
+<li><p><a class="reference internal" href="#build-for-simulation" id="id24">Build for Simulation</a></p></li>
+<li><p><a class="reference internal" href="#build-for-llvm" id="id25">Build for LLVM</a></p></li>
+<li><p><a class="reference internal" href="#build-for-hls" id="id26">Build for HLS</a></p></li>
+<li><p><a class="reference internal" href="#customization-schedule-primitives" id="id27">Customization (Schedule Primitives)</a></p></li>
+</ul>
+</li>
+<li><p><a class="reference internal" href="#complete-example-producer-consumer" id="id28">Complete Example: Producer-Consumer</a></p></li>
+<li><p><a class="reference internal" href="#tensor-layouts" id="id29">Tensor Layouts</a></p>
+<ul>
+<li><p><a class="reference internal" href="#layout-concepts" id="id30">Layout Concepts</a></p></li>
+<li><p><a class="reference internal" href="#import-and-setup" id="id31">Import and Setup</a></p></li>
+<li><p><a class="reference internal" href="#applying-layouts-to-kernel-arguments" id="id32">Applying Layouts to Kernel Arguments</a></p></li>
+<li><p><a class="reference internal" href="#layout-patterns" id="id33">Layout Patterns</a></p></li>
+<li><p><a class="reference internal" href="#understanding-mesh-axis-mapping" id="id34">Understanding Mesh Axis Mapping</a></p></li>
+<li><p><a class="reference internal" href="#how-layouts-compute-local-shapes" id="id35">How Layouts Compute Local Shapes</a></p></li>
+</ul>
+</li>
+<li><p><a class="reference internal" href="#best-practices" id="id36">Best Practices</a></p></li>
+</ul>
+</nav>
+<section id="overview">
+<h2><a class="toc-backref" href="#id1" role="doc-backlink">Overview</a><a class="headerlink" href="#overview" title="Link to this heading"><span>¶</span></a></h2>
+<p>Modern deep learning workloads are increasingly <strong>memory-bound</strong>, with many kernels
+stalling on data movement rather than computation. While dataflow accelerators
+(FPGAs, NPUs) offer on-chip streaming to mitigate off-chip bandwidth limitations,
+existing programming models fall into two extremes:</p>
+<ul class="simple">
+<li><p><strong>Low-level interfaces</strong> provide fine-grained control but impose significant
+development overhead and poor portability</p></li>
+<li><p><strong>High-level tile-based languages</strong> abstract away communication, which restricts
+optimization of complex dataflow patterns and forces compilers to reconstruct
+the intended dataflow</p></li>
+</ul>
+<p>The Allo dataflow programming model provides a <strong>middle ground</strong> by elevating
+data communication and sharding to <strong>first-class constructs</strong>. Developers express
+programs as a graph of <strong>tasks (kernels)</strong> connected via explicit <strong>stream types</strong>,
+enabling efficient on-chip data reuse without spilling back to DRAM.</p>
+<section id="key-concepts">
+<h3><a class="toc-backref" href="#id2" role="doc-backlink">Key Concepts</a><a class="headerlink" href="#key-concepts" title="Link to this heading"><span>¶</span></a></h3>
+<p>The dataflow model in Allo consists of three core abstractions:</p>
+<ul class="simple">
+<li><p><strong>Regions</strong>: Define the dataflow graph with inputs, outputs, and streams</p></li>
+<li><p><strong>Kernels</strong>: Units of computation mapped onto processing elements (PEs)</p></li>
+<li><p><strong>Streams</strong>: FIFO-based communication channels between kernels</p></li>
+</ul>
+</section>
+</section>
+<section id="getting-started">
+<h2><a class="toc-backref" href="#id3" role="doc-backlink">Getting Started</a><a class="headerlink" href="#getting-started" title="Link to this heading"><span>¶</span></a></h2>
+<section id="import-the-dataflow-module">
+<h3><a class="toc-backref" href="#id4" role="doc-backlink">Import the Dataflow Module</a><a class="headerlink" href="#import-the-dataflow-module" title="Link to this heading"><span>¶</span></a></h3>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">allo</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">allo.ir.types</span><span class="w"> </span><span class="kn">import</span> <span class="n">float32</span><span class="p">,</span> <span class="n">Stream</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">allo.dataflow</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">df</span>
+
+<span class="c1"># For AIE targets with tensor distribution:</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">allo.memory</span><span class="w"> </span><span class="kn">import</span> <span class="n">Layout</span>
+<span class="n">S</span> <span class="o">=</span> <span class="n">Layout</span><span class="o">.</span><span class="n">Shard</span>       <span class="c1"># Shorthand for sharding</span>
+<span class="n">R</span> <span class="o">=</span> <span class="n">Layout</span><span class="o">.</span><span class="n">Replicate</span>   <span class="c1"># Shorthand for replication</span>
+</pre></div>
+</div>
+</section>
+<section id="basic-structure">
+<h3><a class="toc-backref" href="#id5" role="doc-backlink">Basic Structure</a><a class="headerlink" href="#basic-structure" title="Link to this heading"><span>¶</span></a></h3>
+<p>A dataflow program consists of:</p>
+<ol class="arabic simple">
+<li><p>A <strong>region</strong> decorated with <code class="docutils literal notranslate"><span class="pre">&#64;df.region()</span></code> that defines inputs/outputs</p></li>
+<li><p>One or more <strong>kernels</strong> decorated with <code class="docutils literal notranslate"><span class="pre">&#64;df.kernel()</span></code> inside the region</p></li>
+<li><p><strong>Streams</strong> declared in the region for inter-kernel communication</p></li>
+</ol>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="nd">@df</span><span class="o">.</span><span class="n">region</span><span class="p">()</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">top</span><span class="p">(</span><span class="n">A</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">],</span> <span class="n">B</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">]):</span>
+    <span class="n">pipe</span><span class="p">:</span> <span class="n">Stream</span><span class="p">[</span><span class="n">float32</span><span class="p">,</span> <span class="mi">4</span><span class="p">]</span>  <span class="c1"># Stream with depth 4</span>
+
+    <span class="nd">@df</span><span class="o">.</span><span class="n">kernel</span><span class="p">(</span><span class="n">mapping</span><span class="o">=</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">args</span><span class="o">=</span><span class="p">[</span><span class="n">A</span><span class="p">])</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">producer</span><span class="p">(</span><span class="n">local_A</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">]):</span>
+        <span class="c1"># Kernel logic</span>
+        <span class="k">pass</span>
+
+    <span class="nd">@df</span><span class="o">.</span><span class="n">kernel</span><span class="p">(</span><span class="n">mapping</span><span class="o">=</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">args</span><span class="o">=</span><span class="p">[</span><span class="n">B</span><span class="p">])</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">consumer</span><span class="p">(</span><span class="n">local_B</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">]):</span>
+        <span class="c1"># Kernel logic</span>
+        <span class="k">pass</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="regions">
+<h2><a class="toc-backref" href="#id6" role="doc-backlink">Regions</a><a class="headerlink" href="#regions" title="Link to this heading"><span>¶</span></a></h2>
+<p>A region defines the top-level dataflow graph with its inputs, outputs, and
+internal communication channels.</p>
+<section id="region-declaration">
+<h3><a class="toc-backref" href="#id7" role="doc-backlink">Region Declaration</a><a class="headerlink" href="#region-declaration" title="Link to this heading"><span>¶</span></a></h3>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="nd">@df</span><span class="o">.</span><span class="n">region</span><span class="p">()</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">top</span><span class="p">(</span><span class="n">A</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">K</span><span class="p">],</span> <span class="n">B</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="n">K</span><span class="p">,</span> <span class="n">N</span><span class="p">],</span> <span class="n">C</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">]):</span>
+    <span class="c1"># Stream declarations</span>
+    <span class="c1"># Kernel definitions</span>
+    <span class="k">pass</span>
+</pre></div>
+</div>
+<p>The region signature specifies the external memory interfaces (inputs and outputs).</p>
+<div class="admonition important">
+<p class="admonition-title">Important</p>
+<p>Inside a <code class="docutils literal notranslate"><span class="pre">&#64;df.region()</span></code>, only <strong>stream variable declarations</strong> and
+<strong>``&#64;df.kernel`` definitions</strong> are allowed. No other function calls or
+computations should appear directly in the region body. All computation
+logic must be placed inside kernels.</p>
+</div>
+</section>
+<section id="parameterized-regions">
+<h3><a class="toc-backref" href="#id8" role="doc-backlink">Parameterized Regions</a><a class="headerlink" href="#parameterized-regions" title="Link to this heading"><span>¶</span></a></h3>
+<p>Regions can be parameterized with type parameters for reusability:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="nd">@df</span><span class="o">.</span><span class="n">region</span><span class="p">()</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">inner</span><span class="p">[</span><span class="n">P0</span><span class="p">,</span> <span class="n">P1</span><span class="p">](</span><span class="n">A</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">K</span><span class="p">],</span> <span class="n">B</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="n">K</span><span class="p">,</span> <span class="n">N</span><span class="p">],</span> <span class="n">C</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">]):</span>
+    <span class="nd">@df</span><span class="o">.</span><span class="n">kernel</span><span class="p">(</span><span class="n">mapping</span><span class="o">=</span><span class="p">[</span><span class="n">P0</span><span class="p">,</span> <span class="n">P1</span><span class="p">],</span> <span class="n">args</span><span class="o">=</span><span class="p">[</span><span class="n">A</span><span class="p">,</span> <span class="n">B</span><span class="p">,</span> <span class="n">C</span><span class="p">])</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">gemm</span><span class="p">(</span><span class="n">local_A</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">K</span><span class="p">],</span> <span class="n">local_B</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="n">K</span><span class="p">,</span> <span class="n">N</span><span class="p">],</span> <span class="n">local_C</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">]):</span>
+        <span class="n">pi</span><span class="p">,</span> <span class="n">pj</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">get_pid</span><span class="p">()</span>
+        <span class="c1"># Tiled computation using pi, pj</span>
+        <span class="k">pass</span>
+
+<span class="c1"># Instantiate with different parallelism:</span>
+<span class="n">inner</span><span class="p">[</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">](</span><span class="n">A</span><span class="p">,</span> <span class="n">B</span><span class="p">,</span> <span class="n">C1</span><span class="p">)</span>  <span class="c1"># 2x2 grid</span>
+<span class="n">inner</span><span class="p">[</span><span class="mi">4</span><span class="p">,</span> <span class="mi">4</span><span class="p">](</span><span class="n">A</span><span class="p">,</span> <span class="n">B</span><span class="p">,</span> <span class="n">C2</span><span class="p">)</span>  <span class="c1"># 4x4 grid</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="kernels">
+<h2><a class="toc-backref" href="#id9" role="doc-backlink">Kernels</a><a class="headerlink" href="#kernels" title="Link to this heading"><span>¶</span></a></h2>
+<p>Kernels are the basic units of computation in a dataflow graph.</p>
+<section id="kernel-declaration">
+<h3><a class="toc-backref" href="#id10" role="doc-backlink">Kernel Declaration</a><a class="headerlink" href="#kernel-declaration" title="Link to this heading"><span>¶</span></a></h3>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="nd">@df</span><span class="o">.</span><span class="n">kernel</span><span class="p">(</span><span class="n">mapping</span><span class="o">=</span><span class="p">[</span><span class="n">P0</span><span class="p">,</span> <span class="n">P1</span><span class="p">],</span> <span class="n">args</span><span class="o">=</span><span class="p">[</span><span class="n">A</span><span class="p">,</span> <span class="n">B</span><span class="p">,</span> <span class="n">C</span><span class="p">])</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">kernel_name</span><span class="p">(</span><span class="n">local_A</span><span class="p">:</span> <span class="n">Ty</span><span class="p">[</span><span class="o">...</span><span class="p">],</span> <span class="n">local_B</span><span class="p">:</span> <span class="n">Ty</span><span class="p">[</span><span class="o">...</span><span class="p">],</span> <span class="n">local_C</span><span class="p">:</span> <span class="n">Ty</span><span class="p">[</span><span class="o">...</span><span class="p">]):</span>
+    <span class="c1"># Kernel body</span>
+    <span class="k">pass</span>
+</pre></div>
+</div>
+<p><strong>Parameters:</strong></p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">mapping</span></code>: A list specifying the kernel’s parallel instantiation shape</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">args</span></code>: A list of region-level arguments accessible by this kernel.
+The element at index <code class="docutils literal notranslate"><span class="pre">i</span></code> in the <code class="docutils literal notranslate"><span class="pre">args</span></code> list is passed as the <code class="docutils literal notranslate"><span class="pre">i</span></code>-th argument to the kernel function (so the number and argument type must match).
+<code class="docutils literal notranslate"><span class="pre">args</span></code> is optional and can be omitted if the kernel takes no arguments.</p></li>
+</ul>
+</section>
+<section id="single-kernel-instance">
+<h3><a class="toc-backref" href="#id11" role="doc-backlink">Single Kernel Instance</a><a class="headerlink" href="#single-kernel-instance" title="Link to this heading"><span>¶</span></a></h3>
+<p>For a single kernel instance, use <code class="docutils literal notranslate"><span class="pre">mapping=[1]</span></code>:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="nd">@df</span><span class="o">.</span><span class="n">kernel</span><span class="p">(</span><span class="n">mapping</span><span class="o">=</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">args</span><span class="o">=</span><span class="p">[</span><span class="n">A</span><span class="p">])</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">producer</span><span class="p">(</span><span class="n">local_A</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">]):</span>
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">j</span> <span class="ow">in</span> <span class="n">allo</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">):</span>
+        <span class="n">pipe</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">local_A</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">])</span>
+</pre></div>
+</div>
+</section>
+<section id="multi-dimensional-kernel-grid">
+<h3><a class="toc-backref" href="#id12" role="doc-backlink">Multi-Dimensional Kernel Grid</a><a class="headerlink" href="#multi-dimensional-kernel-grid" title="Link to this heading"><span>¶</span></a></h3>
+<p>For multi-kernel arrays (e.g., systolic arrays), specify multiple dimensions:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="nd">@df</span><span class="o">.</span><span class="n">kernel</span><span class="p">(</span><span class="n">mapping</span><span class="o">=</span><span class="p">[</span><span class="n">P0</span><span class="p">,</span> <span class="n">P1</span><span class="p">],</span> <span class="n">args</span><span class="o">=</span><span class="p">[</span><span class="n">A</span><span class="p">,</span> <span class="n">B</span><span class="p">,</span> <span class="n">C</span><span class="p">])</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">gemm</span><span class="p">(</span><span class="n">local_A</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">K</span><span class="p">],</span> <span class="n">local_B</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="n">K</span><span class="p">,</span> <span class="n">N</span><span class="p">],</span> <span class="n">local_C</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">]):</span>
+    <span class="n">pi</span><span class="p">,</span> <span class="n">pj</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">get_pid</span><span class="p">()</span>  <span class="c1"># Get kernel&#39;s position in the grid</span>
+    <span class="c1"># Kernel executes at position (pi, pj)</span>
+    <span class="k">pass</span>
+</pre></div>
+</div>
+</section>
+<section id="getting-kernel-position">
+<h3><a class="toc-backref" href="#id13" role="doc-backlink">Getting Kernel Position</a><a class="headerlink" href="#getting-kernel-position" title="Link to this heading"><span>¶</span></a></h3>
+<p>Use <code class="docutils literal notranslate"><span class="pre">df.get_pid()</span></code> to retrieve the kernel’s position in the mapping grid, which returns a per-kernel compile-time constant variable:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># For 1D mapping</span>
+<span class="n">i</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">get_pid</span><span class="p">()</span>
+
+<span class="c1"># For 2D mapping</span>
+<span class="n">pi</span><span class="p">,</span> <span class="n">pj</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">get_pid</span><span class="p">()</span>
+
+<span class="c1"># For 3D mapping</span>
+<span class="n">pi</span><span class="p">,</span> <span class="n">pj</span><span class="p">,</span> <span class="n">pk</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">get_pid</span><span class="p">()</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="streams">
+<h2><a class="toc-backref" href="#id14" role="doc-backlink">Streams</a><a class="headerlink" href="#streams" title="Link to this heading"><span>¶</span></a></h2>
+<p>Streams provide FIFO-based communication between kernels.</p>
+<section id="stream-declaration">
+<h3><a class="toc-backref" href="#id15" role="doc-backlink">Stream Declaration</a><a class="headerlink" href="#stream-declaration" title="Link to this heading"><span>¶</span></a></h3>
+<p>Declare streams inside a region with their element type and buffer depth:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Basic scalar stream</span>
+<span class="n">pipe</span><span class="p">:</span> <span class="n">Stream</span><span class="p">[</span><span class="n">float32</span><span class="p">,</span> <span class="mi">4</span><span class="p">]</span>  <span class="c1"># Stream of float32 with depth 4</span>
+
+<span class="c1"># Stream of unsigned integers</span>
+<span class="n">stream</span><span class="p">:</span> <span class="n">Stream</span><span class="p">[</span><span class="n">UInt</span><span class="p">(</span><span class="mi">16</span><span class="p">),</span> <span class="mi">4</span><span class="p">]</span>
+</pre></div>
+</div>
+</section>
+<section id="stream-arrays">
+<h3><a class="toc-backref" href="#id16" role="doc-backlink">Stream Arrays</a><a class="headerlink" href="#stream-arrays" title="Link to this heading"><span>¶</span></a></h3>
+<p>For multi-kernel designs, declare arrays of streams:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># 2D array of streams for systolic array communication</span>
+<span class="n">fifo_A</span><span class="p">:</span> <span class="n">Stream</span><span class="p">[</span><span class="n">float32</span><span class="p">,</span> <span class="mi">4</span><span class="p">][</span><span class="n">P0</span><span class="p">,</span> <span class="n">P1</span><span class="p">]</span>
+<span class="n">fifo_B</span><span class="p">:</span> <span class="n">Stream</span><span class="p">[</span><span class="n">float32</span><span class="p">,</span> <span class="mi">4</span><span class="p">][</span><span class="n">P0</span><span class="p">,</span> <span class="n">P1</span><span class="p">]</span>
+</pre></div>
+</div>
+</section>
+<section id="stream-of-blocks">
+<h3><a class="toc-backref" href="#id17" role="doc-backlink">Stream of Blocks</a><a class="headerlink" href="#stream-of-blocks" title="Link to this heading"><span>¶</span></a></h3>
+<p>Streams can carry tensor blocks (for coarse-grained data movement):</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Stream where each element is a 4x4 block</span>
+<span class="n">pipe</span><span class="p">:</span> <span class="n">Stream</span><span class="p">[</span><span class="n">int16</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">],</span> <span class="mi">4</span><span class="p">]</span>
+
+<span class="c1"># Stream of 1D blocks</span>
+<span class="n">pipe</span><span class="p">:</span> <span class="n">Stream</span><span class="p">[</span><span class="n">float32</span><span class="p">[</span><span class="n">M</span><span class="p">],</span> <span class="mi">4</span><span class="p">]</span>
+
+<span class="c1"># Array of block streams</span>
+<span class="n">pipe</span><span class="p">:</span> <span class="n">Stream</span><span class="p">[</span><span class="n">float32</span><span class="p">[</span><span class="n">Mt</span><span class="p">,</span> <span class="n">Nt</span><span class="p">],</span> <span class="mi">2</span><span class="p">][</span><span class="n">P0</span><span class="p">,</span> <span class="n">P1</span><span class="p">]</span>
+</pre></div>
+</div>
+</section>
+<section id="stream-operations">
+<h3><a class="toc-backref" href="#id18" role="doc-backlink">Stream Operations</a><a class="headerlink" href="#stream-operations" title="Link to this heading"><span>¶</span></a></h3>
+<p><strong>Put (Send):</strong></p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Send a scalar value</span>
+<span class="n">pipe</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+
+<span class="c1"># Send to a specific stream in an array</span>
+<span class="n">fifo_A</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">a</span><span class="p">)</span>
+
+<span class="c1"># Send a block</span>
+<span class="n">block</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
+<span class="k">for</span> <span class="n">m</span><span class="p">,</span> <span class="n">n</span> <span class="ow">in</span> <span class="n">allo</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">):</span>
+    <span class="n">block</span><span class="p">[</span><span class="n">m</span><span class="p">,</span> <span class="n">n</span><span class="p">]</span> <span class="o">=</span> <span class="n">local_A</span><span class="p">[</span><span class="n">i</span> <span class="o">*</span> <span class="n">M</span> <span class="o">+</span> <span class="n">m</span><span class="p">,</span> <span class="n">n</span><span class="p">]</span>
+<span class="n">pipe</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">block</span><span class="p">)</span>
+</pre></div>
+</div>
+<p><strong>Get (Receive):</strong></p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Receive a scalar value</span>
+<span class="n">data</span> <span class="o">=</span> <span class="n">pipe</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
+
+<span class="c1"># Receive from a specific stream in an array</span>
+<span class="n">a</span><span class="p">:</span> <span class="n">float32</span> <span class="o">=</span> <span class="n">fifo_A</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
+
+<span class="c1"># Receive a block</span>
+<span class="n">block</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">]</span> <span class="o">=</span> <span class="n">pipe</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="systolic-array-patterns">
+<h2><a class="toc-backref" href="#id19" role="doc-backlink">Systolic Array Patterns</a><a class="headerlink" href="#systolic-array-patterns" title="Link to this heading"><span>¶</span></a></h2>
+<p>Systolic arrays are a common design pattern in dataflow programming.</p>
+<section id="basic-systolic-structure">
+<h3><a class="toc-backref" href="#id20" role="doc-backlink">Basic Systolic Structure</a><a class="headerlink" href="#basic-systolic-structure" title="Link to this heading"><span>¶</span></a></h3>
+<p>A typical systolic array has:</p>
+<ul class="simple">
+<li><p><strong>Loader kernels</strong>: Feed data from external memory to the edge of the array</p></li>
+<li><p><strong>Compute kernels</strong>: Perform the main computation while passing data to neighbors</p></li>
+<li><p><strong>Drain kernels</strong>: Remove data that has passed through the array</p></li>
+</ul>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="nd">@df</span><span class="o">.</span><span class="n">region</span><span class="p">()</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">top</span><span class="p">(</span><span class="n">A</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">K</span><span class="p">],</span> <span class="n">B</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="n">K</span><span class="p">,</span> <span class="n">N</span><span class="p">],</span> <span class="n">C</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">]):</span>
+    <span class="n">fifo_A</span><span class="p">:</span> <span class="n">Stream</span><span class="p">[</span><span class="n">float32</span><span class="p">,</span> <span class="mi">4</span><span class="p">][</span><span class="n">P0</span><span class="p">,</span> <span class="n">P1</span><span class="p">]</span>
+    <span class="n">fifo_B</span><span class="p">:</span> <span class="n">Stream</span><span class="p">[</span><span class="n">float32</span><span class="p">,</span> <span class="mi">4</span><span class="p">][</span><span class="n">P0</span><span class="p">,</span> <span class="n">P1</span><span class="p">]</span>
+
+    <span class="nd">@df</span><span class="o">.</span><span class="n">kernel</span><span class="p">(</span><span class="n">mapping</span><span class="o">=</span><span class="p">[</span><span class="n">P0</span><span class="p">,</span> <span class="n">P1</span><span class="p">],</span> <span class="n">args</span><span class="o">=</span><span class="p">[</span><span class="n">A</span><span class="p">,</span> <span class="n">B</span><span class="p">,</span> <span class="n">C</span><span class="p">])</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">gemm</span><span class="p">(</span><span class="n">local_A</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">K</span><span class="p">],</span> <span class="n">local_B</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="n">K</span><span class="p">,</span> <span class="n">N</span><span class="p">],</span> <span class="n">local_C</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">]):</span>
+        <span class="n">i</span><span class="p">,</span> <span class="n">j</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">get_pid</span><span class="p">()</span>
+
+        <span class="c1"># Corner: skip</span>
+        <span class="k">with</span> <span class="n">allo</span><span class="o">.</span><span class="n">meta_if</span><span class="p">(</span><span class="n">i</span> <span class="ow">in</span> <span class="p">{</span><span class="mi">0</span><span class="p">,</span> <span class="n">M</span> <span class="o">+</span> <span class="mi">1</span><span class="p">}</span> <span class="ow">and</span> <span class="n">j</span> <span class="ow">in</span> <span class="p">{</span><span class="mi">0</span><span class="p">,</span> <span class="n">N</span> <span class="o">+</span> <span class="mi">1</span><span class="p">}):</span>
+            <span class="k">pass</span>
+
+        <span class="c1"># Left edge: load A</span>
+        <span class="k">with</span> <span class="n">allo</span><span class="o">.</span><span class="n">meta_elif</span><span class="p">(</span><span class="n">j</span> <span class="o">==</span> <span class="mi">0</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">K</span><span class="p">):</span>
+                <span class="n">fifo_A</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">local_A</span><span class="p">[</span><span class="n">i</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="n">k</span><span class="p">])</span>
+
+        <span class="c1"># Top edge: load B</span>
+        <span class="k">with</span> <span class="n">allo</span><span class="o">.</span><span class="n">meta_elif</span><span class="p">(</span><span class="n">i</span> <span class="o">==</span> <span class="mi">0</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">K</span><span class="p">):</span>
+                <span class="n">fifo_B</span><span class="p">[</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">local_B</span><span class="p">[</span><span class="n">k</span><span class="p">,</span> <span class="n">j</span> <span class="o">-</span> <span class="mi">1</span><span class="p">])</span>
+
+        <span class="c1"># Right edge: drain A</span>
+        <span class="k">with</span> <span class="n">allo</span><span class="o">.</span><span class="n">meta_elif</span><span class="p">(</span><span class="n">j</span> <span class="o">==</span> <span class="n">N</span> <span class="o">+</span> <span class="mi">1</span> <span class="ow">and</span> <span class="n">i</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">K</span><span class="p">):</span>
+                <span class="n">a</span><span class="p">:</span> <span class="n">float32</span> <span class="o">=</span> <span class="n">fifo_A</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
+
+        <span class="c1"># Bottom edge: drain B</span>
+        <span class="k">with</span> <span class="n">allo</span><span class="o">.</span><span class="n">meta_elif</span><span class="p">(</span><span class="n">i</span> <span class="o">==</span> <span class="n">M</span> <span class="o">+</span> <span class="mi">1</span> <span class="ow">and</span> <span class="n">j</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">K</span><span class="p">):</span>
+                <span class="n">b</span><span class="p">:</span> <span class="n">float32</span> <span class="o">=</span> <span class="n">fifo_B</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
+
+        <span class="c1"># Interior: compute and forward</span>
+        <span class="k">with</span> <span class="n">allo</span><span class="o">.</span><span class="n">meta_else</span><span class="p">():</span>
+            <span class="n">c</span><span class="p">:</span> <span class="n">float32</span> <span class="o">=</span> <span class="mi">0</span>
+            <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">K</span><span class="p">):</span>
+                <span class="n">a</span><span class="p">:</span> <span class="n">float32</span> <span class="o">=</span> <span class="n">fifo_A</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
+                <span class="n">b</span><span class="p">:</span> <span class="n">float32</span> <span class="o">=</span> <span class="n">fifo_B</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
+                <span class="n">c</span> <span class="o">+=</span> <span class="n">a</span> <span class="o">*</span> <span class="n">b</span>
+                <span class="n">fifo_A</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">a</span><span class="p">)</span>  <span class="c1"># Forward to right neighbor</span>
+                <span class="n">fifo_B</span><span class="p">[</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">b</span><span class="p">)</span>  <span class="c1"># Forward to bottom neighbor</span>
+            <span class="n">local_C</span><span class="p">[</span><span class="n">i</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="n">j</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">c</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="tiled-computation">
+<h2><a class="toc-backref" href="#id21" role="doc-backlink">Tiled Computation</a><a class="headerlink" href="#tiled-computation" title="Link to this heading"><span>¶</span></a></h2>
+<p>For large computations, tiles the work across multiple kernels:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">,</span> <span class="n">K</span> <span class="o">=</span> <span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">,</span> <span class="mi">32</span>
+<span class="n">P0</span><span class="p">,</span> <span class="n">P1</span> <span class="o">=</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">2</span>
+<span class="n">Mt</span><span class="p">,</span> <span class="n">Nt</span> <span class="o">=</span> <span class="n">M</span> <span class="o">//</span> <span class="n">P0</span><span class="p">,</span> <span class="n">N</span> <span class="o">//</span> <span class="n">P1</span>
+
+<span class="nd">@df</span><span class="o">.</span><span class="n">region</span><span class="p">()</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">top</span><span class="p">(</span><span class="n">A</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">K</span><span class="p">],</span> <span class="n">B</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="n">K</span><span class="p">,</span> <span class="n">N</span><span class="p">],</span> <span class="n">C</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">]):</span>
+    <span class="nd">@df</span><span class="o">.</span><span class="n">kernel</span><span class="p">(</span><span class="n">mapping</span><span class="o">=</span><span class="p">[</span><span class="n">P0</span><span class="p">,</span> <span class="n">P1</span><span class="p">],</span> <span class="n">args</span><span class="o">=</span><span class="p">[</span><span class="n">A</span><span class="p">,</span> <span class="n">B</span><span class="p">,</span> <span class="n">C</span><span class="p">])</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">gemm</span><span class="p">(</span><span class="n">local_A</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">K</span><span class="p">],</span> <span class="n">local_B</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="n">K</span><span class="p">,</span> <span class="n">N</span><span class="p">],</span> <span class="n">local_C</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">]):</span>
+        <span class="n">pi</span><span class="p">,</span> <span class="n">pj</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">get_pid</span><span class="p">()</span>
+        <span class="c1"># Each kernel computes its tile</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">pi</span> <span class="o">*</span> <span class="n">Mt</span><span class="p">,</span> <span class="p">(</span><span class="n">pi</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="n">Mt</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">pj</span> <span class="o">*</span> <span class="n">Nt</span><span class="p">,</span> <span class="p">(</span><span class="n">pj</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="n">Nt</span><span class="p">):</span>
+                <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">K</span><span class="p">):</span>
+                    <span class="n">local_C</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span> <span class="o">+=</span> <span class="n">local_A</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">k</span><span class="p">]</span> <span class="o">*</span> <span class="n">local_B</span><span class="p">[</span><span class="n">k</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span>
+</pre></div>
+</div>
+</section>
+<section id="hierarchical-regions">
+<h2><a class="toc-backref" href="#id22" role="doc-backlink">Hierarchical Regions</a><a class="headerlink" href="#hierarchical-regions" title="Link to this heading"><span>¶</span></a></h2>
+<p>Regions can call other regions for hierarchical decomposition:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="nd">@df</span><span class="o">.</span><span class="n">region</span><span class="p">()</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">inner</span><span class="p">[</span><span class="n">P0</span><span class="p">,</span> <span class="n">P1</span><span class="p">](</span><span class="n">A</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">K</span><span class="p">],</span> <span class="n">B</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="n">K</span><span class="p">,</span> <span class="n">N</span><span class="p">],</span> <span class="n">C</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">]):</span>
+    <span class="nd">@df</span><span class="o">.</span><span class="n">kernel</span><span class="p">(</span><span class="n">mapping</span><span class="o">=</span><span class="p">[</span><span class="n">P0</span><span class="p">,</span> <span class="n">P1</span><span class="p">],</span> <span class="n">args</span><span class="o">=</span><span class="p">[</span><span class="n">A</span><span class="p">,</span> <span class="n">B</span><span class="p">,</span> <span class="n">C</span><span class="p">])</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">gemm</span><span class="p">(</span><span class="n">local_A</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">K</span><span class="p">],</span> <span class="n">local_B</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="n">K</span><span class="p">,</span> <span class="n">N</span><span class="p">],</span> <span class="n">local_C</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">]):</span>
+        <span class="n">pi</span><span class="p">,</span> <span class="n">pj</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">get_pid</span><span class="p">()</span>
+        <span class="n">Mt</span><span class="p">:</span> <span class="n">ConstExpr</span><span class="p">[</span><span class="n">int32</span><span class="p">]</span> <span class="o">=</span> <span class="n">M</span> <span class="o">//</span> <span class="n">P0</span>
+        <span class="n">Nt</span><span class="p">:</span> <span class="n">ConstExpr</span><span class="p">[</span><span class="n">int32</span><span class="p">]</span> <span class="o">=</span> <span class="n">N</span> <span class="o">//</span> <span class="n">P1</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">pi</span> <span class="o">*</span> <span class="n">Mt</span><span class="p">,</span> <span class="p">(</span><span class="n">pi</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="n">Mt</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">pj</span> <span class="o">*</span> <span class="n">Nt</span><span class="p">,</span> <span class="p">(</span><span class="n">pj</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="n">Nt</span><span class="p">):</span>
+                <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">K</span><span class="p">):</span>
+                    <span class="n">local_C</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span> <span class="o">+=</span> <span class="n">local_A</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">k</span><span class="p">]</span> <span class="o">*</span> <span class="n">local_B</span><span class="p">[</span><span class="n">k</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span>
+
+<span class="nd">@df</span><span class="o">.</span><span class="n">region</span><span class="p">()</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">top</span><span class="p">(</span><span class="n">A</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">K</span><span class="p">],</span> <span class="n">B</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="n">K</span><span class="p">,</span> <span class="n">N</span><span class="p">],</span> <span class="n">C1</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">],</span> <span class="n">C2</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">]):</span>
+    <span class="nd">@df</span><span class="o">.</span><span class="n">kernel</span><span class="p">(</span><span class="n">mapping</span><span class="o">=</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span> <span class="n">args</span><span class="o">=</span><span class="p">[</span><span class="n">A</span><span class="p">,</span> <span class="n">B</span><span class="p">,</span> <span class="n">C1</span><span class="p">,</span> <span class="n">C2</span><span class="p">])</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">wrapper</span><span class="p">(</span><span class="n">local_A</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">K</span><span class="p">],</span> <span class="n">local_B</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="n">K</span><span class="p">,</span> <span class="n">N</span><span class="p">],</span>
+               <span class="n">local_C1</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">],</span> <span class="n">local_C2</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">]):</span>
+        <span class="n">i</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">get_pid</span><span class="p">()</span>
+        <span class="k">with</span> <span class="n">allo</span><span class="o">.</span><span class="n">meta_if</span><span class="p">(</span><span class="n">i</span> <span class="o">==</span> <span class="mi">0</span><span class="p">):</span>
+            <span class="n">inner</span><span class="p">[</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">](</span><span class="n">local_A</span><span class="p">,</span> <span class="n">local_B</span><span class="p">,</span> <span class="n">local_C1</span><span class="p">)</span>  <span class="c1"># 2x2 grid</span>
+        <span class="k">with</span> <span class="n">allo</span><span class="o">.</span><span class="n">meta_if</span><span class="p">(</span><span class="n">i</span> <span class="o">==</span> <span class="mi">1</span><span class="p">):</span>
+            <span class="n">inner</span><span class="p">[</span><span class="mi">4</span><span class="p">,</span> <span class="mi">4</span><span class="p">](</span><span class="n">local_A</span><span class="p">,</span> <span class="n">local_B</span><span class="p">,</span> <span class="n">local_C2</span><span class="p">)</span>  <span class="c1"># 4x4 grid</span>
+</pre></div>
+</div>
+</section>
+<section id="building-and-execution">
+<h2><a class="toc-backref" href="#id23" role="doc-backlink">Building and Execution</a><a class="headerlink" href="#building-and-execution" title="Link to this heading"><span>¶</span></a></h2>
+<section id="build-for-simulation">
+<h3><a class="toc-backref" href="#id24" role="doc-backlink">Build for Simulation</a><a class="headerlink" href="#build-for-simulation" title="Link to this heading"><span>¶</span></a></h3>
+<p>Use the simulator target for functional verification:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">sim_mod</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">top</span><span class="p">,</span> <span class="n">target</span><span class="o">=</span><span class="s2">&quot;simulator&quot;</span><span class="p">)</span>
+<span class="n">sim_mod</span><span class="p">(</span><span class="n">A</span><span class="p">,</span> <span class="n">B</span><span class="p">,</span> <span class="n">C</span><span class="p">)</span>
+<span class="n">np</span><span class="o">.</span><span class="n">testing</span><span class="o">.</span><span class="n">assert_allclose</span><span class="p">(</span><span class="n">C</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">A</span><span class="p">,</span> <span class="n">B</span><span class="p">),</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="build-for-llvm">
+<h3><a class="toc-backref" href="#id25" role="doc-backlink">Build for LLVM</a><a class="headerlink" href="#build-for-llvm" title="Link to this heading"><span>¶</span></a></h3>
+<p>Build for CPU execution (mainly for debugging):</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">mod</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">top</span><span class="p">)</span>  <span class="c1"># Default LLVM target</span>
+<span class="n">mod</span><span class="p">(</span><span class="n">A</span><span class="p">,</span> <span class="n">B</span><span class="p">,</span> <span class="n">C</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="build-for-hls">
+<h3><a class="toc-backref" href="#id26" role="doc-backlink">Build for HLS</a><a class="headerlink" href="#build-for-hls" title="Link to this heading"><span>¶</span></a></h3>
+<p>Generate Vitis HLS code:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Generate HLS code only</span>
+<span class="n">mod</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">top</span><span class="p">,</span> <span class="n">target</span><span class="o">=</span><span class="s2">&quot;vhls&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">mod</span><span class="o">.</span><span class="n">hls_code</span><span class="p">)</span>
+
+<span class="c1"># Build and run HLS C-simulation</span>
+<span class="n">mod</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">top</span><span class="p">,</span> <span class="n">target</span><span class="o">=</span><span class="s2">&quot;vitis_hls&quot;</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;csim&quot;</span><span class="p">,</span> <span class="n">project</span><span class="o">=</span><span class="s2">&quot;myproject.prj&quot;</span><span class="p">)</span>
+<span class="n">mod</span><span class="p">(</span><span class="n">A</span><span class="p">,</span> <span class="n">B</span><span class="p">,</span> <span class="n">C</span><span class="p">)</span>
+
+<span class="c1"># Build for hardware emulation</span>
+<span class="n">mod</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">top</span><span class="p">,</span> <span class="n">target</span><span class="o">=</span><span class="s2">&quot;vitis_hls&quot;</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;hw_emu&quot;</span><span class="p">,</span> <span class="n">project</span><span class="o">=</span><span class="s2">&quot;myproject.prj&quot;</span><span class="p">)</span>
+<span class="n">mod</span><span class="p">(</span><span class="n">A</span><span class="p">,</span> <span class="n">B</span><span class="p">,</span> <span class="n">C</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="customization-schedule-primitives">
+<h3><a class="toc-backref" href="#id27" role="doc-backlink">Customization (Schedule Primitives)</a><a class="headerlink" href="#customization-schedule-primitives" title="Link to this heading"><span>¶</span></a></h3>
+<p>Apply schedule primitives before building:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">s</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">customize</span><span class="p">(</span><span class="n">top</span><span class="p">)</span>
+<span class="n">s</span><span class="o">.</span><span class="n">partition</span><span class="p">(</span><span class="s2">&quot;top:A&quot;</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">factor</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+<span class="n">s</span><span class="o">.</span><span class="n">partition</span><span class="p">(</span><span class="s2">&quot;top:B&quot;</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">factor</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+<span class="n">s</span><span class="o">.</span><span class="n">partition</span><span class="p">(</span><span class="s2">&quot;top:C&quot;</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">factor</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+<span class="n">mod</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">&quot;vitis_hls&quot;</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;hw_emu&quot;</span><span class="p">,</span> <span class="n">project</span><span class="o">=</span><span class="s2">&quot;myproject.prj&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="complete-example-producer-consumer">
+<h2><a class="toc-backref" href="#id28" role="doc-backlink">Complete Example: Producer-Consumer</a><a class="headerlink" href="#complete-example-producer-consumer" title="Link to this heading"><span>¶</span></a></h2>
+<p>A complete example showing a simple producer-consumer pattern:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">allo</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">allo.ir.types</span><span class="w"> </span><span class="kn">import</span> <span class="n">float32</span><span class="p">,</span> <span class="n">Stream</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">allo.dataflow</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">df</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+
+<span class="n">M</span><span class="p">,</span> <span class="n">N</span> <span class="o">=</span> <span class="mi">16</span><span class="p">,</span> <span class="mi">16</span>
+
+<span class="nd">@df</span><span class="o">.</span><span class="n">region</span><span class="p">()</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">top</span><span class="p">(</span><span class="n">A</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">],</span> <span class="n">B</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">]):</span>
+    <span class="n">pipe</span><span class="p">:</span> <span class="n">Stream</span><span class="p">[</span><span class="n">float32</span><span class="p">,</span> <span class="mi">4</span><span class="p">]</span>
+
+    <span class="nd">@df</span><span class="o">.</span><span class="n">kernel</span><span class="p">(</span><span class="n">mapping</span><span class="o">=</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">args</span><span class="o">=</span><span class="p">[</span><span class="n">A</span><span class="p">])</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">producer</span><span class="p">(</span><span class="n">local_A</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">]):</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">j</span> <span class="ow">in</span> <span class="n">allo</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">):</span>
+            <span class="n">out</span><span class="p">:</span> <span class="n">float32</span> <span class="o">=</span> <span class="n">local_A</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span>
+            <span class="n">pipe</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">out</span><span class="p">)</span>
+
+    <span class="nd">@df</span><span class="o">.</span><span class="n">kernel</span><span class="p">(</span><span class="n">mapping</span><span class="o">=</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">args</span><span class="o">=</span><span class="p">[</span><span class="n">B</span><span class="p">])</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">consumer</span><span class="p">(</span><span class="n">local_B</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">]):</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">j</span> <span class="ow">in</span> <span class="n">allo</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">):</span>
+            <span class="n">data</span> <span class="o">=</span> <span class="n">pipe</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
+            <span class="n">local_B</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span> <span class="o">=</span> <span class="n">data</span> <span class="o">+</span> <span class="mi">1</span>
+
+<span class="c1"># Run with simulator</span>
+<span class="n">A</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+<span class="n">B</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+<span class="n">sim_mod</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">top</span><span class="p">,</span> <span class="n">target</span><span class="o">=</span><span class="s2">&quot;simulator&quot;</span><span class="p">)</span>
+<span class="n">sim_mod</span><span class="p">(</span><span class="n">A</span><span class="p">,</span> <span class="n">B</span><span class="p">)</span>
+<span class="n">np</span><span class="o">.</span><span class="n">testing</span><span class="o">.</span><span class="n">assert_allclose</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">A</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Passed!&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="tensor-layouts">
+<h2><a class="toc-backref" href="#id29" role="doc-backlink">Tensor Layouts</a><a class="headerlink" href="#tensor-layouts" title="Link to this heading"><span>¶</span></a></h2>
+<p>When targeting hardware accelerators like AIE (AI Engine), tensors need to be
+distributed across multiple processing elements (PEs). The <code class="docutils literal notranslate"><span class="pre">Layout</span></code> class
+provides a declarative way to specify how global tensors are partitioned and
+mapped to local PE memories.</p>
+<section id="layout-concepts">
+<h3><a class="toc-backref" href="#id30" role="doc-backlink">Layout Concepts</a><a class="headerlink" href="#layout-concepts" title="Link to this heading"><span>¶</span></a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">Layout</span></code> class encodes a <strong>partitioning scheme</strong> for a tensor. For each
+<em>tensor dimension</em>, you specify either:</p>
+<ul class="simple">
+<li><p><strong>Shard(axis)</strong>: Partition this dimension across the specified <em>mesh axis</em></p></li>
+<li><p><strong>Replicate</strong>: Keep this dimension fully replicated across all PEs</p></li>
+</ul>
+</section>
+<section id="import-and-setup">
+<h3><a class="toc-backref" href="#id31" role="doc-backlink">Import and Setup</a><a class="headerlink" href="#import-and-setup" title="Link to this heading"><span>¶</span></a></h3>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">allo.memory</span><span class="w"> </span><span class="kn">import</span> <span class="n">Layout</span>
+
+<span class="n">S</span> <span class="o">=</span> <span class="n">Layout</span><span class="o">.</span><span class="n">Shard</span>   <span class="c1"># Shorthand for sharding</span>
+<span class="n">R</span> <span class="o">=</span> <span class="n">Layout</span><span class="o">.</span><span class="n">Replicate</span>  <span class="c1"># Shorthand for replication</span>
+</pre></div>
+</div>
+</section>
+<section id="applying-layouts-to-kernel-arguments">
+<h3><a class="toc-backref" href="#id32" role="doc-backlink">Applying Layouts to Kernel Arguments</a><a class="headerlink" href="#applying-layouts-to-kernel-arguments" title="Link to this heading"><span>¶</span></a></h3>
+<p>Use the <code class="docutils literal notranslate"><span class="pre">&#64;</span></code> operator to annotate kernel arguments with their layout. If no layout is specified, the default is <strong>replicated</strong> for all dimensions:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">LyA</span> <span class="o">=</span> <span class="p">[</span><span class="n">S</span><span class="p">(</span><span class="mi">0</span><span class="p">),</span> <span class="n">R</span><span class="p">]</span>  <span class="c1"># Shard first dim on mesh axis 0, replicate second dim</span>
+
+<span class="nd">@df</span><span class="o">.</span><span class="n">kernel</span><span class="p">(</span><span class="n">mapping</span><span class="o">=</span><span class="p">[</span><span class="n">P0</span><span class="p">,</span> <span class="n">P1</span><span class="p">],</span> <span class="n">args</span><span class="o">=</span><span class="p">[</span><span class="n">A</span><span class="p">,</span> <span class="n">B</span><span class="p">])</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">kernel</span><span class="p">(</span><span class="n">local_A</span><span class="p">:</span> <span class="n">Ty</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">]</span> <span class="o">@</span> <span class="n">LyA</span><span class="p">,</span> <span class="n">local_B</span><span class="p">:</span> <span class="n">Ty</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">]):</span>
+    <span class="c1"># local_A is automatically partitioned according to LyA</span>
+    <span class="c1"># local_B has no layout annotation (defaults to Replicate)</span>
+    <span class="k">pass</span>
+</pre></div>
+</div>
+</section>
+<section id="layout-patterns">
+<h3><a class="toc-backref" href="#id33" role="doc-backlink">Layout Patterns</a><a class="headerlink" href="#layout-patterns" title="Link to this heading"><span>¶</span></a></h3>
+<p><strong>1D Tensor Sharding:</strong></p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Vector of size M, sharded across 4 PEs</span>
+<span class="n">Ly</span> <span class="o">=</span> <span class="p">[</span><span class="n">S</span><span class="p">(</span><span class="mi">0</span><span class="p">)]</span>  <span class="c1"># Shard on mesh axis 0</span>
+
+<span class="nd">@df</span><span class="o">.</span><span class="n">kernel</span><span class="p">(</span><span class="n">mapping</span><span class="o">=</span><span class="p">[</span><span class="mi">4</span><span class="p">],</span> <span class="n">args</span><span class="o">=</span><span class="p">[</span><span class="n">A</span><span class="p">,</span> <span class="n">B</span><span class="p">])</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">core</span><span class="p">(</span><span class="n">local_A</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="n">M</span><span class="p">]</span> <span class="o">@</span> <span class="n">Ly</span><span class="p">,</span> <span class="n">local_B</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="n">M</span><span class="p">]</span> <span class="o">@</span> <span class="n">Ly</span><span class="p">):</span>
+    <span class="c1"># Each PE gets M/4 elements</span>
+    <span class="n">local_B</span><span class="p">[:]</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">local_A</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+</pre></div>
+</div>
+<p><strong>2D Tensor Row Sharding:</strong></p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Matrix [M, N], shard rows across mesh axis 0</span>
+<span class="n">LyA</span> <span class="o">=</span> <span class="p">[</span><span class="n">S</span><span class="p">(</span><span class="mi">0</span><span class="p">),</span> <span class="n">R</span><span class="p">]</span>
+
+<span class="nd">@df</span><span class="o">.</span><span class="n">kernel</span><span class="p">(</span><span class="n">mapping</span><span class="o">=</span><span class="p">[</span><span class="mi">4</span><span class="p">],</span> <span class="n">args</span><span class="o">=</span><span class="p">[</span><span class="n">A</span><span class="p">])</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">kernel</span><span class="p">(</span><span class="n">local_A</span><span class="p">:</span> <span class="n">Ty</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">]</span> <span class="o">@</span> <span class="n">LyA</span><span class="p">):</span>
+    <span class="c1"># Each PE gets M/4 rows (full columns)</span>
+    <span class="k">pass</span>
+</pre></div>
+</div>
+<p><strong>2D Tensor Column Sharding:</strong></p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Matrix [M, N], shard columns across mesh axis 0</span>
+<span class="n">LyB</span> <span class="o">=</span> <span class="p">[</span><span class="n">R</span><span class="p">,</span> <span class="n">S</span><span class="p">(</span><span class="mi">0</span><span class="p">)]</span>
+
+<span class="nd">@df</span><span class="o">.</span><span class="n">kernel</span><span class="p">(</span><span class="n">mapping</span><span class="o">=</span><span class="p">[</span><span class="mi">4</span><span class="p">],</span> <span class="n">args</span><span class="o">=</span><span class="p">[</span><span class="n">B</span><span class="p">])</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">kernel</span><span class="p">(</span><span class="n">local_B</span><span class="p">:</span> <span class="n">Ty</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">]</span> <span class="o">@</span> <span class="n">LyB</span><span class="p">):</span>
+    <span class="c1"># Each PE gets full rows, N/4 columns</span>
+    <span class="k">pass</span>
+</pre></div>
+</div>
+<p><strong>2D Tensor Full Sharding (GEMM Example):</strong></p>
+<p>For matrix multiplication <code class="docutils literal notranslate"><span class="pre">C</span> <span class="pre">=</span> <span class="pre">A</span> <span class="pre">&#64;</span> <span class="pre">B</span></code> with 2D PE grid:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">,</span> <span class="n">K</span> <span class="o">=</span> <span class="mi">64</span><span class="p">,</span> <span class="mi">64</span><span class="p">,</span> <span class="mi">64</span>
+<span class="n">P0</span><span class="p">,</span> <span class="n">P1</span> <span class="o">=</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">2</span>  <span class="c1"># 2x2 PE grid</span>
+
+<span class="c1"># A[M, K]: shard M on axis 1 (for row parallelism), replicate K</span>
+<span class="n">LyA</span> <span class="o">=</span> <span class="p">[</span><span class="n">S</span><span class="p">(</span><span class="mi">1</span><span class="p">),</span> <span class="n">R</span><span class="p">]</span>
+<span class="c1"># B[K, N]: replicate K, shard N on axis 0 (for column parallelism)</span>
+<span class="n">LyB</span> <span class="o">=</span> <span class="p">[</span><span class="n">R</span><span class="p">,</span> <span class="n">S</span><span class="p">(</span><span class="mi">0</span><span class="p">)]</span>
+<span class="c1"># C[M, N]: shard both dimensions</span>
+<span class="n">LyC</span> <span class="o">=</span> <span class="p">[</span><span class="n">S</span><span class="p">(</span><span class="mi">1</span><span class="p">),</span> <span class="n">S</span><span class="p">(</span><span class="mi">0</span><span class="p">)]</span>
+
+<span class="nd">@df</span><span class="o">.</span><span class="n">region</span><span class="p">()</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">top</span><span class="p">(</span><span class="n">A</span><span class="p">:</span> <span class="n">Ty</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">K</span><span class="p">],</span> <span class="n">B</span><span class="p">:</span> <span class="n">Ty</span><span class="p">[</span><span class="n">K</span><span class="p">,</span> <span class="n">N</span><span class="p">],</span> <span class="n">C</span><span class="p">:</span> <span class="n">Ty</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">]):</span>
+    <span class="nd">@df</span><span class="o">.</span><span class="n">kernel</span><span class="p">(</span><span class="n">mapping</span><span class="o">=</span><span class="p">[</span><span class="n">P0</span><span class="p">,</span> <span class="n">P1</span><span class="p">],</span> <span class="n">args</span><span class="o">=</span><span class="p">[</span><span class="n">A</span><span class="p">,</span> <span class="n">B</span><span class="p">,</span> <span class="n">C</span><span class="p">])</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">gemm</span><span class="p">(</span>
+        <span class="n">local_A</span><span class="p">:</span> <span class="n">Ty</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">K</span><span class="p">]</span> <span class="o">@</span> <span class="n">LyA</span><span class="p">,</span>
+        <span class="n">local_B</span><span class="p">:</span> <span class="n">Ty</span><span class="p">[</span><span class="n">K</span><span class="p">,</span> <span class="n">N</span><span class="p">]</span> <span class="o">@</span> <span class="n">LyB</span><span class="p">,</span>
+        <span class="n">local_C</span><span class="p">:</span> <span class="n">Ty</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">]</span> <span class="o">@</span> <span class="n">LyC</span>
+    <span class="p">):</span>
+        <span class="c1"># Each PE computes a tile of C</span>
+        <span class="n">local_C</span><span class="p">[:,</span> <span class="p">:]</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">matmul</span><span class="p">(</span><span class="n">local_A</span><span class="p">,</span> <span class="n">local_B</span><span class="p">)</span>
+</pre></div>
+</div>
+<p><strong>3D Sharding for Temporal Reduction (Split-K GEMM):</strong></p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">,</span> <span class="n">K</span> <span class="o">=</span> <span class="mi">64</span><span class="p">,</span> <span class="mi">64</span><span class="p">,</span> <span class="mi">128</span>
+<span class="n">Pk</span><span class="p">,</span> <span class="n">Pm</span><span class="p">,</span> <span class="n">Pn</span> <span class="o">=</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">2</span>  <span class="c1"># 4x2x2 PE grid</span>
+
+<span class="c1"># A[M, K]: shard M on axis 1, shard K on axis 0</span>
+<span class="n">LyA</span> <span class="o">=</span> <span class="p">[</span><span class="n">S</span><span class="p">(</span><span class="mi">1</span><span class="p">),</span> <span class="n">S</span><span class="p">(</span><span class="mi">0</span><span class="p">)]</span>
+<span class="c1"># B[K, N]: shard K on axis 0, shard N on axis 2</span>
+<span class="n">LyB</span> <span class="o">=</span> <span class="p">[</span><span class="n">S</span><span class="p">(</span><span class="mi">0</span><span class="p">),</span> <span class="n">S</span><span class="p">(</span><span class="mi">2</span><span class="p">)]</span>
+<span class="c1"># C[M, N]: shard M on axis 1, shard N on axis 2</span>
+<span class="n">LyC</span> <span class="o">=</span> <span class="p">[</span><span class="n">S</span><span class="p">(</span><span class="mi">1</span><span class="p">),</span> <span class="n">S</span><span class="p">(</span><span class="mi">2</span><span class="p">)]</span>
+
+<span class="nd">@df</span><span class="o">.</span><span class="n">kernel</span><span class="p">(</span><span class="n">mapping</span><span class="o">=</span><span class="p">[</span><span class="n">Pk</span><span class="p">,</span> <span class="n">Pm</span><span class="p">,</span> <span class="n">Pn</span><span class="p">],</span> <span class="n">args</span><span class="o">=</span><span class="p">[</span><span class="n">A</span><span class="p">,</span> <span class="n">B</span><span class="p">,</span> <span class="n">C</span><span class="p">])</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">gemm</span><span class="p">(</span>
+    <span class="n">local_A</span><span class="p">:</span> <span class="n">Ty</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">K</span><span class="p">]</span> <span class="o">@</span> <span class="n">LyA</span><span class="p">,</span>
+    <span class="n">local_B</span><span class="p">:</span> <span class="n">Ty</span><span class="p">[</span><span class="n">K</span><span class="p">,</span> <span class="n">N</span><span class="p">]</span> <span class="o">@</span> <span class="n">LyB</span><span class="p">,</span>
+    <span class="n">local_C</span><span class="p">:</span> <span class="n">Ty</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">]</span> <span class="o">@</span> <span class="n">LyC</span>
+<span class="p">):</span>
+    <span class="n">pk</span><span class="p">,</span> <span class="n">pm</span><span class="p">,</span> <span class="n">pn</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">get_pid</span><span class="p">()</span>
+    <span class="c1"># Each PE along the K dimension computes a partial sum</span>
+</pre></div>
+</div>
+</section>
+<section id="understanding-mesh-axis-mapping">
+<h3><a class="toc-backref" href="#id34" role="doc-backlink">Understanding Mesh Axis Mapping</a><a class="headerlink" href="#understanding-mesh-axis-mapping" title="Link to this heading"><span>¶</span></a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">Shard(axis)</span></code> parameter refers to the <strong>mesh dimension</strong> (from the kernel’s
+<code class="docutils literal notranslate"><span class="pre">mapping</span></code> parameter), not the tensor dimension:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">Kernel</span> <span class="n">mapping</span><span class="p">:</span> <span class="p">[</span><span class="n">P0</span><span class="p">,</span> <span class="n">P1</span><span class="p">,</span> <span class="n">P2</span><span class="p">]</span> <span class="o">-&gt;</span> <span class="mi">3</span><span class="n">D</span> <span class="n">mesh</span> <span class="k">with</span> <span class="n">axes</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">2</span>
+                 <span class="o">|</span>   <span class="o">|</span>   <span class="o">|</span>
+                 <span class="mi">0</span>   <span class="mi">1</span>   <span class="mi">2</span>  <span class="o">&lt;-</span> <span class="n">mesh</span> <span class="n">axes</span>
+
+<span class="n">Layout</span> <span class="p">[</span><span class="n">S</span><span class="p">(</span><span class="mi">1</span><span class="p">),</span> <span class="n">R</span><span class="p">]</span> <span class="n">means</span><span class="p">:</span>
+  <span class="o">-</span> <span class="n">Tensor</span> <span class="n">dim</span> <span class="mi">0</span><span class="p">:</span> <span class="n">sharded</span> <span class="n">across</span> <span class="n">mesh</span> <span class="n">axis</span> <span class="mi">1</span> <span class="p">(</span><span class="n">P1</span> <span class="n">partitions</span><span class="p">)</span>
+  <span class="o">-</span> <span class="n">Tensor</span> <span class="n">dim</span> <span class="mi">1</span><span class="p">:</span> <span class="n">replicated</span> <span class="p">(</span><span class="n">each</span> <span class="n">PE</span> <span class="n">has</span> <span class="n">full</span> <span class="n">dim</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="how-layouts-compute-local-shapes">
+<h3><a class="toc-backref" href="#id35" role="doc-backlink">How Layouts Compute Local Shapes</a><a class="headerlink" href="#how-layouts-compute-local-shapes" title="Link to this heading"><span>¶</span></a></h3>
+<p>The local tensor shape at each PE is automatically computed:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Global tensor: [64, 64]</span>
+<span class="c1"># Layout: [S(0), S(1)]</span>
+<span class="c1"># Mapping: [4, 2]  -&gt; 4x2 PE grid</span>
+<span class="c1">#</span>
+<span class="c1"># Local shape per PE: [64/4, 64/2] = [16, 32]</span>
+</pre></div>
+</div>
+<p>For replicated dimensions, the local shape equals the global shape for that dimension.</p>
+</section>
+</section>
+<section id="best-practices">
+<h2><a class="toc-backref" href="#id36" role="doc-backlink">Best Practices</a><a class="headerlink" href="#best-practices" title="Link to this heading"><span>¶</span></a></h2>
+<ol class="arabic simple">
+<li><p><strong>Start with the simulator</strong>: Use <code class="docutils literal notranslate"><span class="pre">target=&quot;simulator&quot;</span></code> for initial debugging
+before moving to HLS.</p></li>
+<li><p><strong>Match stream types carefully</strong>: Ensure <code class="docutils literal notranslate"><span class="pre">put</span></code> and <code class="docutils literal notranslate"><span class="pre">get</span></code> operations match
+the declared stream element type.</p></li>
+<li><p><strong>Use meta conditionals for PE differentiation</strong>: In systolic arrays, use
+<code class="docutils literal notranslate"><span class="pre">allo.meta_if/meta_elif/meta_else</span></code> to generate different code for different
+PE positions.</p></li>
+<li><p><strong>Consider stream depth</strong>: Set appropriate FIFO depths based on the
+producer-consumer latency mismatch.</p></li>
+<li><p><strong>Use ConstExpr for tile sizes</strong>: When computing tile boundaries, use
+<code class="docutils literal notranslate"><span class="pre">ConstExpr</span></code> for values that should be computed at compile time.</p></li>
+</ol>
+</section>
+</section>
+
+
+            <div class="clearer"></div>
+          </div>
+        </div>
+      </div>
+    
+        <div id="show_right_sidebar">
+            <p><a class="toggle_right_sidebar" href="#"><span class="icon">&lt;</span><span>Page contents</span></a></p>
+        </div>
+
+        <div id="right_sidebar">
+            <p><a class="toggle_right_sidebar" href="#"><span class="icon">&gt;</span><span>Page contents:</span></a></p>
+            <div class="page_toc">
+                <ul>
+<li><a class="reference internal" href="#">Dataflow Programming</a><ul>
+<li><a class="reference internal" href="#overview">Overview</a><ul>
+<li><a class="reference internal" href="#key-concepts">Key Concepts</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#getting-started">Getting Started</a><ul>
+<li><a class="reference internal" href="#import-the-dataflow-module">Import the Dataflow Module</a></li>
+<li><a class="reference internal" href="#basic-structure">Basic Structure</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#regions">Regions</a><ul>
+<li><a class="reference internal" href="#region-declaration">Region Declaration</a></li>
+<li><a class="reference internal" href="#parameterized-regions">Parameterized Regions</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#kernels">Kernels</a><ul>
+<li><a class="reference internal" href="#kernel-declaration">Kernel Declaration</a></li>
+<li><a class="reference internal" href="#single-kernel-instance">Single Kernel Instance</a></li>
+<li><a class="reference internal" href="#multi-dimensional-kernel-grid">Multi-Dimensional Kernel Grid</a></li>
+<li><a class="reference internal" href="#getting-kernel-position">Getting Kernel Position</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#streams">Streams</a><ul>
+<li><a class="reference internal" href="#stream-declaration">Stream Declaration</a></li>
+<li><a class="reference internal" href="#stream-arrays">Stream Arrays</a></li>
+<li><a class="reference internal" href="#stream-of-blocks">Stream of Blocks</a></li>
+<li><a class="reference internal" href="#stream-operations">Stream Operations</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#systolic-array-patterns">Systolic Array Patterns</a><ul>
+<li><a class="reference internal" href="#basic-systolic-structure">Basic Systolic Structure</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#tiled-computation">Tiled Computation</a></li>
+<li><a class="reference internal" href="#hierarchical-regions">Hierarchical Regions</a></li>
+<li><a class="reference internal" href="#building-and-execution">Building and Execution</a><ul>
+<li><a class="reference internal" href="#build-for-simulation">Build for Simulation</a></li>
+<li><a class="reference internal" href="#build-for-llvm">Build for LLVM</a></li>
+<li><a class="reference internal" href="#build-for-hls">Build for HLS</a></li>
+<li><a class="reference internal" href="#customization-schedule-primitives">Customization (Schedule Primitives)</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#complete-example-producer-consumer">Complete Example: Producer-Consumer</a></li>
+<li><a class="reference internal" href="#tensor-layouts">Tensor Layouts</a><ul>
+<li><a class="reference internal" href="#layout-concepts">Layout Concepts</a></li>
+<li><a class="reference internal" href="#import-and-setup">Import and Setup</a></li>
+<li><a class="reference internal" href="#applying-layouts-to-kernel-arguments">Applying Layouts to Kernel Arguments</a></li>
+<li><a class="reference internal" href="#layout-patterns">Layout Patterns</a></li>
+<li><a class="reference internal" href="#understanding-mesh-axis-mapping">Understanding Mesh Axis Mapping</a></li>
+<li><a class="reference internal" href="#how-layouts-compute-local-shapes">How Layouts Compute Local Shapes</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#best-practices">Best Practices</a></li>
+</ul>
+</li>
+</ul>
+
+            </div>
+        </div>
+    
+
+      <div class="clearer"></div>
+    </div>
+    <div class="button_nav_wrapper">
+        <div class="button_nav">
+            <div class="left">
+                
+                <a href="frontend_syntax.html">
+                    <span class="icon">&lt;</span><span>Frontend Syntax Guide</span></a>
+                
+            </div>
+
+            <div class="right">
+                
+                    <a href="../gallery/dive_01_data_types.html"><span>Data Types and Type Casting</span><span class="icon">&gt;</span></a>
+                
+            </div>
+        </div>
+    </div>
+
+
+    <div class="footer" role="contentinfo">
+    &#169; Copyright 2025, Allo Authors.
+      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 8.2.3.
+    </div>
+
+<p id="theme_credit">Styled using the <a href="https://github.com/piccolo-orm/piccolo_theme">Piccolo Theme</a></p>
+  </body>
+</html>
