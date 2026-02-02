@@ -484,6 +484,7 @@ public:
   bool visitOp(arith::RemSIOp op) { return emitter.emitBinary(op, "%"), true; }
   bool visitOp(arith::DivUIOp op) { return emitter.emitBinary(op, "/"), true; }
   bool visitOp(arith::RemUIOp op) { return emitter.emitBinary(op, "%"), true; }
+  bool visitOp(arith::FloorDivSIOp op) { return emitter.emitBinary(op, "/"), true; }
   bool visitOp(arith::MaxSIOp op) {
     return emitter.emitMaxMin(op, "max"), true;
   }
