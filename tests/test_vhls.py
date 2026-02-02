@@ -613,5 +613,31 @@ def test_wrap_io_false_nested_function_2D():
         s.build(target="vitis_hls", mode="sw_emu", project="", wrap_io=False)
 
 
+def test_floordiv():
+    def floordiv(A: int32[10], B: int32[10]) -> int32[10]:
+        C: int32[10] = 0
+        for i in range(10):
+            C[i] = A[i] // B[i]
+        return C
+
+    s = allo.customize(floordiv)
+    print(s.module)
+    # CPU simulation
+    mod = s.build()
+    np_A = np.random.randint(1, 10, size=(10,)).astype(np.int32)
+    np_B = np.random.randint(1, 10, size=(10,)).astype(np.int32)
+    np_C = np_A // np_B
+    np_C_allo = mod(np_A, np_B)
+    np.testing.assert_allclose(np_C, np_C_allo, rtol=1e-5)
+
+    # Vitis HLS code generation
+    with tempfile.TemporaryDirectory() as tmpdir:
+        mod = s.build(target="vitis_hls", mode="sw_emu", project=tmpdir)
+        hls_code = mod.hls_code
+        print(hls_code)
+        # Check if the division operator is used for FloorDivSIOp
+        assert " / " in hls_code
+
+
 if __name__ == "__main__":
     pytest.main([__file__])
