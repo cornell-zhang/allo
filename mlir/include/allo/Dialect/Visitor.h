@@ -60,6 +60,7 @@ public:
             arith::DivFOp, arith::RemFOp,
             // Integer binary expressions.
             arith::CmpIOp, arith::AddIOp, arith::SubIOp, arith::MulIOp,
+            arith::FloorDivSIOp,
             arith::DivSIOp, arith::RemSIOp, arith::DivUIOp, arith::RemUIOp,
             arith::MaxSIOp, arith::MinSIOp, arith::MaxUIOp, arith::MinUIOp,
             arith::MaximumFOp, arith::MinimumFOp,
@@ -190,6 +191,7 @@ public:
   HANDLE(arith::RemSIOp);
   HANDLE(arith::DivUIOp);
   HANDLE(arith::RemUIOp);
+  HANDLE(arith::FloorDivSIOp);
   HANDLE(arith::MaxSIOp);
   HANDLE(arith::MinSIOp);
   HANDLE(arith::MaxUIOp);
