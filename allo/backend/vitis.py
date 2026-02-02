@@ -438,10 +438,11 @@ def generate_description_file(top, src_path, dst_path, frequency):
 
     # Generate HLS pre-tcl script to set clock
     # This bypasses v++ option parsing validation issues
+    assert frequency > 0, "Frequency must be positive"
     clock_period_ns = 1000.0 / frequency
     hls_tcl_path = dst_path.replace("description.json", "hls_pre.tcl")
     with open(hls_tcl_path, "w", encoding="utf-8") as tcl_file:
-        tcl_file.write(f"create_clock -period {clock_period_ns:.2f} -name default\n")
+        tcl_file.write(f"create_clock -period {clock_period_ns:.4f} -name default\n")
 
     # Generate HLS config file referencing the pre-tcl script
     hls_cfg_path = dst_path.replace("description.json", "hls.cfg")
