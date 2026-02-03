@@ -143,9 +143,9 @@ static bool emitTapaHls(MlirModule &mod, nb::object fileObject) {
       mlirEmitTapaHls(mod, accum.getCallback(), accum.getUserData()));
 }
 
-static bool emitCatapultHls(MlirModule &mod, py::object fileObject) {
+static bool emitCatapultHls(MlirModule &mod, nb::object fileObject) {
   PyFileAccumulator accum(fileObject, false);
-  py::gil_scoped_release();
+  nb::gil_scoped_release release;
   return mlirLogicalResultIsSuccess(
       mlirEmitCatapultHls(mod, accum.getCallback(), accum.getUserData()));
 }

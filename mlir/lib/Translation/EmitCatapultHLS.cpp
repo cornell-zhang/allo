@@ -11,6 +11,7 @@
 #include "allo/Translation/Utils.h"
 #include "mlir/Dialect/Affine/IR/AffineValueMap.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/IR/AffineExprVisitor.h"
 #include "mlir/IR/IntegerSet.h"
 #include "mlir/InitAllDialects.h"
@@ -31,21 +32,21 @@ using namespace allo;
 static bool BIT_FLAG = false;
 
 static SmallString<16> getCatapultTypeName(Type valType) {
-  if (auto arrayType = valType.dyn_cast<ShapedType>())
+  if (auto arrayType = llvm::dyn_cast<ShapedType>(valType))
     valType = arrayType.getElementType();
 
   // Handle float types.
-  if (valType.isa<Float16Type>())
+  if (llvm::isa<Float16Type>(valType))
     return SmallString<16>("half");
-  else if (valType.isa<Float32Type>())
+  else if (llvm::isa<Float32Type>(valType))
     return SmallString<16>("float");
-  else if (valType.isa<Float64Type>())
+  else if (llvm::isa<Float64Type>(valType))
     return SmallString<16>("double");
 
   // Handle integer types.
-  else if (valType.isa<IndexType>())
+  else if (llvm::isa<IndexType>(valType))
     return SmallString<16>("int");
-  else if (auto intType = valType.dyn_cast<IntegerType>()) {
+  else if (auto intType = llvm::dyn_cast<IntegerType>(valType)) {
     if (intType.getWidth() == 1) {
       if (!BIT_FLAG)
         return SmallString<16>("bool");
@@ -78,17 +79,17 @@ static SmallString<16> getCatapultTypeName(Type valType) {
   }
 
   // Handle (custom) fixed point types.
-  else if (auto fixedType = valType.dyn_cast<allo::FixedType>())
+  else if (auto fixedType = llvm::dyn_cast<allo::FixedType>(valType))
     return SmallString<16>(
         "ac_fixed<" + std::to_string(fixedType.getWidth()) + ", " +
         std::to_string(fixedType.getWidth() - fixedType.getFrac()) + ", true>");
 
-  else if (auto ufixedType = valType.dyn_cast<allo::UFixedType>())
+  else if (auto ufixedType = llvm::dyn_cast<allo::UFixedType>(valType))
     return SmallString<16>(
         "ac_fixed<" + std::to_string(ufixedType.getWidth()) + ", " +
         std::to_string(ufixedType.getWidth() - ufixedType.getFrac()) + ", false>");
 
-  else if (auto streamType = valType.dyn_cast<StreamType>())
+  else if (auto streamType = llvm::dyn_cast<StreamType>(valType))
     return SmallString<16>(
         "ac_channel< " +
         std::string(getCatapultTypeName(streamType.getBaseType()).c_str()) + " >");
@@ -99,30 +100,25 @@ static SmallString<16> getCatapultTypeName(Type valType) {
   return SmallString<16>();
 }
 
-// Forward declare the Vivado ModuleEmitter from the Vivado namespace
-namespace vhls {
-  class ModuleEmitter;
-}
-
 namespace {
-// Catapult ModuleEmitter that inherits from Vivado ModuleEmitter
-class CatapultModuleEmitter : public allo::vhls::ModuleEmitter {
+// Catapult ModuleEmitter that inherits from Vivado HLS ModuleEmitter
+class CatapultModuleEmitter : public allo::hls::VhlsModuleEmitter {
 public:
   using operand_range = Operation::operand_range;
-  explicit CatapultModuleEmitter(AlloEmitterState &state) : allo::vhls::ModuleEmitter(state) {}
+  explicit CatapultModuleEmitter(AlloEmitterState &state) : allo::hls::VhlsModuleEmitter(state) {}
 
   // Override methods that need Catapult-specific behavior
   void emitModule(ModuleOp module) override;
   void emitFunctionDirectives(func::FuncOp func, ArrayRef<Value> portList) override;
   void emitArrayDecl(Value array, bool isFunc = false, std::string name = "") override;
-  void emitLoopDirectives(Operation *op);
-  void emitStreamConstruct(allo::StreamConstructOp op);
-  void emitArrayDirectives(Value memref);
-  void emitFunction(func::FuncOp func);
+  void emitLoopDirectives(Operation *op) override;
+  void emitStreamConstruct(allo::StreamConstructOp op) override;
+  void emitArrayDirectives(Value memref) override;
+  void emitFunction(func::FuncOp func) override;
 
 protected:
   void emitValue(Value val, unsigned rank = 0, bool isPtr = false,
-                 std::string name = "");
+                 std::string name = "") override;
   // Helper method to get Catapult-specific type names
   SmallString<16> getTypeName(Type valType) { return getCatapultTypeName(valType); }
   SmallString<16> getTypeName(Value val) { return getCatapultTypeName(val.getType()); }
@@ -180,20 +176,20 @@ void CatapultModuleEmitter::emitFunctionDirectives(func::FuncOp func,
 
   // Emit array directives for function ports
   for (auto &port : portList)
-    if (port.getType().isa<MemRefType>())
+    if (llvm::isa<MemRefType>(port.getType()))
       emitArrayDirectives(port);
 }
 
 void CatapultModuleEmitter::emitArrayDecl(Value array, bool isFunc, std::string name) {
   assert(!isDeclared(array) && "has been declared before.");
 
-  auto arrayType = array.getType().cast<ShapedType>();
+  auto arrayType = llvm::cast<ShapedType>(array.getType());
   if (arrayType.hasStaticShape()) {
-    auto memref = array.getType().dyn_cast<MemRefType>();
+    auto memref = llvm::dyn_cast<MemRefType>(array.getType());
     if (memref) {
       auto attr = memref.getMemorySpace();
       if (attr &&
-          attr.cast<StringAttr>().getValue().str().substr(0, 6) == "stream") {
+          llvm::cast<StringAttr>(attr).getValue().str().substr(0, 6) == "stream") {
         // Value has been declared before or is a constant number.
         if (isDeclared(array)) {
           os << getName(array);
@@ -203,7 +199,7 @@ void CatapultModuleEmitter::emitArrayDecl(Value array, bool isFunc, std::string 
         // print stream type using ac_channel instead of hls::stream
         os << "ac_channel< " << getCatapultTypeName(arrayType.getElementType()) << " > ";
 
-        auto attr_str = attr.cast<StringAttr>().getValue().str();
+        auto attr_str = llvm::cast<StringAttr>(attr).getValue().str();
         int S_index = attr_str.find("S"); // spatial
         int T_index = attr_str.find("T"); // temporal
         if (isFunc &&
@@ -240,7 +236,7 @@ void CatapultModuleEmitter::emitLoopDirectives(Operation *op) {
   if (auto ii = getLoopDirective(op, "pipeline_ii")) {
     reduceIndent();
     indent();
-    os << "#pragma hls_pipeline_init_interval " << ii.cast<IntegerAttr>().getValue();
+    os << "#pragma hls_pipeline_init_interval " << llvm::cast<IntegerAttr>(ii).getValue();
     os << "\n";
     addIndent();
   }
@@ -248,7 +244,7 @@ void CatapultModuleEmitter::emitLoopDirectives(Operation *op) {
   if (auto factor = getLoopDirective(op, "unroll")) {
     reduceIndent();
     indent();
-    auto val = factor.cast<IntegerAttr>().getValue();
+    auto val = llvm::cast<IntegerAttr>(factor).getValue();
     if (val == 0)
       os << "#pragma hls_unroll"
          << "\n";
@@ -270,7 +266,7 @@ void CatapultModuleEmitter::emitStreamConstruct(allo::StreamConstructOp op) {
   Value result = op.getResult();
   fixUnsignedType(result, op->hasAttr("unsigned"));
   emitValue(result);
-  if (auto shapedType = result.getType().dyn_cast<ShapedType>()) {
+  if (auto shapedType = llvm::dyn_cast<ShapedType>(result.getType())) {
     for (auto shape : shapedType.getShape()) {
       os << "[" << shape << "]";
     }
@@ -283,12 +279,12 @@ void CatapultModuleEmitter::emitStreamConstruct(allo::StreamConstructOp op) {
 
 void CatapultModuleEmitter::emitArrayDirectives(Value memref) {
   bool emitPragmaFlag = false;
-  auto type = memref.getType().cast<MemRefType>();
+  auto type = llvm::cast<MemRefType>(memref.getType());
 
   // streaming
   auto attr = type.getMemorySpace();
   if (attr) {
-    std::string attr_str = attr.cast<StringAttr>().getValue().str();
+    std::string attr_str = llvm::cast<StringAttr>(attr).getValue().str();
     if (attr_str.substr(0, 6) == "stream") {
       // Note: Catapult HLS doesn't need explicit stream pragmas like Vivado HLS
       // The streaming behavior is handled through ac_channel type
@@ -298,7 +294,7 @@ void CatapultModuleEmitter::emitArrayDirectives(Value memref) {
 
   // For other array directives, delegate to the parent implementation
   // but we need to call the parent method explicitly
-  allo::vhls::ModuleEmitter::emitArrayDirectives(memref);
+  allo::hls::VhlsModuleEmitter::emitArrayDirectives(memref);
 }
 
 void CatapultModuleEmitter::emitFunction(func::FuncOp func) {
@@ -327,18 +323,18 @@ void CatapultModuleEmitter::emitFunction(func::FuncOp func) {
   std::vector<std::string> input_args;
   if (func->hasAttr("inputs")) {
     std::string input_names =
-        func->getAttr("inputs").cast<StringAttr>().getValue().str();
+        llvm::cast<StringAttr>(func->getAttr("inputs")).getValue().str();
     input_args = split_names(input_names);
   }
   std::string output_names;
   if (func->hasAttr("outputs")) {
-    output_names = func->getAttr("outputs").cast<StringAttr>().getValue().str();
+    output_names = llvm::cast<StringAttr>(func->getAttr("outputs")).getValue().str();
     // suppose only one output
     input_args.push_back(output_names);
   }
   std::string itypes = "";
   if (func->hasAttr("itypes"))
-    itypes = func->getAttr("itypes").cast<StringAttr>().getValue().str();
+    itypes = llvm::cast<StringAttr>(func->getAttr("itypes")).getValue().str();
   else {
     for (unsigned i = 0; i < func.getNumArguments(); ++i)
       itypes += "x";
@@ -346,9 +342,9 @@ void CatapultModuleEmitter::emitFunction(func::FuncOp func) {
   for (auto &arg : func.getArguments()) {
     indent();
     fixUnsignedType(arg, itypes[argIdx] == 'u');
-    if (arg.getType().isa<ShapedType>()) {
-      if (arg.getType().cast<ShapedType>().getElementType().isa<StreamType>()) {
-        auto shapedType = arg.getType().dyn_cast<ShapedType>();
+    if (llvm::isa<ShapedType>(arg.getType())) {
+      if (llvm::isa<StreamType>(llvm::cast<ShapedType>(arg.getType()).getElementType())) {
+        auto shapedType = llvm::dyn_cast<ShapedType>(arg.getType());
         // Use Catapult-specific stream type name
         os << getCatapultTypeName(arg.getType()) << " ";
         os << addName(arg, false);
@@ -360,7 +356,7 @@ void CatapultModuleEmitter::emitFunction(func::FuncOp func) {
         emitArrayDecl(arg, true, input_args[argIdx]);
       }
     } else {
-      if (arg.getType().isa<StreamType>()) {
+      if (llvm::isa<StreamType>(arg.getType())) {
         // need to pass by reference - use Catapult-specific stream type
         os << getCatapultTypeName(arg.getType()) << "& ";
         os << addName(arg, false);
@@ -380,7 +376,7 @@ void CatapultModuleEmitter::emitFunction(func::FuncOp func) {
   auto args = func.getArguments();
   std::string otypes = "";
   if (func->hasAttr("otypes"))
-    otypes = func->getAttr("otypes").cast<StringAttr>().getValue().str();
+    otypes = llvm::cast<StringAttr>(func->getAttr("otypes")).getValue().str();
   else {
     for (unsigned i = 0; i < func.getNumArguments(); ++i)
       otypes += "x";
@@ -397,7 +393,7 @@ void CatapultModuleEmitter::emitFunction(func::FuncOp func) {
         // TODO: a known bug, cannot return a value twice, e.g. return %0, %0
         // : index, index. However, typically this should not happen.
         fixUnsignedType(result, otypes[idx] == 'u');
-        if (result.getType().isa<ShapedType>()) {
+        if (llvm::isa<ShapedType>(result.getType())) {
           if (output_names != "")
             emitArrayDecl(result, true);
           else
