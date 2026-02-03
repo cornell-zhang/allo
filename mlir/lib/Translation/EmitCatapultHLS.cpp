@@ -253,6 +253,15 @@ void CatapultModuleEmitter::emitLoopDirectives(Operation *op) {
     addIndent();
   }
 
+  if (auto parallel = getLoopDirective(op, "parallel")) {
+    reduceIndent();
+    indent();
+    // parallel implies full unroll
+    os << "#pragma hls_unroll"
+       << "\n";
+    addIndent();
+  }
+
   if (auto dataflow = getLoopDirective(op, "dataflow")) {
     reduceIndent();
     indent();
@@ -294,7 +303,9 @@ void CatapultModuleEmitter::emitArrayDirectives(Value memref) {
 
   // For other array directives, delegate to the parent implementation
   // but we need to call the parent method explicitly
-  allo::hls::VhlsModuleEmitter::emitArrayDirectives(memref);
+  // allo::hls::VhlsModuleEmitter::emitArrayDirectives(memref);
+  // Catapult ignores #pragma HLS array_partition.
+  // TODO: Implement Catapult-specific memory directives (e.g. via TCL or other pragmas)
 }
 
 void CatapultModuleEmitter::emitFunction(func::FuncOp func) {

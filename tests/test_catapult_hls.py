@@ -3,6 +3,7 @@
 
 import tempfile
 import pytest
+import os
 import allo
 from allo.ir.types import int32, int8, int16, float32, bool
 
@@ -209,6 +210,44 @@ def test_catapult_tcl_generation():
         assert "go assembly" in tcl_content
         assert "go extract" in tcl_content
         print("test_catapult_tcl_generation passed!")
+
+
+        assert "go extract" in tcl_content
+        print("test_catapult_tcl_generation passed!")
+
+
+def check_catapult():
+    if "MGC_HOME" not in os.environ:
+        return False
+    return True
+
+@pytest.mark.skipif(not check_catapult(), reason="Catapult is not installed (MGC_HOME not set)")
+def test_catapult_csim():
+    """Test csim flow using g++ for Catapult HLS"""
+    def vvadd(a: int32[10], b: int32[10]) -> int32[10]:
+        c: int32[10]
+        for i in range(10):
+            c[i] = a[i] + b[i]
+        return c
+
+    s = allo.customize(vvadd)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        mod = s.build(target="catapult", mode="csim", project=tmpdir)
+        
+        # Create input data
+        import numpy as np
+        a = np.random.randint(0, 100, (10,)).astype(np.int32)
+        b = np.random.randint(0, 100, (10,)).astype(np.int32)
+        c = np.zeros(10, dtype=np.int32)
+
+        # Run csim
+        # This calls mod.__call__, which should trigger the g++ compilation and execution flow
+        mod(a, b, c)
+
+        # Verify results
+        expected = a + b
+        np.testing.assert_array_equal(c, expected)
+        print("test_catapult_csim passed!")
 
 
 if __name__ == "__main__":
