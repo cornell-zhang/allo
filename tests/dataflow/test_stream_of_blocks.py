@@ -70,7 +70,8 @@ def test_2d_blocks():
     assert (
         "consumer" in code or "Consumer" in code
     ), "Consumer function should be in HLS code"
-    assert "hls::stream_of_blocks" in code, "Stream of blocks should be in HLS code"
+    assert "hls::vector" in code, "hls::vector should be in HLS code"
+    assert "hls::stream" in code, "hls::stream should be in HLS code"
     print("HLS Code Generation Passed for 2D blocks!")
 
 
@@ -132,7 +133,8 @@ def test_blocks_compute():
     assert (
         "consumer" in code or "Consumer" in code
     ), "Consumer function should be in HLS code"
-    assert "hls::stream_of_blocks" in code, "Stream of blocks should be in HLS code"
+    assert "hls::vector" in code, "hls::vector should be in HLS code"
+    assert "hls::stream" in code, "hls::stream should be in HLS code"
     print("HLS Code Generation Passed for blocks with computation!")
 
 
@@ -190,7 +192,8 @@ def test_multiple_blocks():
     assert (
         "consumer" in code or "Consumer" in code
     ), "Consumer function should be in HLS code"
-    assert "hls::stream_of_blocks" in code, "Stream of blocks should be in HLS code"
+    assert "hls::vector" in code, "hls::vector should be in HLS code"
+    assert "hls::stream" in code, "hls::stream should be in HLS code"
     print("HLS Code Generation Passed for multiple streams of blocks!")
 
 
