@@ -202,7 +202,7 @@ def test_FEATHER_GEMM():
         s = get_scheduled_feather(AW, AH, Ty)
         csyn_mod = s.build(
             target="vitis_hls",
-            mode="hw_emu",
+            mode="hw",
             project=f"feather_gemm_{M}_{N}_{K}_{AW}_{AH}_new.prj",
         )
         oActs_hls = np.zeros((N, 2 * M), dtype=np.int8)
