@@ -1,0 +1,50 @@
+# Copyright Allo authors. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: "Allo FPGA Weekly Test"
+on:
+  schedule:
+    # Run weekly at Sunday 1:00 AM UTC.
+    # This corresponds to Saturday 8:00 PM EST and Saturday 9:00 PM EDT.
+    - cron: '0 1 * * 0'
+  workflow_dispatch:  # Allow manual triggering from GitHub Actions UI
+
+jobs:
+  fpga_test:
+    runs-on: [brg-zhang-xcel]
+    container:
+      image: zzzdavid/allo-fpga:latest
+      options: >-
+        -v /opt/xilinx:/opt/xilinx
+    env:
+      XILINXD_LICENSE_FILE: 2100@en-license-05.coecis.cornell.edu
+      VITIS: /opt/xilinx/Vitis/2023.2
+      HLS_INCLUDE: /opt/xilinx/Vitis_HLS/2023.2/include
+      XDEVICE: /opt/xilinx/platforms/xilinx_u280_gen3x16_xdma_1_202211_1/xilinx_u280_gen3x16_xdma_1_202211_1.xpfm
+      LANG: en_US.UTF-8
+      LC_ALL: en_US.UTF-8
+    steps:
+    - name: Install git and setup locale in container
+      run: |
+        apt-get update && apt-get -y install git locales
+        sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen
+        locale-gen en_US.UTF-8
+        git config --global --add safe.directory "$GITHUB_WORKSPACE"
+    - uses: actions/checkout@v4
+      with:
+        ref: main
+        fetch-depth: 0
+    - name: Build Allo
+      shell: bash
+      run: |
+        source activate allo
+        export LLVM_BUILD_DIR=/root/llvm-project/build
+        python3 -m pip install -v -e .
+    - name: Run Feather GEMM
+      shell: bash
+      run: |
+        source activate allo
+        source /opt/xilinx/xrt/setup.sh
+        source $VITIS/settings64.sh
+        cd examples/feather
+        ALLO_FPGA_HW_MODE=1 python gemm.py
