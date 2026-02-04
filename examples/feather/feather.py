@@ -148,7 +148,7 @@ def get_scheduled_feather(AW: int, AH: int, Ty: AlloType):
     # s.partition("top:weights", dim=2, factor=AW)
     # s.partition("top:weights", dim=3, factor=AH)
     # fully partition as a bypass for now
-    # we need to support paritioning same array multiple times
+    # we need to support partitioning same array multiple times
     s.partition("top:weights", dim=0)
     return s
 

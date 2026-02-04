@@ -12,7 +12,13 @@ USER root
 RUN apt-get update && apt-get -y install \
     sudo git wget vim gdb gcc make \
     software-properties-common libssl-dev ninja-build \
-    build-essential curl
+    build-essential curl locales libtinfo5 unzip
+
+# Setup locale for Xilinx tools
+RUN sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && \
+    locale-gen en_US.UTF-8
+ENV LANG=en_US.UTF-8
+ENV LC_ALL=en_US.UTF-8
 
 # Install gcc-11 (default on Ubuntu 22.04, compatible with XRT)
 RUN apt-get update && apt-get -y install gcc-11 g++-11 && \
@@ -20,14 +26,18 @@ RUN apt-get update && apt-get -y install gcc-11 g++-11 && \
                         --slave /usr/bin/g++ g++ /usr/bin/g++-11
 
 # Install CMake from pre-built binary (faster than building from source)
+# Pinned to v3.27.9 with SHA256 checksum verification
 WORKDIR /root/
 RUN wget https://github.com/Kitware/CMake/releases/download/v3.27.9/cmake-3.27.9-linux-x86_64.tar.gz && \
+    echo "72b01478eeb312bf1a0136208957784fe55a7b587f8d9f9142a7fc9b0b9e9a28  cmake-3.27.9-linux-x86_64.tar.gz" | sha256sum -c - && \
     tar -xzvf cmake-3.27.9-linux-x86_64.tar.gz && \
     rm cmake-3.27.9-linux-x86_64.tar.gz
 ENV PATH="${PATH}:/root/cmake-3.27.9-linux-x86_64/bin"
 
 # Install Miniforge (conda-forge based, no ToS restrictions)
-RUN wget https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh -O /root/miniforge.sh && \
+# Pinned to version 24.11.0-0 with SHA256 checksum verification
+RUN wget https://github.com/conda-forge/miniforge/releases/download/24.11.0-0/Miniforge3-24.11.0-0-Linux-x86_64.sh -O /root/miniforge.sh && \
+    echo "5fa69e4294be07229a94a1c1e8073fbf63894c757c2136f98c87b48f9d458793  /root/miniforge.sh" | sha256sum -c - && \
     bash /root/miniforge.sh -b -p /root/miniforge && \
     rm /root/miniforge.sh && \
     eval "$(/root/miniforge/bin/conda shell.bash hook)" && \
