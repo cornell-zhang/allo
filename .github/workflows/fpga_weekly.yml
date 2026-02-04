@@ -7,6 +7,7 @@ on:
     # Saturday 8:00 PM ET = Sunday 1:00 AM UTC (during EST)
     # Note: During EDT (daylight saving), this runs at Saturday 9:00 PM ET
     - cron: '0 1 * * 0'
+  workflow_dispatch:  # Allow manual triggering from GitHub Actions UI
 
 jobs:
   fpga_test:
