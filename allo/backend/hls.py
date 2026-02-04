@@ -369,8 +369,18 @@ class HLSModule:
                 # allo/backend/catapult.py's codegen_host includes "kernel.h".
                 # So we SHOULD generate kernel.h.
                 # Re-using separate_header which is generic enough for C-style headers.
-
-                header, self.args = separate_header(self.hls_code, self.top_func_name)
+                #
+                # However, separate_header currently only understands builtin and
+                # ap_(u)int<...> types. When Catapult emits ac_int<...> (e.g., for
+                # non-standard integer widths), separate_header can raise ValueError.
+                # Fall back to including kernel.cpp directly if that happens.
+                try:
+                    header, self.args = separate_header(
+                        self.hls_code, self.top_func_name
+                    )
+                except ValueError:
+                    header = '#pragma once\n#include "kernel.cpp"\n'
+                    self.args = []
                 with open(f"{project}/kernel.h", "w", encoding="utf-8") as outfile:
                     outfile.write(header)
             elif self.platform == "tapa":

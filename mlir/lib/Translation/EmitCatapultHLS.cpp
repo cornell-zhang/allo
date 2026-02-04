@@ -198,8 +198,10 @@ void CatapultModuleEmitter::emitArrayDecl(Value array, bool isFunc,
     auto memref = llvm::dyn_cast<MemRefType>(array.getType());
     if (memref) {
       auto attr = memref.getMemorySpace();
-      if (attr && llvm::cast<StringAttr>(attr).getValue().str().substr(0, 6) ==
-                      "stream") {
+      // Use dyn_cast to safely check if attr is a StringAttr (it could be
+      // IntegerAttr)
+      auto strAttr = attr ? llvm::dyn_cast<StringAttr>(attr) : nullptr;
+      if (strAttr && strAttr.getValue().str().substr(0, 6) == "stream") {
         // Value has been declared before or is a constant number.
         if (isDeclared(array)) {
           os << getName(array);
@@ -210,7 +212,7 @@ void CatapultModuleEmitter::emitArrayDecl(Value array, bool isFunc,
         os << "ac_channel< " << getCatapultTypeName(arrayType.getElementType())
            << " > ";
 
-        auto attr_str = llvm::cast<StringAttr>(attr).getValue().str();
+        auto attr_str = strAttr.getValue().str();
         int S_index = attr_str.find("S"); // spatial
         int T_index = attr_str.find("T"); // temporal
         if (isFunc &&
@@ -306,11 +308,16 @@ void CatapultModuleEmitter::emitArrayDirectives(Value memref) {
   // streaming
   auto attr = type.getMemorySpace();
   if (attr) {
-    std::string attr_str = llvm::cast<StringAttr>(attr).getValue().str();
-    if (attr_str.substr(0, 6) == "stream") {
-      // Note: Catapult HLS doesn't need explicit stream pragmas like Vivado HLS
-      // The streaming behavior is handled through ac_channel type
-      return;
+    // Use dyn_cast to safely check if attr is a StringAttr (it could be
+    // IntegerAttr)
+    auto strAttr = llvm::dyn_cast<StringAttr>(attr);
+    if (strAttr) {
+      std::string attr_str = strAttr.getValue().str();
+      if (attr_str.substr(0, 6) == "stream") {
+        // Note: Catapult HLS doesn't need explicit stream pragmas like Vivado
+        // HLS The streaming behavior is handled through ac_channel type
+        return;
+      }
     }
   }
 
