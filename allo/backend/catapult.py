@@ -61,6 +61,7 @@ ctype_map = {
     "ui64": "uint64_t",
 }
 
+
 def codegen_host(top, module, num_output_args=0):
     """Generate C++ host code for Catapult HLS functional simulation.
 
@@ -81,7 +82,7 @@ def codegen_host(top, module, num_output_args=0):
 
     # Generate in/out buffers
     buffer_bytes = []
-    
+
     # Process inputs
     # Process inputs
     for i, (in_dtype, in_shape) in enumerate(inputs):
@@ -93,59 +94,64 @@ def codegen_host(top, module, num_output_args=0):
         out_str += format_str("}", 4)
 
         size = np.prod(in_shape) if len(in_shape) > 0 else 1
-        
+
         # Buffer allocation
-        if len(in_shape) == 0: # Scalar
+        if len(in_shape) == 0:  # Scalar
             scalar_type = ctype_map.get(str(in_dtype), "int")
             out_str += format_str(f"{scalar_type} source_in{i};", 4)
             out_str += format_str(f"ifile{i} >> source_in{i};", 4)
-        else: # Array
-            c_type = ctype_map.get(str(in_dtype), 'int')
+        else:  # Array
+            c_type = ctype_map.get(str(in_dtype), "int")
             out_str += format_str(f"vector<{c_type}> source_in{i}({size});", 4)
             out_str += format_str(f"for (int k = 0; k < {size}; k++) {{", 4)
             out_str += format_str(f"ifile{i} >> source_in{i}[k];", 8)
             out_str += format_str("}", 4)
-    
+
     # Process outputs
     for i, (out_dtype, out_shape) in enumerate(outputs):
         size = np.prod(out_shape) if len(out_shape) > 0 else 1
-        out_str += format_str(f"vector<{ctype_map.get(str(out_dtype), 'int')}> source_out{i}({size}, 0);", 4)
+        out_str += format_str(
+            f"vector<{ctype_map.get(str(out_dtype), 'int')}> source_out{i}({size}, 0);",
+            4,
+        )
 
     out_str += "\n"
-    
+
     # Call the top function
     # Note: signatures in Catapult HLS generated code generally match what we emitted.
     # Arrays are pointers or ac_channel references.
     # Scalars are values.
     # We need to construct the call arguments.
-    
+
     args = []
-    
+
     # Inputs
     for i, (in_dtype, in_shape) in enumerate(inputs):
         if len(in_shape) == 0:
             args.append(f"source_in{i}")
         else:
             args.append(f"source_in{i}.data()")
-            
+
     # Outputs
     for i in range(len(outputs)):
-         args.append(f"source_out{i}.data()")
-    
+        args.append(f"source_out{i}.data()")
+
     # Handling explicit return vs output arguments handled in `inputs` (legacy)
     # If num_output_args > 0, some inputs are actually outputs (pointers)
     # The logic in Vitis handles this.
-    
+
     # Call kernel
     out_str += format_str(f"{top}({', '.join(args)});", 4)
     out_str += "\n"
 
     # Write outputs to files
     if len(outputs) > 0:
-         for i in range(len(outputs)):
+        for i in range(len(outputs)):
             out_str += format_str(f'ofstream ofile{i}("output{i}.data");', 4)
             out_str += format_str(f"if (!ofile{i}) {{", 4)
-            out_str += format_str(f'cerr << "Failed to open output file {i}!" << endl;', 8)
+            out_str += format_str(
+                f'cerr << "Failed to open output file {i}!" << endl;', 8
+            )
             out_str += format_str("return 1;", 8)
             out_str += format_str("}", 4)
             size = np.prod(outputs[i][1]) if len(outputs[i][1]) > 0 else 1
@@ -153,17 +159,19 @@ def codegen_host(top, module, num_output_args=0):
             out_str += format_str(f"ofile{i} << source_out{i}[k] << endl;", 8)
             out_str += format_str("}", 4)
             out_str += format_str(f"ofile{i}.close();", 4)
-    
+
     out_str += format_str("return 0;", 4)
     out_str += "}\n"
-    
+
     return out_str
+
 
 def codegen_tcl(top, configs):
     """Generate TCL script for Catapult HLS synthesis"""
     frequency = configs["frequency"]
     clock_period = 1000 / frequency
-    
+    mode = configs.get("mode", "csyn")
+
     out_str = f"""# Project root directory
 set sfd [file dir [info script]]
 
@@ -175,8 +183,13 @@ solution options set /Input/CompilerFlags {{-D_GLIBCXX_USE_CXX11_ABI=0}}
 
 # Add source files
 solution file add "$sfd/kernel.cpp" -type C++
-solution file add "$sfd/host.cpp" -type C++ -exclude true
+"""
 
+    # Only include host.cpp for csim mode
+    if mode == "csim":
+        out_str += 'solution file add "$sfd/host.cpp" -type C++ -exclude true\n'
+
+    out_str += f"""
 # Set top-level design function
 directive set -DESIGN_HIERARCHY {top}
 
@@ -192,15 +205,12 @@ go analyze
 go compile
 """
 
-    mode = configs.get("mode", "csyn")
     if mode == "csim":
         out_str += """
-go analyze
-go compile
 solution app linkage
 solution app execution
 """
-    
+
     # Continue synthesis if not just csim
     if mode == "csyn":
         out_str += """

@@ -5,9 +5,9 @@
  */
 
 #include "allo/Translation/EmitCatapultHLS.h"
-#include "allo/Translation/EmitVivadoHLS.h"  // Include Vivado emitter
 #include "allo/Dialect/Visitor.h"
 #include "allo/Support/Utils.h"
+#include "allo/Translation/EmitVivadoHLS.h" // Include Vivado emitter
 #include "allo/Translation/Utils.h"
 #include "mlir/Dialect/Affine/IR/AffineValueMap.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -54,7 +54,8 @@ static SmallString<16> getCatapultTypeName(Type valType) {
         return SmallString<16>("ac_int<1, false>");
     } else {
       std::string signedness = "";
-      bool is_signed = (intType.getSignedness() != IntegerType::SignednessSemantics::Unsigned);
+      bool is_signed = (intType.getSignedness() !=
+                        IntegerType::SignednessSemantics::Unsigned);
       if (!BIT_FLAG) {
         switch (intType.getWidth()) {
         case 8:
@@ -71,9 +72,8 @@ static SmallString<16> getCatapultTypeName(Type valType) {
                                  (is_signed ? "true" : "false") + ">");
         }
       } else {
-        return SmallString<16>("ac_int<" +
-                               std::to_string(intType.getWidth()) + ", " +
-                               (is_signed ? "true" : "false") + ">");
+        return SmallString<16>("ac_int<" + std::to_string(intType.getWidth()) +
+                               ", " + (is_signed ? "true" : "false") + ">");
       }
     }
   }
@@ -87,12 +87,14 @@ static SmallString<16> getCatapultTypeName(Type valType) {
   else if (auto ufixedType = llvm::dyn_cast<allo::UFixedType>(valType))
     return SmallString<16>(
         "ac_fixed<" + std::to_string(ufixedType.getWidth()) + ", " +
-        std::to_string(ufixedType.getWidth() - ufixedType.getFrac()) + ", false>");
+        std::to_string(ufixedType.getWidth() - ufixedType.getFrac()) +
+        ", false>");
 
   else if (auto streamType = llvm::dyn_cast<StreamType>(valType))
     return SmallString<16>(
         "ac_channel< " +
-        std::string(getCatapultTypeName(streamType.getBaseType()).c_str()) + " >");
+        std::string(getCatapultTypeName(streamType.getBaseType()).c_str()) +
+        " >");
 
   else
     assert(1 == 0 && "Got unsupported type.");
@@ -105,12 +107,15 @@ namespace {
 class CatapultModuleEmitter : public allo::hls::VhlsModuleEmitter {
 public:
   using operand_range = Operation::operand_range;
-  explicit CatapultModuleEmitter(AlloEmitterState &state) : allo::hls::VhlsModuleEmitter(state) {}
+  explicit CatapultModuleEmitter(AlloEmitterState &state)
+      : allo::hls::VhlsModuleEmitter(state) {}
 
   // Override methods that need Catapult-specific behavior
   void emitModule(ModuleOp module) override;
-  void emitFunctionDirectives(func::FuncOp func, ArrayRef<Value> portList) override;
-  void emitArrayDecl(Value array, bool isFunc = false, std::string name = "") override;
+  void emitFunctionDirectives(func::FuncOp func,
+                              ArrayRef<Value> portList) override;
+  void emitArrayDecl(Value array, bool isFunc = false,
+                     std::string name = "") override;
   void emitLoopDirectives(Operation *op) override;
   void emitStreamConstruct(allo::StreamConstructOp op) override;
   void emitArrayDirectives(Value memref) override;
@@ -120,8 +125,12 @@ protected:
   void emitValue(Value val, unsigned rank = 0, bool isPtr = false,
                  std::string name = "") override;
   // Helper method to get Catapult-specific type names
-  SmallString<16> getTypeName(Type valType) { return getCatapultTypeName(valType); }
-  SmallString<16> getTypeName(Value val) { return getCatapultTypeName(val.getType()); }
+  SmallString<16> getTypeName(Type valType) {
+    return getCatapultTypeName(valType);
+  }
+  SmallString<16> getTypeName(Value val) {
+    return getCatapultTypeName(val.getType());
+  }
 };
 } // namespace
 
@@ -180,7 +189,8 @@ void CatapultModuleEmitter::emitFunctionDirectives(func::FuncOp func,
       emitArrayDirectives(port);
 }
 
-void CatapultModuleEmitter::emitArrayDecl(Value array, bool isFunc, std::string name) {
+void CatapultModuleEmitter::emitArrayDecl(Value array, bool isFunc,
+                                          std::string name) {
   assert(!isDeclared(array) && "has been declared before.");
 
   auto arrayType = llvm::cast<ShapedType>(array.getType());
@@ -188,8 +198,8 @@ void CatapultModuleEmitter::emitArrayDecl(Value array, bool isFunc, std::string 
     auto memref = llvm::dyn_cast<MemRefType>(array.getType());
     if (memref) {
       auto attr = memref.getMemorySpace();
-      if (attr &&
-          llvm::cast<StringAttr>(attr).getValue().str().substr(0, 6) == "stream") {
+      if (attr && llvm::cast<StringAttr>(attr).getValue().str().substr(0, 6) ==
+                      "stream") {
         // Value has been declared before or is a constant number.
         if (isDeclared(array)) {
           os << getName(array);
@@ -197,7 +207,8 @@ void CatapultModuleEmitter::emitArrayDecl(Value array, bool isFunc, std::string 
         }
 
         // print stream type using ac_channel instead of hls::stream
-        os << "ac_channel< " << getCatapultTypeName(arrayType.getElementType()) << " > ";
+        os << "ac_channel< " << getCatapultTypeName(arrayType.getElementType())
+           << " > ";
 
         auto attr_str = llvm::cast<StringAttr>(attr).getValue().str();
         int S_index = attr_str.find("S"); // spatial
@@ -236,7 +247,8 @@ void CatapultModuleEmitter::emitLoopDirectives(Operation *op) {
   if (auto ii = getLoopDirective(op, "pipeline_ii")) {
     reduceIndent();
     indent();
-    os << "#pragma hls_pipeline_init_interval " << llvm::cast<IntegerAttr>(ii).getValue();
+    os << "#pragma hls_pipeline_init_interval "
+       << llvm::cast<IntegerAttr>(ii).getValue();
     os << "\n";
     addIndent();
   }
@@ -281,8 +293,9 @@ void CatapultModuleEmitter::emitStreamConstruct(allo::StreamConstructOp op) {
     }
   }
   os << ";\n";
-  // Note: Catapult HLS doesn't need explicit stream depth pragmas like Vivado HLS
-  // The depth is handled through the ac_channel template parameter or synthesis settings
+  // Note: Catapult HLS doesn't need explicit stream depth pragmas like Vivado
+  // HLS The depth is handled through the ac_channel template parameter or
+  // synthesis settings
   emitInfoAndNewLine(op);
 }
 
@@ -305,7 +318,8 @@ void CatapultModuleEmitter::emitArrayDirectives(Value memref) {
   // but we need to call the parent method explicitly
   // allo::hls::VhlsModuleEmitter::emitArrayDirectives(memref);
   // Catapult ignores #pragma HLS array_partition.
-  // TODO: Implement Catapult-specific memory directives (e.g. via TCL or other pragmas)
+  // TODO: Implement Catapult-specific memory directives (e.g. via TCL or other
+  // pragmas)
 }
 
 void CatapultModuleEmitter::emitFunction(func::FuncOp func) {
@@ -339,7 +353,8 @@ void CatapultModuleEmitter::emitFunction(func::FuncOp func) {
   }
   std::string output_names;
   if (func->hasAttr("outputs")) {
-    output_names = llvm::cast<StringAttr>(func->getAttr("outputs")).getValue().str();
+    output_names =
+        llvm::cast<StringAttr>(func->getAttr("outputs")).getValue().str();
     // suppose only one output
     input_args.push_back(output_names);
   }
@@ -354,7 +369,8 @@ void CatapultModuleEmitter::emitFunction(func::FuncOp func) {
     indent();
     fixUnsignedType(arg, itypes[argIdx] == 'u');
     if (llvm::isa<ShapedType>(arg.getType())) {
-      if (llvm::isa<StreamType>(llvm::cast<ShapedType>(arg.getType()).getElementType())) {
+      if (llvm::isa<StreamType>(
+              llvm::cast<ShapedType>(arg.getType()).getElementType())) {
         auto shapedType = llvm::dyn_cast<ShapedType>(arg.getType());
         // Use Catapult-specific stream type name
         os << getCatapultTypeName(arg.getType()) << " ";
@@ -536,4 +552,4 @@ void allo::registerEmitCatapultHLSTranslation() {
         >();
         // clang-format on
       });
-} 
+}
