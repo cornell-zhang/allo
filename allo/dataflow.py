@@ -89,8 +89,21 @@ def move_stream_to_interface(
                     if with_extra_info:
                         extra_stream_info[func_name_] = {}
                     new_func_args[func_name_] = new_func_args[func_name].copy()
+        # Track stream names and first construct ops to deduplicate and erase duplicates
+        first_stream_ops: dict[str, allo_d.StreamConstructOp] = (
+            {}
+        )  # stream_name -> first op
+        duplicate_stream_ops = []  # Duplicate ops to erase after iteration
         for op in func.entry_block.operations:
             if isinstance(op, allo_d.StreamConstructOp):
+                stream_name = op.attributes["name"].value
+                if stream_name in first_stream_ops:
+                    # Duplicate: replace uses with first stream's result and mark for erasure
+                    first_op = first_stream_ops[stream_name]
+                    op.result.replace_all_uses_with(first_op.result)
+                    duplicate_stream_ops.append(op)
+                    continue  # Skip duplicate stream constructs
+                first_stream_ops[stream_name] = op
                 stream_ops.append(op)
                 stream_types.append(op.result.type)
                 stream_signed += "u" if "unsigned" in op.attributes else "_"
@@ -102,7 +115,6 @@ def move_stream_to_interface(
                         direction = "out"
                     else:
                         raise ValueError("Stream is not used correctly.")
-                stream_name = op.attributes["name"].value
                 if with_stream_type and stream_name not in stream_types_dict:
                     stream_types_dict[stream_name] = op.result.type
                 stream_info[func_name].append((stream_name, direction))
@@ -246,6 +258,9 @@ def move_stream_to_interface(
                         new_func.arguments[len(in_types) - len(stream_ops) + cnt_stream]
                     )
                     cnt_stream += 1
+                    op.operation.erase()
+                    continue
+                if op in duplicate_stream_ops:
                     op.operation.erase()
                     continue
                 op.operation.move_before(final_op)
