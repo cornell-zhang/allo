@@ -117,7 +117,7 @@ We can also check the generated HLS code that the arguments are declared as poin
     #include <ap_int.h>
     #include <hls_math.h>
     #include <hls_stream.h>
-    #include <hls_streamofblocks.h>
+    #include <hls_vector.h>
     #include <math.h>
     #include <stdint.h>
     using namespace std;
@@ -339,7 +339,7 @@ Key points about ``ConstExpr``:
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.242 seconds)
+   **Total running time of the script:** (0 minutes 0.325 seconds)
 
 
 .. _sphx_glr_download_gallery_dive_04_features.py:

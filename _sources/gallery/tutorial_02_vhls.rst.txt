@@ -349,7 +349,7 @@ Vivado/Vitis HLS code, which will directly returns the generated code as a strin
     #include <ap_int.h>
     #include <hls_math.h>
     #include <hls_stream.h>
-    #include <hls_streamofblocks.h>
+    #include <hls_vector.h>
     #include <math.h>
     #include <stdint.h>
     using namespace std;
@@ -533,7 +533,7 @@ you can check the following files:
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.134 seconds)
+   **Total running time of the script:** (0 minutes 0.206 seconds)
 
 
 .. _sphx_glr_download_gallery_tutorial_02_vhls.py:
