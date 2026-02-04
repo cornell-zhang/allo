@@ -260,7 +260,6 @@ class HLSModule:
 
         buf.seek(0)
         self.hls_code = buf.read()
-        # pylint: disable=too-many-nested-blocks
         if project is not None:
             assert mode is not None, "mode must be specified when project is specified"
             os.makedirs(project, exist_ok=True)
@@ -358,7 +357,6 @@ class HLSModule:
                     self.host_code = codegen_host_catapult(
                         self.top_func_name,
                         self.module,
-                        num_output_args=self.num_output_args,
                     )
                 else:
                     self.host_code = ""
@@ -760,7 +758,7 @@ class HLSModule:
             )
             args[-1][:] = result
             return
-        elif self.platform == "catapult":
+        if self.platform == "catapult":
             if self.mode == "csim":
                 # Check for input arguments
                 func = find_func_in_module(self.module, self.top_func_name)
@@ -841,7 +839,7 @@ class HLSModule:
                     out_arg[:] = result
                 return
 
-            elif self.mode == "csyn":
+            if self.mode == "csyn":
                 catapult_cmd = "catapult"
                 if "MGC_HOME" in os.environ:
                     catapult_cmd = os.path.join(os.environ["MGC_HOME"], "bin/catapult")
@@ -864,9 +862,7 @@ class HLSModule:
                     f"[{time.strftime('%H:%M:%S', time.gmtime())}] Catapult HLS synthesis completed successfully"
                 )
                 return
-            else:
-                raise RuntimeError(
-                    f"Catapult backend currently only supports 'csyn' and 'csim' mode, got '{self.mode}'"
-                )
-        else:
-            raise RuntimeError("Not implemented")
+            raise RuntimeError(
+                f"Catapult backend currently only supports 'csyn' and 'csim' mode, got '{self.mode}'"
+            )
+        raise RuntimeError("Not implemented")

@@ -4,7 +4,7 @@
 import numpy as np
 from .utils import format_str
 from ..ir.transform import find_func_in_module
-from ..utils import get_func_inputs_outputs, get_bitwidth_from_type
+from ..utils import get_func_inputs_outputs
 
 header = """
 //=============================================================================
@@ -62,7 +62,7 @@ ctype_map = {
 }
 
 
-def codegen_host(top, module, num_output_args=0):
+def codegen_host(top, module):
     """Generate C++ host code for Catapult HLS functional simulation.
 
     Parameters
@@ -71,8 +71,6 @@ def codegen_host(top, module, num_output_args=0):
         Top-level function name
     module : Module
         MLIR module containing the function
-    num_output_args : int, optional
-        Number of trailing input arguments that are actually output buffers.
     """
     func = find_func_in_module(module, top)
     inputs, outputs = get_func_inputs_outputs(func)
@@ -80,10 +78,6 @@ def codegen_host(top, module, num_output_args=0):
     out_str = format_str(header, indent=0, strip=False)
     out_str += format_str(main_header, indent=0, strip=False)
 
-    # Generate in/out buffers
-    buffer_bytes = []
-
-    # Process inputs
     # Process inputs
     for i, (in_dtype, in_shape) in enumerate(inputs):
         # Read from file (text mode)
@@ -146,7 +140,7 @@ def codegen_host(top, module, num_output_args=0):
 
     # Write outputs to files
     if len(outputs) > 0:
-        for i in range(len(outputs)):
+        for i, (_, out_shape) in enumerate(outputs):
             out_str += format_str(f'ofstream ofile{i}("output{i}.data");', 4)
             out_str += format_str(f"if (!ofile{i}) {{", 4)
             out_str += format_str(
@@ -154,7 +148,7 @@ def codegen_host(top, module, num_output_args=0):
             )
             out_str += format_str("return 1;", 8)
             out_str += format_str("}", 4)
-            size = np.prod(outputs[i][1]) if len(outputs[i][1]) > 0 else 1
+            size = np.prod(out_shape) if len(out_shape) > 0 else 1
             out_str += format_str(f"for (int k = 0; k < {size}; k++) {{", 4)
             out_str += format_str(f"ofile{i} << source_out{i}[k] << endl;", 8)
             out_str += format_str("}", 4)
@@ -172,7 +166,7 @@ def codegen_tcl(top, configs):
     clock_period = 1000 / frequency
     mode = configs.get("mode", "csyn")
 
-    out_str = f"""# Project root directory
+    out_str = """# Project root directory
 set sfd [file dir [info script]]
 
 # Create new solution
