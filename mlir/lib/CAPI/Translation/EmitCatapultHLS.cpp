@@ -17,4 +17,4 @@ MlirLogicalResult mlirEmitCatapultHls(MlirModule module,
                                       void *userData) {
   mlir::detail::CallbackOstream stream(callback, userData);
   return wrap(emitCatapultHLS(unwrap(module), stream));
-} 
+}

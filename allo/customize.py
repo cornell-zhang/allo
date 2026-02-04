@@ -1283,7 +1283,15 @@ class Schedule:
                 use_memory=use_memory,
                 mode=mode,
             )
-        if target in {"vhls", "vivado_hls", "vitis_hls", "pynq", "tapa", "ihls", "catapult"}:
+        if target in {
+            "vhls",
+            "vivado_hls",
+            "vitis_hls",
+            "pynq",
+            "tapa",
+            "ihls",
+            "catapult",
+        }:
             match target:
                 case "vitis_hls":
                     platform = "vitis_hls"
