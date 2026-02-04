@@ -537,6 +537,7 @@ def _build_top(s, stream_info, enable_layout=False):
 _current_region_context = None
 
 
+# pylint: disable=unused-argument
 def kernel(mapping=None, args=None):
 
     def actual_decorator(func):
