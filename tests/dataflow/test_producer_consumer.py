@@ -76,8 +76,9 @@ def test_double_put():
     np.testing.assert_allclose(B, A + 1)
     print("Dataflow Simulator Passed!")
 
-    mod = df.build(top, target="vitis_hls")
-    assert "v32, v32" not in mod.hls_code
+    with tempfile.TemporaryDirectory() as tmpdir:
+        mod = df.build(top, target="vitis_hls", project=tmpdir)
+        assert "v32, v32" not in mod.hls_code
 
 
 if __name__ == "__main__":
