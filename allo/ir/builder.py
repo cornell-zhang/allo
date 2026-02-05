@@ -5,11 +5,9 @@
 
 import gc
 import ast
-import sys
 import copy
 import inspect
 import itertools
-import traceback
 import numpy as np
 from .._mlir.ir import (
     OpView,
@@ -87,7 +85,6 @@ from ..utils import (
     construct_kernel_name,
     allo_to_numpy_dtype,
 )
-from ..logging import print_error_message
 
 
 class ASTBuilder(ASTVisitor):
