@@ -93,7 +93,9 @@ def test_traceback_line_number_return_type_error():
     # Line 1: from allo.ir.types import int32
     # Line 2: import allo
     # Line 3: (empty)
-    # Line 4: def kernel(A: int32[32, 32]) -> UnsupportedRetType[32, 32]:  <-- Error line
+    # Line 4: UnsupportedRetType = None  # Allo doesn't support None as a type
+    # Line 5: (empty)
+    # Line 6: def kernel(A: int32[32, 32]) -> UnsupportedRetType:  <-- Error line
     script = """from allo.ir.types import int32
 import allo
 

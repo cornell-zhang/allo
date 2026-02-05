@@ -1365,7 +1365,9 @@ def customize(
         # falling back to tree.body[0] if not available
         stmt = getattr(ctx_type_inf, "current_node", None)
         if stmt is None:
-            stmt = tree.body[0] if tree.body else tree
+            if not tree.body:
+                raise RuntimeError(f"Type inference failed on empty module: {e}") from e
+            stmt = tree.body[0]
         print_error_message(str(e), stmt, tree)
         sys.exit(1)
     # Start building IR
@@ -1389,7 +1391,9 @@ def customize(
         # falling back to tree.body[0] if not available
         stmt = getattr(ctx, "current_node", None)
         if stmt is None:
-            stmt = tree.body[0] if tree.body else tree
+            if not tree.body:
+                raise RuntimeError(f"IR building failed on empty module: {e}") from e
+            stmt = tree.body[0]
         print_error_message(str(e), stmt, tree)
         sys.exit(1)
     func_instances = {

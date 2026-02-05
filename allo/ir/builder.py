@@ -93,6 +93,8 @@ class ASTBuilder(ASTVisitor):
             ctx.file_name = file_name
         if node is None:
             return None
+        # Track the current node being visited for error reporting
+        ctx.current_node = node
         method = getattr(self, "build_" + node.__class__.__name__, None)
         if method is None:
             error_msg = f'Unsupported node "{node.__class__.__name__}"'
