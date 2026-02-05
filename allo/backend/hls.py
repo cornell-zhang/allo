@@ -34,6 +34,10 @@ from .pynq import (
 from .tapa import (
     codegen_tapa_host,
 )
+from .catapult import (
+    codegen_tcl as codegen_tcl_catapult,
+    codegen_host as codegen_host_catapult,
+)
 from .ip import IPModule
 from .report import parse_xml
 from ..passes import (
@@ -130,12 +134,13 @@ def copy_ext_libs(ext_libs, project):
         os.system(f"cp {impl_path} {project}/{cpp_file}")
 
 
-def separate_header(hls_code, top=None):
+def separate_header(hls_code, top=None, extern_c=True):
     func_decl = False
     sig_str = "#ifndef KERNEL_H\n"
     sig_str += "#define KERNEL_H\n\n"
     args = []
-    sig_str += 'extern "C" {\n'
+    if extern_c:
+        sig_str += 'extern "C" {\n'
     for line in hls_code.split("\n"):
         if line.startswith(f"void {top}"):
             func_decl = True
@@ -167,7 +172,8 @@ def separate_header(hls_code, top=None):
             else:  # scalar
                 var = var.split(",")[0]
                 sig_str += "  " + ele_type + " " + var + f"{comma}\n"
-    sig_str += '} // extern "C"\n'
+    if extern_c:
+        sig_str += '} // extern "C"\n'
     sig_str += "\n#endif // KERNEL_H\n"
     return sig_str, args
 
@@ -238,6 +244,8 @@ class HLSModule:
                 success = allo_d.emit_thls(self.module, buf)
             case "intel_hls":
                 success = allo_d.emit_ihls(self.module, buf)
+            case "catapult":
+                success = allo_d.emit_catapult(self.module, buf)
             case _:
                 # wrap_io=True has already linearized array indexing in
                 # generate_input_output_buffers, so we don't need to do it again
@@ -252,16 +260,18 @@ class HLSModule:
 
         buf.seek(0)
         self.hls_code = buf.read()
-        # pylint: disable=too-many-nested-blocks
         if project is not None:
             assert mode is not None, "mode must be specified when project is specified"
             os.makedirs(project, exist_ok=True)
             path = os.path.dirname(__file__)
             path = os.path.join(path, "../harness/")
-            if platform in {"vivado_hls", "vitis_hls", "tapa", "pynq"}:
+            if platform in {"vivado_hls", "vitis_hls", "tapa", "pynq", "catapult"}:
                 os.system("cp " + path + f"{platform.split('_')[0]}/* " + project)
                 with open(f"{project}/run.tcl", "w", encoding="utf-8") as outfile:
-                    outfile.write(codegen_tcl(top_func_name, configs))
+                    if platform == "catapult":
+                        outfile.write(codegen_tcl_catapult(top_func_name, configs))
+                    else:
+                        outfile.write(codegen_tcl(top_func_name, configs))
             copy_ext_libs(ext_libs, project)
             if self.platform == "vitis_hls":
                 assert self.mode in {
@@ -337,6 +347,42 @@ class HLSModule:
                     self.module,
                     num_output_args=self.num_output_args,
                 )
+            elif self.platform == "catapult":
+                assert self.mode in {
+                    "csim",
+                    "csyn",
+                }, "Invalid mode for catapult"
+
+                if self.mode == "csim":
+                    self.host_code = codegen_host_catapult(
+                        self.top_func_name,
+                        self.module,
+                    )
+                else:
+                    self.host_code = ""
+
+                # For Catapult, we don't have separate kernel.h generation logic yet
+                # similar to separate_header. The kernel.cpp contains everything needed
+                # or headers are handled differently.
+                # If we want to support csim, kernel.cpp usually needs a header
+                # referenced by host.cpp.
+                # allo/backend/catapult.py's codegen_host includes "kernel.h".
+                # So we SHOULD generate kernel.h.
+                # Re-using separate_header which is generic enough for C-style headers.
+                #
+                # However, separate_header currently only understands builtin and
+                # ap_(u)int<...> types. When Catapult emits ac_int<...> (e.g., for
+                # non-standard integer widths), separate_header can raise ValueError.
+                # Fall back to including kernel.cpp directly if that happens.
+                try:
+                    header, self.args = separate_header(
+                        self.hls_code, self.top_func_name
+                    )
+                except ValueError:
+                    header = '#pragma once\n#include "kernel.cpp"\n'
+                    self.args = []
+                with open(f"{project}/kernel.h", "w", encoding="utf-8") as outfile:
+                    outfile.write(header)
             elif self.platform == "tapa":
                 assert self.mode in {
                     "csim",
@@ -722,5 +768,111 @@ class HLSModule:
             )
             args[-1][:] = result
             return
-        else:
-            raise RuntimeError("Not implemented")
+        if self.platform == "catapult":
+            if self.mode == "csim":
+                # Check for input arguments
+                func = find_func_in_module(self.module, self.top_func_name)
+                inputs, outputs = get_func_inputs_outputs(func)
+                assert len(args) == len(inputs) + len(
+                    outputs
+                ), f"Number of arguments mismatch, got {len(args)}, expected {len(inputs) + len(outputs)}"
+
+                # Generate kernel.h
+                # self.args might be updated by separate_header if needed, but for csim we use passed args
+                header, _ = separate_header(
+                    self.hls_code, self.top_func_name, extern_c=False
+                )
+                with open(
+                    os.path.join(self.project, "kernel.h"), "w", encoding="utf-8"
+                ) as outfile:
+                    outfile.write(header)
+
+                # Write input data
+                for i, ((in_dtype, in_shape), arg) in enumerate(
+                    zip(inputs, args[: len(inputs)])
+                ):
+                    write_tensor_to_file(arg, in_shape, f"{self.project}/input{i}.data")
+
+                # Compilation with g++
+                # Assuming 'g++' is in PATH.
+                # Include path for ac_types
+                mgc_home = os.environ.get("MGC_HOME")
+                if not mgc_home:
+                    raise RuntimeError(
+                        "MGC_HOME environment variable is not set. Please set it to the Catapult installation directory."
+                    )
+
+                ac_include = os.path.join(mgc_home, "shared/include")
+                if not os.path.isdir(ac_include):
+                    raise RuntimeError(
+                        f"Catapult headers not found at {ac_include}. Check MGC_HOME."
+                    )
+
+                cmd = f"cd {self.project}; g++ -std=c++11 -I{ac_include} kernel.cpp host.cpp -o sim"
+                print(
+                    f"[{time.strftime('%H:%M:%S', time.gmtime())}] Compiling with g++ ..."
+                )
+                if shell:
+                    process = subprocess.Popen(cmd, shell=True)
+                else:
+                    process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
+                process.wait()
+                if process.returncode != 0:
+                    raise RuntimeError(
+                        "Failed to compile with g++. Check if g++ is installed and ac_types headers are correct."
+                    )
+
+                # Execution
+                cmd = f"cd {self.project}; ./sim"
+                print(
+                    f"[{time.strftime('%H:%M:%S', time.gmtime())}] Running simulation ..."
+                )
+                if shell:
+                    process = subprocess.Popen(cmd, shell=True)
+                else:
+                    process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
+                process.wait()
+                if process.returncode != 0:
+                    raise RuntimeError("Simulation failed.")
+
+                # Read outputs
+                for i, ((out_dtype, out_shape), out_arg) in enumerate(
+                    zip(outputs, args[len(inputs) :])
+                ):
+                    if not os.path.exists(f"{self.project}/output{i}.data"):
+                        raise RuntimeError(
+                            f"Output file output{i}.data not found. Simulation might have failed."
+                        )
+                    result = read_tensor_from_file(
+                        out_dtype, out_shape, f"{self.project}/output{i}.data"
+                    )
+                    out_arg[:] = result
+                return
+
+            if self.mode == "csyn":
+                catapult_cmd = "catapult"
+                if "MGC_HOME" in os.environ:
+                    catapult_cmd = os.path.join(os.environ["MGC_HOME"], "bin/catapult")
+
+                cmd = f"cd {self.project}; {catapult_cmd} -shell -f run.tcl"
+                assert len(args) == 0, "csyn mode does not need to pass in arguments"
+                print(
+                    f"[{time.strftime('%H:%M:%S', time.gmtime())}] Begin synthesizing project with Catapult HLS ..."
+                )
+                if shell:
+                    process = subprocess.Popen(cmd, shell=True)
+                else:
+                    process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
+                process.wait()
+                if process.returncode != 0:
+                    raise RuntimeError(
+                        "Failed to synthesize the design with Catapult HLS"
+                    )
+                print(
+                    f"[{time.strftime('%H:%M:%S', time.gmtime())}] Catapult HLS synthesis completed successfully"
+                )
+                return
+            raise RuntimeError(
+                f"Catapult backend currently only supports 'csyn' and 'csim' mode, got '{self.mode}'"
+            )
+        raise RuntimeError("Not implemented")
