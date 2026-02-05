@@ -2,9 +2,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # pylint: disable=no-name-in-module, too-many-nested-blocks, too-many-instance-attributes
 
+import sys
 import re
 import inspect
 import textwrap
+import traceback
 import copy
 from dataclasses import dataclass
 from functools import wraps
@@ -69,6 +71,7 @@ from .backend.hls import HLSModule
 from .backend.xls import XLSCCModule
 from .library import KERNEL2SCHEDULE
 from .library.systolic import check_systolic, prepare_systolic
+from .logging import print_error_message
 
 
 def getsourcefile(obj):
@@ -1353,7 +1356,18 @@ def customize(
         typing_rule_set=typing_rule_set,
         verbose=verbose,
     )
-    tree = TypeInferer()(ctx_type_inf, tree)
+    try:
+        tree = TypeInferer()(ctx_type_inf, tree)
+    # pylint: disable=broad-exception-caught
+    except Exception as e:
+        print(f"{traceback.format_exc()}")
+        # Use the current node being visited for accurate error location,
+        # falling back to tree.body[0] if not available
+        stmt = getattr(ctx_type_inf, "current_node", None)
+        if stmt is None:
+            stmt = tree.body[0] if tree.body else tree
+        print_error_message(str(e), stmt, tree)
+        sys.exit(1)
     # Start building IR
     ctx = ASTContext(
         tree=tree,
@@ -1366,7 +1380,18 @@ def customize(
         enable_tensor=enable_tensor,
         verbose=verbose,
     )
-    module = ASTTransformer()(ctx, tree, file_name)
+    try:
+        module = ASTTransformer()(ctx, tree, file_name)
+    # pylint: disable=broad-exception-caught
+    except Exception as e:
+        print(f"{traceback.format_exc()}")
+        # Use the current node being visited for accurate error location,
+        # falling back to tree.body[0] if not available
+        stmt = getattr(ctx, "current_node", None)
+        if stmt is None:
+            stmt = tree.body[0] if tree.body else tree
+        print_error_message(str(e), stmt, tree)
+        sys.exit(1)
     func_instances = {
         orig_name: {
             dim: f"{orig_name}_{str(freeze_list(predicate_tag))}"
