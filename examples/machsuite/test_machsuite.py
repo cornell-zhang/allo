@@ -54,11 +54,11 @@ def test_backprop():
 
 
 def test_bfs_bulk():
-    _load_test("bfs", "run_test.py", "test_bfs_bulk")("small")
+    _load_test("bfs/bulk", "run_test.py", "test_bfs_bulk")("small")
 
 
 def test_bfs_queue():
-    _load_test("bfs", "run_test.py", "test_bfs_queue")("small")
+    _load_test("bfs/queue", "run_test.py", "test_bfs_queue")("small")
 
 
 def test_fft_strided():

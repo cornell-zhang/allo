@@ -9,12 +9,12 @@ import allo
 import numpy as np
 
 _dir = os.path.dirname(os.path.abspath(__file__))
+_parent = os.path.dirname(_dir)
 sys.path.insert(0, _dir)
+sys.path.insert(0, _parent)
 import generate
-import bfs_bulk_python
 import bfs_queue_python
-import bfs_bulk_allo as bfs_bulk_mod
-import bfs_queue_allo as bfs_queue_mod
+import bfs_queue as bfs_queue_mod
 
 
 def _patch_bfs_sizes(params):
@@ -35,21 +35,12 @@ def _patch_bfs_sizes(params):
     generate.N_EDGES = N_EDGES
     generate.SCALE = scale
 
-    # Patch python reference modules
-    bfs_bulk_python.N_NODES = N_NODES
-    bfs_bulk_python.N_EDGES = N_EDGES
-    bfs_bulk_python.N_LEVELS = N_LEVELS
-
+    # Patch python reference module
     bfs_queue_python.N_NODES = N_NODES
     bfs_queue_python.N_EDGES = N_EDGES
     bfs_queue_python.N_LEVELS = N_LEVELS
 
-    # Patch allo kernel modules
-    bfs_bulk_mod.N_NODES = N_NODES
-    bfs_bulk_mod.N_NODES_2 = N_NODES * 2
-    bfs_bulk_mod.N_EDGES = N_EDGES
-    bfs_bulk_mod.N_LEVELS = N_LEVELS
-
+    # Patch allo kernel module
     bfs_queue_mod.N_NODES = N_NODES
     bfs_queue_mod.N_NODES_2 = N_NODES * 2
     bfs_queue_mod.N_EDGES = N_EDGES
@@ -82,18 +73,8 @@ def _generate_and_run(mod_func, ref_func, params):
     np.testing.assert_allclose(F, golden_F, rtol=1e-5, atol=1e-5)
 
 
-def test_bfs_bulk(psize="small"):
-    setting_path = os.path.join(os.path.dirname(__file__), "..", "psize.json")
-    with open(setting_path, "r") as fp:
-        sizes = json.load(fp)
-    params = sizes["bfs"][psize]
-    _patch_bfs_sizes(params)
-    _generate_and_run(bfs_bulk_mod.bfs_bulk, bfs_bulk_python.bfs_bulk_test, params)
-    print("BFS Bulk PASS!")
-
-
 def test_bfs_queue(psize="small"):
-    setting_path = os.path.join(os.path.dirname(__file__), "..", "psize.json")
+    setting_path = os.path.join(os.path.dirname(__file__), "..", "..", "psize.json")
     with open(setting_path, "r") as fp:
         sizes = json.load(fp)
     params = sizes["bfs"][psize]
@@ -103,5 +84,4 @@ def test_bfs_queue(psize="small"):
 
 
 if __name__ == "__main__":
-    test_bfs_bulk("full")
     test_bfs_queue("full")
