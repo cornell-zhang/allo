@@ -70,6 +70,12 @@ jobs:
         source activate allo
         export LLVM_BUILD_DIR=/root/llvm-project/build
         python3 -m pytest examples/polybench -v
+    - name: MachSuite
+      shell: bash
+      run: |
+        source activate allo
+        export LLVM_BUILD_DIR=/root/llvm-project/build
+        python3 -m pytest examples/machsuite -v
     - name: PyTorch
       shell: bash
       run: |
