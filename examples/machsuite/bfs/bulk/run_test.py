@@ -13,12 +13,47 @@ _parent = os.path.dirname(_dir)
 sys.path.insert(0, _dir)
 sys.path.insert(0, _parent)
 import generate
-import bfs_bulk_python
 import bfs_bulk as bfs_bulk_mod
+
+N_NODES = 256
+N_EDGES = 4096
+N_LEVELS = 10
+MAX_LEVEL = 999999
+
+
+def bfs_bulk_ref(nodes, edges, starting_node):
+    """Python reference implementation of BFS (bulk synchronous)."""
+    level = [MAX_LEVEL] * N_NODES
+    level_counts = [0] * N_LEVELS
+
+    level[starting_node] = 0
+    level_counts[0] = 1
+
+    for horizon in range(N_LEVELS):
+        cnt = 0
+        for n in range(N_NODES):
+            if level[n] == horizon:
+                tmp_begin = nodes[2 * n]
+                tmp_end = nodes[2 * n + 1]
+                for e in range(tmp_begin, tmp_end):
+                    tmp_dst = edges[e]
+                    tmp_level = level[tmp_dst]
+
+                    if tmp_level == MAX_LEVEL:
+                        level[tmp_dst] = horizon + 1
+                        cnt += 1
+
+        if cnt == 0:
+            break
+        else:
+            level_counts[horizon + 1] = cnt
+
+    return level, level_counts
 
 
 def _patch_bfs_sizes(params):
     """Patch BFS size constants across all relevant modules."""
+    global N_NODES, N_EDGES, N_LEVELS, MAX_LEVEL
     N_NODES = params["N_NODES"]
     N_EDGES = params["N_EDGES"]
     N_LEVELS = params["N_LEVELS"]
@@ -35,11 +70,6 @@ def _patch_bfs_sizes(params):
     generate.N_EDGES = N_EDGES
     generate.SCALE = scale
 
-    # Patch python reference module
-    bfs_bulk_python.N_NODES = N_NODES
-    bfs_bulk_python.N_EDGES = N_EDGES
-    bfs_bulk_python.N_LEVELS = N_LEVELS
-
     # Patch allo kernel module
     bfs_bulk_mod.N_NODES = N_NODES
     bfs_bulk_mod.N_NODES_2 = N_NODES * 2
@@ -47,11 +77,16 @@ def _patch_bfs_sizes(params):
     bfs_bulk_mod.N_LEVELS = N_LEVELS
 
 
-def _generate_and_run(mod_func, ref_func, params):
-    """Build, generate graph, run kernel and reference, compare."""
+def test_bfs_bulk(psize="small"):
+    setting_path = os.path.join(os.path.dirname(__file__), "..", "..", "psize.json")
+    with open(setting_path, "r") as fp:
+        sizes = json.load(fp)
+    params = sizes["bfs"][psize]
+    _patch_bfs_sizes(params)
+
     random.seed(42)
 
-    s = allo.customize(mod_func)
+    s = allo.customize(bfs_bulk_mod.bfs_bulk)
     mod = s.build(target="llvm")
 
     generated_data = generate.generate_random_graph()
@@ -67,19 +102,10 @@ def _generate_and_run(mod_func, ref_func, params):
     np_C = generated_data["starting_node"]
 
     (D, F) = mod(np_A, np_B, np_C)
-    (golden_D, golden_F) = ref_func(np_A, np_B, np_C)
+    (golden_D, golden_F) = bfs_bulk_ref(np_A, np_B, np_C)
 
     np.testing.assert_allclose(D, golden_D, rtol=1e-5, atol=1e-5)
     np.testing.assert_allclose(F, golden_F, rtol=1e-5, atol=1e-5)
-
-
-def test_bfs_bulk(psize="small"):
-    setting_path = os.path.join(os.path.dirname(__file__), "..", "..", "psize.json")
-    with open(setting_path, "r") as fp:
-        sizes = json.load(fp)
-    params = sizes["bfs"][psize]
-    _patch_bfs_sizes(params)
-    _generate_and_run(bfs_bulk_mod.bfs_bulk, bfs_bulk_python.bfs_bulk_test, params)
     print("BFS Bulk PASS!")
 
 

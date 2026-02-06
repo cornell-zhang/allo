@@ -9,7 +9,7 @@ import numpy as np
 
 _dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _dir)
-import viterbi_allo
+import viterbi as viterbi_mod
 
 
 def viterbi_ref(obs, init, transition, emission):
@@ -65,9 +65,9 @@ def test_viterbi(psize="small"):
     N_TOKENS = params["N_TOKENS"]
 
     # Patch module constants
-    viterbi_allo.N_OBS = N_OBS
-    viterbi_allo.N_STATES = N_STATES
-    viterbi_allo.N_TOKENS = N_TOKENS
+    viterbi_mod.N_OBS = N_OBS
+    viterbi_mod.N_STATES = N_STATES
+    viterbi_mod.N_TOKENS = N_TOKENS
 
     np.random.seed(42)
 
@@ -77,7 +77,7 @@ def test_viterbi(psize="small"):
     emission = np.random.rand(N_STATES, N_TOKENS).astype(np.float32) * 10.0
     obs = np.random.randint(0, N_TOKENS, size=N_OBS).astype(np.int32)
 
-    s = allo.customize(viterbi_allo.viterbi)
+    s = allo.customize(viterbi_mod.viterbi)
     mod = s.build()
 
     path = mod(obs, init, transition, emission)

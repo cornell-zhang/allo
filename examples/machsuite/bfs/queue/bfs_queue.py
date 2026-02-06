@@ -1,18 +1,8 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-import os
-import sys
 import allo
 from allo.ir.types import int32
-import numpy as np
-
-_dir = os.path.dirname(os.path.abspath(__file__))
-_parent = os.path.dirname(_dir)
-sys.path.insert(0, _dir)
-sys.path.insert(0, _parent)
-from generate import generate_random_graph
-from bfs_queue_python import bfs_queue_test
 
 N_NODES: int32 = 256
 N_NODES_2: int32 = 512
@@ -52,33 +42,3 @@ def bfs_queue(
                 rear = (rear + 1) % N_NODES
 
     return level, level_counts
-
-
-if __name__ == "__main__":
-    import random
-
-    random.seed(42)
-
-    s = allo.customize(bfs_queue)
-    mod = s.build(target="llvm")
-
-    # Generate graph programmatically (same seed as bulk)
-    generated_data = generate_random_graph()
-
-    nodes_list = []
-    for node in generated_data["nodes"]:
-        nodes_list.append(node.edge_begin)
-        nodes_list.append(node.edge_end)
-    edges_list = [edge.dst for edge in generated_data["edges"]]
-
-    np_A = np.array(nodes_list, np.int32)
-    np_B = np.array(edges_list, np.int32)
-    np_C = generated_data["starting_node"]
-
-    (D, F) = mod(np_A, np_B, np_C)
-
-    (golden_D, golden_F) = bfs_queue_test(np_A, np_B, np_C)
-
-    np.testing.assert_allclose(D, golden_D, rtol=1e-5, atol=1e-5)
-    np.testing.assert_allclose(F, golden_F, rtol=1e-5, atol=1e-5)
-    print("PASS!")

@@ -13,12 +13,49 @@ _parent = os.path.dirname(_dir)
 sys.path.insert(0, _dir)
 sys.path.insert(0, _parent)
 import generate
-import bfs_queue_python
 import bfs_queue as bfs_queue_mod
+
+N_NODES = 256
+N_EDGES = 4096
+N_LEVELS = 10
+MAX_LEVEL = 999999
+
+
+def bfs_queue_ref(nodes, edges, starting_node):
+    """Python reference implementation of BFS (queue-based)."""
+    level = [MAX_LEVEL] * N_NODES
+    level_counts = [0] * N_LEVELS
+    queue = [0] * N_NODES
+    front = 0
+    rear = 0
+
+    level[starting_node] = 0
+    level_counts[0] = 1
+    queue[rear] = starting_node
+    rear = (rear + 1) % N_NODES
+
+    while front != rear:
+        n = queue[front]
+        front = (front + 1) % N_NODES
+        tmp_begin = nodes[2 * n]
+        tmp_end = nodes[2 * n + 1]
+        for e in range(tmp_begin, tmp_end):
+            tmp_dst = edges[e]
+            tmp_level = level[tmp_dst]
+
+            if tmp_level == MAX_LEVEL:
+                tmp_level = level[n] + 1
+                level[tmp_dst] = tmp_level
+                level_counts[tmp_level] += 1
+                queue[rear] = tmp_dst
+                rear = (rear + 1) % N_NODES
+
+    return level, level_counts
 
 
 def _patch_bfs_sizes(params):
     """Patch BFS size constants across all relevant modules."""
+    global N_NODES, N_EDGES, N_LEVELS, MAX_LEVEL
     N_NODES = params["N_NODES"]
     N_EDGES = params["N_EDGES"]
     N_LEVELS = params["N_LEVELS"]
@@ -35,11 +72,6 @@ def _patch_bfs_sizes(params):
     generate.N_EDGES = N_EDGES
     generate.SCALE = scale
 
-    # Patch python reference module
-    bfs_queue_python.N_NODES = N_NODES
-    bfs_queue_python.N_EDGES = N_EDGES
-    bfs_queue_python.N_LEVELS = N_LEVELS
-
     # Patch allo kernel module
     bfs_queue_mod.N_NODES = N_NODES
     bfs_queue_mod.N_NODES_2 = N_NODES * 2
@@ -47,11 +79,16 @@ def _patch_bfs_sizes(params):
     bfs_queue_mod.N_LEVELS = N_LEVELS
 
 
-def _generate_and_run(mod_func, ref_func, params):
-    """Build, generate graph, run kernel and reference, compare."""
+def test_bfs_queue(psize="small"):
+    setting_path = os.path.join(os.path.dirname(__file__), "..", "..", "psize.json")
+    with open(setting_path, "r") as fp:
+        sizes = json.load(fp)
+    params = sizes["bfs"][psize]
+    _patch_bfs_sizes(params)
+
     random.seed(42)
 
-    s = allo.customize(mod_func)
+    s = allo.customize(bfs_queue_mod.bfs_queue)
     mod = s.build(target="llvm")
 
     generated_data = generate.generate_random_graph()
@@ -67,19 +104,10 @@ def _generate_and_run(mod_func, ref_func, params):
     np_C = generated_data["starting_node"]
 
     (D, F) = mod(np_A, np_B, np_C)
-    (golden_D, golden_F) = ref_func(np_A, np_B, np_C)
+    (golden_D, golden_F) = bfs_queue_ref(np_A, np_B, np_C)
 
     np.testing.assert_allclose(D, golden_D, rtol=1e-5, atol=1e-5)
     np.testing.assert_allclose(F, golden_F, rtol=1e-5, atol=1e-5)
-
-
-def test_bfs_queue(psize="small"):
-    setting_path = os.path.join(os.path.dirname(__file__), "..", "..", "psize.json")
-    with open(setting_path, "r") as fp:
-        sizes = json.load(fp)
-    params = sizes["bfs"][psize]
-    _patch_bfs_sizes(params)
-    _generate_and_run(bfs_queue_mod.bfs_queue, bfs_queue_python.bfs_queue_test, params)
     print("BFS Queue PASS!")
 
 
