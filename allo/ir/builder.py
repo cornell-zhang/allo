@@ -5,11 +5,9 @@
 
 import gc
 import ast
-import sys
 import copy
 import inspect
 import itertools
-import traceback
 import numpy as np
 from .._mlir.ir import (
     OpView,
@@ -87,7 +85,6 @@ from ..utils import (
     construct_kernel_name,
     allo_to_numpy_dtype,
 )
-from ..logging import print_error_message
 
 
 class ASTBuilder(ASTVisitor):
@@ -96,6 +93,8 @@ class ASTBuilder(ASTVisitor):
             ctx.file_name = file_name
         if node is None:
             return None
+        # Track the current node being visited for error reporting
+        ctx.current_node = node
         method = getattr(self, "build_" + node.__class__.__name__, None)
         if method is None:
             error_msg = f'Unsupported node "{node.__class__.__name__}"'
@@ -3750,11 +3749,5 @@ build_stmt = ASTTransformer()
 def build_stmts(ctx: ASTContext, stmts: list[ast.stmt]):
     results = []
     for stmt in stmts:
-        try:
-            results.append(build_stmt(ctx, stmt))
-        # pylint: disable=broad-exception-caught
-        except Exception as e:
-            print(f"{traceback.format_exc()}")
-            print_error_message(str(e), stmt, ctx.top_func_tree)
-            sys.exit(1)
+        results.append(build_stmt(ctx, stmt))
     return results

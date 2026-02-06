@@ -4,9 +4,7 @@
 
 import ast
 import copy
-import sys
 import os
-import traceback
 import inspect
 import textwrap
 import warnings
@@ -44,7 +42,6 @@ from ..utils import (
     construct_kernel_name,
 )
 from ..memory import DTensor, Layout
-from ..logging import print_error_message
 from .utils import parse_ast, get_func_id_from_param_types, resolve_generic_types
 
 
@@ -1581,11 +1578,5 @@ visit_stmt = TypeInferer()
 def visit_stmts(ctx: ASTContext, stmts: list[ast.expr]):
     results = []
     for stmt in stmts:
-        try:
-            results.append(visit_stmt(ctx, stmt))
-        # pylint: disable=broad-exception-caught
-        except Exception as e:
-            print(f"{traceback.format_exc()}")
-            print_error_message(str(e), stmt, ctx.top_func_tree)
-            sys.exit(1)
+        results.append(visit_stmt(ctx, stmt))
     return results
