@@ -2,8 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import allo
-from allo.ir.types import float64, int32, Int
-import numpy as np
+from allo.ir.types import float64, int32
 
 nAtoms: int32 = 256
 maxNeighbors: int32 = 16

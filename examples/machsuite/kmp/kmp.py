@@ -6,7 +6,6 @@ import os
 import json
 import numpy as np
 from allo.ir.types import int32, uint8, index
-import allo.ir.types as T
 
 
 def python_kmp(pattern, input):

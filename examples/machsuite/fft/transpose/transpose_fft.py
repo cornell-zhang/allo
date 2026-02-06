@@ -4,9 +4,7 @@
 # transpose_fft.py
 
 import allo
-from allo.ir.types import float32, int32, float32, int32, index
-import math
-import numpy as np
+from allo.ir.types import float32, int32, index
 
 
 def cmplx_M_x(a_x: float32, a_y: float32, b_x: float32, b_y: float32) -> float32:
@@ -14,14 +12,6 @@ def cmplx_M_x(a_x: float32, a_y: float32, b_x: float32, b_y: float32) -> float32
 
 
 def cmplx_M_y(a_x: float32, a_y: float32, b_x: float32, b_y: float32) -> float32:
-    return a_x * b_y + a_y * b_x
-
-
-def cmplx_MUL_x(a_x: float32, a_y: float32, b_x: float32, b_y: float32) -> float32:
-    return a_x * b_x - a_y * b_y
-
-
-def cmplx_MUL_y(a_x: float32, a_y: float32, b_x: float32, b_y: float32) -> float32:
     return a_x * b_y + a_y * b_x
 
 
@@ -80,22 +70,6 @@ def FF2(a0_x: float32, a0_y: float32, a1_x: float32, a1_y: float32) -> float32[4
     d0[3] = cmplx_sub_y(a0_y, a1_y)
 
     return d0
-
-
-# def FFT4(a0_x: float32, a0_y: float32, a1_x: float32, a1_y: float32, a2_x: float32, a2_y: float32, a3_x: float32, a3_y: float32):
-#     exp_1_44_x: float32 = 0
-#     exp_1_44_y: float32 = -1
-
-#     FF2(a0_x, a0_y, a2_x, a2_y)
-
-#     # FF2(a1_x, a1_y, a3_x, a3_y)
-#     # tmp = a3_x
-
-#     # a3_x = a3_x * exp_1_44_x - a3_y * exp_1_44_y
-#     # a3_y = tmp * exp_1_44_y - a3_y * exp_1_44_x
-
-#     # FF2(a0_x, a0_y, a1_x, a1_y)
-#     # FF2(a2_x, a2_y, a3_x, a3_y)
 
 
 def FFT4_1(a_x: float32[8], a_y: float32[8]):

@@ -5,7 +5,7 @@ import os
 import sys
 import allo
 import numpy as np
-from allo.ir.types import float32
+
 
 _dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _dir)

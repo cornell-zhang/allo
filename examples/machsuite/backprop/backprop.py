@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import allo
-from allo.ir.types import float32, int32
+from allo.ir.types import float32
 
 INPUT_DIMENSION = 13
 POSSIBLE_OUTPUTS = 3

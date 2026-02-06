@@ -2,8 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import allo
-import numpy as np
-from allo.ir.types import uint32, uint8, Struct, index
+from allo.ir.types import uint32, uint8
 
 
 def F(x: uint8) -> uint8:

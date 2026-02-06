@@ -23,19 +23,6 @@ def MAX(x: int32, y: Int(34)) -> int32:
     return x if x > y else y
 
 
-# class dvector_t:
-#     def __init__(self, x:float64, y:float64, z:float64):
-#         self.x = x
-#         self.y = y
-#         self.z = z
-
-# class ivector_t:
-#     def __init__(self, x:int32, y:int32, z:int32):
-#         self.x = x
-#         self.y = y
-#         self.z = z
-
-
 def md_x(
     n_points: int32[blockSide, blockSide, blockSide],
     position_x: float64[blockSide, blockSide, blockSide, densityFactor],

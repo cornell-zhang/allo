@@ -6,7 +6,7 @@ import sys
 import json
 import allo
 import numpy as np
-from allo.ir.types import int32
+
 
 _dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _dir)
