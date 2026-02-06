@@ -655,6 +655,7 @@ def test_sin_float64():
     mod = s.build()
     A = np.random.rand(10).astype(np.float64)
     B = mod(A)
+    assert B.dtype == np.float64
     np.testing.assert_allclose(B, np.sin(A), rtol=1e-5)
 
 
@@ -670,6 +671,7 @@ def test_float64_math_ops():
     mod = s.build()
     A = np.random.uniform(0.1, 2.0, size=10).astype(np.float64)
     B = mod(A)
+    assert B.dtype == np.float64
     expected = np.exp(A) + np.log(A) + np.sqrt(A)
     np.testing.assert_allclose(B, expected, rtol=1e-5)
 
@@ -686,6 +688,7 @@ def test_float64_trig_ops():
     mod = s.build()
     A = np.random.uniform(-1.0, 1.0, size=10).astype(np.float64)
     B = mod(A)
+    assert B.dtype == np.float64
     expected = np.sin(A) + np.cos(A) + np.tan(A)
     np.testing.assert_allclose(B, expected, rtol=1e-5)
 
