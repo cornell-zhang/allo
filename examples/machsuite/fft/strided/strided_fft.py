@@ -63,6 +63,6 @@ def fft(real: float32[FFT_SIZE], img: float32[FFT_SIZE], real_twid: float32[FFT_
         span >>= 1
         log += 1
 
-s = allo.customize(fft)
-
-mod = s.build(target="llvm")
+if __name__ == "__main__":
+    s = allo.customize(fft)
+    mod = s.build(target="llvm")

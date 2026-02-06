@@ -58,12 +58,13 @@ def merge_sort(a:int32[N]) -> int32[N]:
 
     return a
     
-s = allo.customize(merge_sort)
-mod = s.build()
+if __name__ == "__main__":
+    s = allo.customize(merge_sort)
+    mod = s.build()
 
-# Test
-a = np.random.randint(0, 10000, N).astype(np.int32)
-result = mod(a)
-expected = np.sort(a).astype(np.int32)
-np.testing.assert_array_equal(result, expected)
-print("PASS!")
+    # Test
+    a = np.random.randint(0, 10000, N).astype(np.int32)
+    result = mod(a)
+    expected = np.sort(a).astype(np.int32)
+    np.testing.assert_array_equal(result, expected)
+    print("PASS!")

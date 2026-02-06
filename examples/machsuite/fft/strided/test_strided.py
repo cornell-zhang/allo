@@ -1,10 +1,16 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import os
+import sys
+import json
 import numpy as np
 import math
+import allo
 
-from strided_fft import fft, mod, FFT_SIZE, FFT_SIZE_HALF
+_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, _dir)
+import strided_fft
 
 
 def python_strided_fft(real, img, real_twid, img_twid):
@@ -42,7 +48,22 @@ def python_strided_fft(real, img, real_twid, img_twid):
     return r, im
 
 
-def test_strided_fft():
+def test_strided_fft(psize="small"):
+    setting_path = os.path.join(os.path.dirname(__file__), "..", "..", "psize.json")
+    with open(setting_path, "r") as fp:
+        sizes = json.load(fp)
+    params = sizes["fft_strided"][psize]
+
+    FFT_SIZE = params["FFT_SIZE"]
+    FFT_SIZE_HALF = FFT_SIZE // 2
+
+    # Patch module constants
+    strided_fft.FFT_SIZE = FFT_SIZE
+    strided_fft.FFT_SIZE_HALF = FFT_SIZE_HALF
+
+    s = allo.customize(strided_fft.fft)
+    mod = s.build(target="llvm")
+
     np.random.seed(42)
 
     # Generate random complex input
@@ -67,4 +88,6 @@ def test_strided_fft():
     np.testing.assert_allclose(img, ref_img, rtol=1e-5, atol=1e-5)
     print("PASS!")
 
-test_strided_fft()
+
+if __name__ == "__main__":
+    test_strided_fft("full")

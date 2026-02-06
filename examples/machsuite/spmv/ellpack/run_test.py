@@ -1,11 +1,12 @@
 import os
 import sys
+import json
 import allo
 import numpy as np
 
 _dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _dir)
-from ellpack import ellpack, N, L
+import ellpack as ellpack_mod
 
 
 def generate_sparse_ellpack(n, l, rng):
@@ -22,7 +23,19 @@ def generate_sparse_ellpack(n, l, rng):
     return values, columns
 
 
-if __name__ == "__main__":
+def test_spmv_ellpack(psize="small"):
+    setting_path = os.path.join(os.path.dirname(__file__), "..", "..", "psize.json")
+    with open(setting_path, "r") as fp:
+        sizes = json.load(fp)
+    params = sizes["spmv_ellpack"][psize]
+
+    N = params["N"]
+    L = params["L"]
+
+    # Patch module constants
+    ellpack_mod.N = N
+    ellpack_mod.L = L
+
     rng = np.random.default_rng(42)
 
     values, columns = generate_sparse_ellpack(N, L, rng)
@@ -35,9 +48,13 @@ if __name__ == "__main__":
             dense[i, columns[i * L + j]] = values[i * L + j]
     expected = dense @ vector
 
-    s = allo.customize(ellpack)
+    s = allo.customize(ellpack_mod.ellpack)
     mod = s.build()
     observed = mod(values, columns, vector)
 
     np.testing.assert_allclose(observed, expected, rtol=1e-5, atol=1e-5)
     print("PASS!")
+
+
+if __name__ == "__main__":
+    test_spmv_ellpack("full")

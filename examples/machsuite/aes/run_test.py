@@ -7,7 +7,8 @@ _dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _dir)
 from aes import encrypt_ecb
 
-if __name__ == "__main__":
+
+def test_aes():
     # AES-256 test vector: key = 0..31, plaintext = 0x00,0x11,...,0xFF
     k = np.array(list(range(32)), dtype=np.uint8)
     buf = np.array([0, 17, 34, 51, 68, 85, 102, 119,
@@ -23,3 +24,7 @@ if __name__ == "__main__":
 
     np.testing.assert_array_equal(buf, expected)
     print("PASS!")
+
+
+if __name__ == "__main__":
+    test_aes()

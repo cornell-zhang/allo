@@ -1,16 +1,19 @@
-import md
+import os
+import sys
+import json
 import allo
 import numpy as np
-import os
 
-nAtoms = 256
-maxNeighbors = 16
+_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, _dir)
+import md
+
 domainEdge = 20.0
 lj1 = 1.5
 lj2 = 2.0
 
 
-def md_knn_force_ref(pos_x, pos_y, pos_z, NL):
+def md_knn_force_ref(pos_x, pos_y, pos_z, NL, nAtoms, maxNeighbors):
     """Python reference for MD KNN force computation."""
     force_x = np.zeros(nAtoms, dtype=np.float64)
     force_y = np.zeros(nAtoms, dtype=np.float64)
@@ -43,7 +46,19 @@ def md_knn_force_ref(pos_x, pos_y, pos_z, NL):
     return force_x, force_y, force_z
 
 
-if __name__ == "__main__":
+def test_md_knn(psize="small"):
+    setting_path = os.path.join(os.path.dirname(__file__), "..", "..", "psize.json")
+    with open(setting_path, "r") as fp:
+        sizes = json.load(fp)
+    params = sizes["md_knn"][psize]
+
+    nAtoms = params["nAtoms"]
+    maxNeighbors = params["maxNeighbors"]
+
+    # Patch md module constants
+    md.nAtoms = nAtoms
+    md.maxNeighbors = maxNeighbors
+
     np.random.seed(42)
 
     # Generate random atom positions
@@ -71,9 +86,13 @@ if __name__ == "__main__":
     forceY = mod_y(np_pos_x, np_pos_y, np_pos_z, np_NL)
     forceZ = mod_z(np_pos_x, np_pos_y, np_pos_z, np_NL)
 
-    check_x, check_y, check_z = md_knn_force_ref(np_pos_x, np_pos_y, np_pos_z, np_NL)
+    check_x, check_y, check_z = md_knn_force_ref(np_pos_x, np_pos_y, np_pos_z, np_NL, nAtoms, maxNeighbors)
 
     np.testing.assert_allclose(forceX, check_x, rtol=1e-5, atol=1e-5)
     np.testing.assert_allclose(forceY, check_y, rtol=1e-5, atol=1e-5)
     np.testing.assert_allclose(forceZ, check_z, rtol=1e-5, atol=1e-5)
     print("PASS!")
+
+
+if __name__ == "__main__":
+    test_md_knn("full")

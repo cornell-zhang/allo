@@ -10,6 +10,7 @@ def gemm(A: float32[64, 64], B: float32[64, 64]) -> float32[64, 64]:
     return C
 
 
-s = allo.customize(gemm)
-mod =s.build()
-print(s.module)
+if __name__ == "__main__":
+    s = allo.customize(gemm)
+    mod = s.build()
+    print(s.module)

@@ -42,30 +42,31 @@ def bfs_bulk(nodes: int32[N_NODES_2], edges: int32[N_EDGES], starting_node: int3
     return level, level_counts
 
 
-import random
-random.seed(42)
+if __name__ == "__main__":
+    import random
+    random.seed(42)
 
-s = allo.customize(bfs_bulk)
-mod = s.build(target="llvm")
+    s = allo.customize(bfs_bulk)
+    mod = s.build(target="llvm")
 
-# Generate graph programmatically
-generated_data = generate_random_graph()
+    # Generate graph programmatically
+    generated_data = generate_random_graph()
 
-# Convert to numpy arrays matching the data file format
-nodes_list = []
-for node in generated_data['nodes']:
-    nodes_list.append(node.edge_begin)
-    nodes_list.append(node.edge_end)
-edges_list = [edge.dst for edge in generated_data['edges']]
+    # Convert to numpy arrays matching the data file format
+    nodes_list = []
+    for node in generated_data['nodes']:
+        nodes_list.append(node.edge_begin)
+        nodes_list.append(node.edge_end)
+    edges_list = [edge.dst for edge in generated_data['edges']]
 
-np_A = np.array(nodes_list, np.int32)
-np_B = np.array(edges_list, np.int32)
-np_C = generated_data['starting_node']
+    np_A = np.array(nodes_list, np.int32)
+    np_B = np.array(edges_list, np.int32)
+    np_C = generated_data['starting_node']
 
-(D, F) = mod(np_A, np_B, np_C)
+    (D, F) = mod(np_A, np_B, np_C)
 
-(golden_D, golden_F) = bfs_bulk_test(np_A, np_B, np_C)
+    (golden_D, golden_F) = bfs_bulk_test(np_A, np_B, np_C)
 
-np.testing.assert_allclose(D, golden_D, rtol=1e-5, atol=1e-5)
-np.testing.assert_allclose(F, golden_F, rtol=1e-5, atol=1e-5)
-print("PASS!")
+    np.testing.assert_allclose(D, golden_D, rtol=1e-5, atol=1e-5)
+    np.testing.assert_allclose(F, golden_F, rtol=1e-5, atol=1e-5)
+    print("PASS!")

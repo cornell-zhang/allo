@@ -1,11 +1,12 @@
 import os
 import sys
+import json
 import allo
 import numpy as np
 
 _dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _dir)
-from crs import crs, N, NNZ
+import crs as crs_mod
 
 
 def generate_sparse_crs(n, nnz, rng):
@@ -29,7 +30,19 @@ def generate_sparse_crs(n, nnz, rng):
     return values, columns, rows
 
 
-if __name__ == "__main__":
+def test_spmv_crs(psize="small"):
+    setting_path = os.path.join(os.path.dirname(__file__), "..", "..", "psize.json")
+    with open(setting_path, "r") as fp:
+        sizes = json.load(fp)
+    params = sizes["spmv_crs"][psize]
+
+    N = params["N"]
+    NNZ = params["NNZ"]
+
+    # Patch module constants
+    crs_mod.N = N
+    crs_mod.NNZ = NNZ
+
     rng = np.random.default_rng(42)
 
     values, columns, rows = generate_sparse_crs(N, NNZ, rng)
@@ -42,9 +55,13 @@ if __name__ == "__main__":
             dense[i, columns[j]] = values[j]
     expected = dense @ vector
 
-    s = allo.customize(crs)
+    s = allo.customize(crs_mod.crs)
     mod = s.build()
     actual = mod(values, columns, rows, vector)
 
     np.testing.assert_allclose(actual, expected, rtol=1e-5, atol=1e-5)
     print("PASS!")
+
+
+if __name__ == "__main__":
+    test_spmv_crs("full")

@@ -541,7 +541,7 @@ def fft1D_512(work_x: float32[512], work_y: float32[512]):
         work_y[6 * stride + tid] = data_y[reversed[6]]
         work_y[7 * stride + tid] = data_y[reversed[7]]
 
-s = allo.customize(fft1D_512)
-
-mod = s.build(target="llvm")
+if __name__ == "__main__":
+    s = allo.customize(fft1D_512)
+    mod = s.build(target="llvm")
 

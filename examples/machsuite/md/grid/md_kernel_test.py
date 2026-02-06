@@ -1,17 +1,19 @@
-import md
+import os
+import sys
+import json
 import allo
 import numpy as np
-import os
 
-blockSide = 4
-densityFactor = 10
-domainEdge = 20.0
-blockEdge = domainEdge / blockSide
+_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, _dir)
+import md
+
 lj1 = 1.5
 lj2 = 2.0
+domainEdge = 20.0
 
 
-def md_force_ref(n_points, pos_x, pos_y, pos_z):
+def md_force_ref(n_points, pos_x, pos_y, pos_z, blockSide):
     """Python reference for MD grid force computation."""
     force_x = np.zeros_like(pos_x)
     force_y = np.zeros_like(pos_y)
@@ -51,7 +53,23 @@ def md_force_ref(n_points, pos_x, pos_y, pos_z):
     return force_x, force_y, force_z
 
 
-if __name__ == "__main__":
+def test_md_grid(psize="small"):
+    setting_path = os.path.join(os.path.dirname(__file__), "..", "..", "psize.json")
+    with open(setting_path, "r") as fp:
+        sizes = json.load(fp)
+    params = sizes["md_grid"][psize]
+
+    blockSide = params["blockSide"]
+    densityFactor = params["densityFactor"]
+    blockEdge = domainEdge / blockSide
+
+    # Patch md module constants
+    md.blockSide = blockSide
+    md.densityFactor = densityFactor
+    md.domainEdge = domainEdge
+    md.blockEdge = blockEdge
+    md.nBlocks = blockSide * blockSide * blockSide
+
     np.random.seed(42)
 
     # Generate random atom positions within grid blocks
@@ -79,9 +97,13 @@ if __name__ == "__main__":
     forceY = mod_y(np_n_points, np_pos_x, np_pos_y, np_pos_z)
     forceZ = mod_z(np_n_points, np_pos_x, np_pos_y, np_pos_z)
 
-    check_x, check_y, check_z = md_force_ref(np_n_points, np_pos_x, np_pos_y, np_pos_z)
+    check_x, check_y, check_z = md_force_ref(np_n_points, np_pos_x, np_pos_y, np_pos_z, blockSide)
 
     np.testing.assert_allclose(forceX, check_x, rtol=1e-5, atol=1e-5)
     np.testing.assert_allclose(forceY, check_y, rtol=1e-5, atol=1e-5)
     np.testing.assert_allclose(forceZ, check_z, rtol=1e-5, atol=1e-5)
     print("PASS!")
+
+
+if __name__ == "__main__":
+    test_md_grid("full")

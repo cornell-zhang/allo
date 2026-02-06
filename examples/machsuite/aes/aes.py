@@ -180,5 +180,6 @@ def encrypt_ecb(k: uint8[32], buf: uint8[16]):
     add_round_key(buf, temp_key)
 
 
-s = allo.customize(encrypt_ecb)
-mod = s.build(target="llvm")
+if __name__ == "__main__":
+    s = allo.customize(encrypt_ecb)
+    mod = s.build(target="llvm")

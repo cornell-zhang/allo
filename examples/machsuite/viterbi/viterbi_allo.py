@@ -52,21 +52,22 @@ def viterbi(obs: int32[N_OBS], init: float32[N_STATES], transition: float32[N_ST
 
     return path
 
-np.random.seed(42)
+if __name__ == "__main__":
+    np.random.seed(42)
 
-# Generate random HMM parameters in -log probability space
-init = np.random.rand(N_STATES).astype(np.float32) * 10.0
-transition = np.random.rand(N_STATES, N_STATES).astype(np.float32) * 10.0
-emission = np.random.rand(N_STATES, N_TOKENS).astype(np.float32) * 10.0
-obs = np.random.randint(0, N_TOKENS, size=N_OBS).astype(np.int32)
+    # Generate random HMM parameters in -log probability space
+    init = np.random.rand(N_STATES).astype(np.float32) * 10.0
+    transition = np.random.rand(N_STATES, N_STATES).astype(np.float32) * 10.0
+    emission = np.random.rand(N_STATES, N_TOKENS).astype(np.float32) * 10.0
+    obs = np.random.randint(0, N_TOKENS, size=N_OBS).astype(np.int32)
 
-s = allo.customize(viterbi)
-mod = s.build()
+    s = allo.customize(viterbi)
+    mod = s.build()
 
-path = mod(obs, init, transition, emission)
+    path = mod(obs, init, transition, emission)
 
-# Run Python reference for comparison
-ref_path = viterbi_ref(obs, init, transition, emission)
+    # Run Python reference for comparison
+    ref_path = viterbi_ref(obs, init, transition, emission)
 
-np.testing.assert_array_equal(path, ref_path)
-print("PASS!")
+    np.testing.assert_array_equal(path, ref_path)
+    print("PASS!")

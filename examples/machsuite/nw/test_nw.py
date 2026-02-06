@@ -3,12 +3,13 @@
 
 import os
 import sys
+import json
 import numpy as np
 import allo
 
 _dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _dir)
-from nw import needwun, ALEN, BLEN, RESULT_LEN
+import nw
 
 
 def nw_reference(seq_a, seq_b):
@@ -91,7 +92,23 @@ def nw_reference(seq_a, seq_b):
     return result
 
 
-def test_nw():
+def test_nw(psize="small"):
+    setting_path = os.path.join(os.path.dirname(__file__), "..", "psize.json")
+    with open(setting_path, "r") as fp:
+        sizes = json.load(fp)
+    params = sizes["nw"][psize]
+
+    ALEN = params["ALEN"]
+    BLEN = params["BLEN"]
+    RESULT_LEN = ALEN + BLEN
+    MATRIX_SIZE = (ALEN + 1) * (BLEN + 1)
+
+    # Patch nw module constants
+    nw.ALEN = ALEN
+    nw.BLEN = BLEN
+    nw.RESULT_LEN = RESULT_LEN
+    nw.MATRIX_SIZE = MATRIX_SIZE
+
     np.random.seed(42)
 
     # Generate random DNA-like sequences
@@ -100,7 +117,7 @@ def test_nw():
     seq_b = np.array([alphabet[i] for i in np.random.randint(0, 4, size=BLEN)], dtype=np.int32)
 
     # Build and run
-    s = allo.customize(needwun)
+    s = allo.customize(nw.needwun)
     mod = s.build()
     out = mod(seq_a, seq_b)
 
@@ -111,4 +128,4 @@ def test_nw():
     print("PASS!")
 
 if __name__ == "__main__":
-    test_nw()
+    test_nw("full")

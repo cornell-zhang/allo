@@ -1,19 +1,28 @@
 import os
 import sys
+import json
 import allo
 import numpy as np
 from allo.ir.types import int32
 
 _dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _dir)
-from mergesort import merge_sort
+import mergesort
 
 
-def main():
+def test_merge(psize="small"):
+    setting_path = os.path.join(os.path.dirname(__file__), "..", "psize.json")
+    with open(setting_path, "r") as fp:
+        sizes = json.load(fp)
+    params = sizes["merge"][psize]
+
+    N = params["N"]
+    mergesort.N = N
+
     np.random.seed(42)
-    values = np.random.randint(0, 100000, size=2048).astype(np.int32)
+    values = np.random.randint(0, 100000, size=N).astype(np.int32)
 
-    s = allo.customize(merge_sort)
+    s = allo.customize(mergesort.merge_sort)
     mod = s.build()
 
     actual = mod(values)
@@ -23,4 +32,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    test_merge("full")
