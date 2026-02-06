@@ -13,7 +13,7 @@ import radix_sort
 
 
 def test_radix_sort(psize="small"):
-    setting_path = os.path.join(os.path.dirname(__file__), "..", "..", "psize.json")
+    setting_path = os.path.join(os.path.dirname(__file__), "..", "psize.json")
     with open(setting_path, "r") as fp:
         sizes = json.load(fp)
     params = sizes["radix"][psize]

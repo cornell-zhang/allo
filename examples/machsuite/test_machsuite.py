@@ -62,19 +62,19 @@ def test_bfs_queue():
 
 
 def test_fft_strided():
-    _load_test("fft/strided", "test_strided.py", "test_strided_fft")("small")
+    _load_test("fft/strided", "run_test.py", "test_strided_fft")("small")
 
 
 def test_fft_transpose():
-    _load_test("fft/transpose", "test_transpose.py", "test_transpose_fft")("small")
+    _load_test("fft/transpose", "run_test.py", "test_transpose_fft")("small")
 
 
 def test_gemm_ncubed():
-    _load_test("gemm", "testing.py", "test_gemm_ncubed")("small")
+    _load_test("gemm", "run_test.py", "test_gemm_ncubed")("small")
 
 
 def test_gemm_blocked():
-    _load_test("gemm", "testing_blocked.py", "test_gemm_blocked")("small")
+    _load_test("gemm", "run_test_blocked.py", "test_gemm_blocked")("small")
 
 
 def test_kmp():
@@ -82,23 +82,23 @@ def test_kmp():
 
 
 def test_md_grid():
-    _load_test("md/grid", "md_kernel_test.py", "test_md_grid")("small")
+    _load_test("md/grid", "run_test.py", "test_md_grid")("small")
 
 
 def test_md_knn():
-    _load_test("md/knn", "md_kernel_test.py", "test_md_knn")("small")
+    _load_test("md/knn", "run_test.py", "test_md_knn")("small")
 
 
 def test_merge():
-    _load_test("merge", "testing.py", "test_merge")("small")
+    _load_test("merge", "run_test.py", "test_merge")("small")
 
 
 def test_nw():
-    _load_test("nw", "test_nw.py", "test_nw")("small")
+    _load_test("nw", "run_test.py", "test_nw")("small")
 
 
 def test_radix():
-    _load_test("sort/radix", "test_radix.py", "test_radix_sort")("small")
+    _load_test("radix_sort", "run_test.py", "test_radix_sort")("small")
 
 
 def test_spmv_crs():
@@ -110,11 +110,11 @@ def test_spmv_ellpack():
 
 
 def test_stencil2d():
-    _load_test("stencil", "test_stencil.py", "test_stencil2d")("small")
+    _load_test("stencil", "run_test.py", "test_stencil2d")("small")
 
 
 def test_stencil3d():
-    _load_test("stencil", "test_stencil.py", "test_stencil3d")("small")
+    _load_test("stencil", "run_test.py", "test_stencil3d")("small")
 
 
 def test_viterbi():
