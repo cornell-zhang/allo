@@ -645,29 +645,28 @@ class TypeInferer(ASTVisitor):
             )
             value.dtype = target_dtype
         elif isinstance(value, ast.Subscript) and isinstance(value.value, ast.Name):
-            # Handle slicing of a constant numpy array, e.g., np_array[i]
+            # Handle slicing of a constant numpy array, e.g., np_array[pid]
             array_name = value.value.id
             if array_name in ctx.global_vars and isinstance(
                 ctx.global_vars[array_name], np.ndarray
             ):
                 assert target_shape is not None and target_dtype is not None
                 np_array = ctx.global_vars[array_name]
-                # Evaluate the slice at compile time
+                # Evaluate slice with current context to validate shape
                 slice_expr = compile(ast.Expression(value.slice), "", "eval")
                 # pylint: disable=eval-used
                 slice_val = eval(slice_expr, ctx.global_vars)
-                # Extract the slice
                 sliced_array = np_array[slice_val]
-                # Ensure it's still a numpy array (scalar case)
                 if not isinstance(sliced_array, np.ndarray):
                     sliced_array = np.array([sliced_array], dtype=np_array.dtype)
                 assert (
                     sliced_array.shape == target_shape
                 ), f"Slice shape mismatch, got {sliced_array.shape} and {target_shape}"
-                TypeInferer.visit_constant_tensor(
-                    ctx, value, sliced_array, dtype=target_dtype
-                )
+                # Store source array for deferred evaluation in builder
+                # The slice AST is already available as value.slice
+                value.const_array_source = np_array
                 value.dtype = target_dtype
+                value.shape = target_shape
             else:
                 visit_stmt(ctx, value)
         else:

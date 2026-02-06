@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import allo
-from allo.ir.types import UInt, float32, index, Stream
+from allo.ir.types import int32, UInt, float32, index, Stream
 import allo.dataflow as df
 import numpy as np
 
@@ -63,6 +63,52 @@ def test_func_index():
     print("Dataflow Simulator Passed!")
 
 
+def test_const_arrays():
+    Ty = int32
+    np_array = np.array([[1, 2, 3, 4], [5, 6, 7, 8]], dtype=np.int32)
+
+    @df.region()
+    def top(A: Ty[2, 4]):
+        @df.kernel(mapping=[2], args=[A])
+        def producer(local_A: Ty[2, 4]):
+            pid = allo.get_pid()
+            const_array: Ty[4] = np_array[pid]
+            local_A[pid, :] = const_array
+
+    A = np.zeros((2, 4), dtype=np.int32)
+    sim_mod = df.build(top, target="simulator")
+    sim_mod(A)
+    np.testing.assert_allclose(A, np_array)
+    print("Dataflow Simulator Passed!")
+
+
+def test_const_arrays_arithmetic():
+    """Test complex access pattern with arithmetic on pid"""
+    Ty = int32
+    # 4 rows: kernel pid 0 uses row 1, kernel pid 1 uses row 2
+    np_array = np.array(
+        [[0, 0, 0, 0], [1, 2, 3, 4], [5, 6, 7, 8], [0, 0, 0, 0]], dtype=np.int32
+    )
+
+    @df.region()
+    def top(A: Ty[2, 4]):
+        @df.kernel(mapping=[2], args=[A])
+        def producer(local_A: Ty[2, 4]):
+            pid = allo.get_pid()
+            # Complex access pattern: pid + 1
+            const_array: Ty[4] = np_array[pid + 1]
+            local_A[pid, :] = const_array
+
+    A = np.zeros((2, 4), dtype=np.int32)
+    sim_mod = df.build(top, target="simulator")
+    sim_mod(A)
+    expected = np.array([[1, 2, 3, 4], [5, 6, 7, 8]], dtype=np.int32)
+    np.testing.assert_allclose(A, expected)
+    print("Dataflow Simulator (Arithmetic) Passed!")
+
+
 if __name__ == "__main__":
     test_uint()
     test_func_index()
+    test_const_arrays()
+    test_const_arrays_arithmetic()

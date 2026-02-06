@@ -1015,8 +1015,20 @@ class ASTTransformer(ASTBuilder):
         if val is not None:
             rhs = val
             conversion_enabled = idx is None
+        elif hasattr(value, "const_array_source"):
+            # Deferred constant array slicing - evaluate now with current pid context
+            np_array = value.const_array_source
+            slice_expr = compile(ast.Expression(value.slice), "", "eval")
+            # pylint: disable=eval-used
+            slice_val = eval(slice_expr, ctx.global_vars)
+            sliced_array = np_array[slice_val]
+            if not isinstance(sliced_array, np.ndarray):
+                sliced_array = np.array([sliced_array], dtype=np_array.dtype)
+            rhs = ASTTransformer.build_constant_tensor(
+                ctx, target, sliced_array, dtype=target.dtype, shape=target.shape
+            )
         elif hasattr(value, "np_values"):
-            # - np array -> constant tensor
+            # - np array -> constant tensor (non-sliced case)
             rhs = ASTTransformer.build_constant_tensor(
                 ctx, target, value.np_values, dtype=target.dtype, shape=target.shape
             )
@@ -2029,6 +2041,8 @@ class ASTTransformer(ASTBuilder):
                                     new_ctx.global_vars.update(
                                         {"df.p" + str(axis): val}
                                     )
+                                # Set the current rank for np_values_for_pid lookup
+                                new_ctx.rank = dim
                                 node.name = construct_kernel_name(orig_name, dim)
                                 # Append suffix from parent context to ensure uniqueness
                                 if hasattr(ctx, "func_suffix"):
