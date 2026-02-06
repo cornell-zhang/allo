@@ -74,7 +74,7 @@ def test_gemm_ncubed():
 
 
 def test_gemm_blocked():
-    _load_test("gemm", "run_test_blocked.py", "test_gemm_blocked")("small")
+    _load_test("gemm", "run_test.py", "test_gemm_blocked")("small")
 
 
 def test_kmp():
