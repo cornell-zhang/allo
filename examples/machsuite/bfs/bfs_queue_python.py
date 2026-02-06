@@ -1,8 +1,11 @@
+# Copyright Allo authors. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
 
 N_NODES = 256
 N_EDGES = 4096
 N_LEVELS = 10
 MAX_LEVEL = 999999
+
 
 def bfs_queue_test(nodes, edges, starting_node):
     level = [MAX_LEVEL] * N_NODES
@@ -15,7 +18,6 @@ def bfs_queue_test(nodes, edges, starting_node):
     level_counts[0] = 1
     queue[rear] = starting_node
     rear = (rear + 1) % N_NODES
-
 
     while front != rear:
         n = queue[front]
@@ -34,6 +36,7 @@ def bfs_queue_test(nodes, edges, starting_node):
                 rear = (rear + 1) % N_NODES
 
     return level, level_counts
+
 
 #     0
 #    / \
@@ -54,4 +57,3 @@ def bfs_queue_test(nodes, edges, starting_node):
 # Print the results
 # print("Node Levels:", level)
 # print("Level Counts:", level_counts)
-

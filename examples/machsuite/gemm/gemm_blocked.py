@@ -1,8 +1,13 @@
+# Copyright Allo authors. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 import allo
 from allo.ir.types import int32
 import numpy as np
+
 M, N, K = 1024, 1024, 1024
 S = 8
+
 
 def bbgemm(A: int32[M, K], B: int32[K, N]) -> int32[M, N]:
     C: int32[M, N] = 0
@@ -25,6 +30,7 @@ def bbgemm(A: int32[M, K], B: int32[K, N]) -> int32[M, N]:
                             sum_value += A[ii, kk] * B[kk, jj]
                         C[ii, jj] += sum_value
     return C
+
 
 if __name__ == "__main__":
     s = allo.customize(bbgemm)

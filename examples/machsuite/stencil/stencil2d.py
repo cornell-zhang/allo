@@ -1,3 +1,6 @@
+# Copyright Allo authors. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 import allo
 import numpy as np
 from allo.ir.types import int32
@@ -6,15 +9,19 @@ col_size = 64
 row_size = 128
 f_size = 9
 
-def stencil2d(orig: int32[row_size, col_size], filter: int32[f_size] ) -> int32[row_size, col_size]:
+
+def stencil2d(
+    orig: int32[row_size, col_size], filter: int32[f_size]
+) -> int32[row_size, col_size]:
     sol: int32[row_size, col_size] = 0
-    for i, j in allo.grid(row_size-2, col_size-2):
-        temp: int32= 0
+    for i, j in allo.grid(row_size - 2, col_size - 2):
+        temp: int32 = 0
         for m, n in allo.grid(3, 3):
-            mul: int32= filter[m*3 + n] * orig[(i+m), (j+n)]
+            mul: int32 = filter[m * 3 + n] * orig[(i + m), (j + n)]
             temp += mul
         sol[i, j] = temp
     return sol
+
 
 if __name__ == "__main__":
     s = allo.customize(stencil2d)

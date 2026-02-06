@@ -1,3 +1,6 @@
+# Copyright Allo authors. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 import allo
 import os
 import json
@@ -23,13 +26,13 @@ def python_kmp(pattern, input):
     matches = 0
     q = 0
     for i in range(len(input)):
-        while (q > 0 and pattern[q] != input[i]):
+        while q > 0 and pattern[q] != input[i]:
             q = kmp_next[q - 1]
 
-        if (pattern[q] == input[i]):
+        if pattern[q] == input[i]:
             q += 1
 
-        if (q >= len(pattern)):
+        if q >= len(pattern):
             matches += 1
             q = kmp_next[q - 1]
 
@@ -39,16 +42,15 @@ def python_kmp(pattern, input):
 ### allo implementation ###
 def kmp(concrete_type, s, p):
     def kmp_kernal[
-
         T: (uint8, int32), S: uint8, P: uint8
     ](pattern: "T[P]", input_str: "T[S]", kmp_next: "T[P]", matches: "T[1]"):
 
         k: index = 0
         x: index = 1
 
-        for i in allo.grid((P - 1), name = "CPF"):
+        for i in allo.grid((P - 1), name="CPF"):
             while k > 0 and pattern[k] != pattern[x]:
-                k = kmp_next[k-1]
+                k = kmp_next[k - 1]
 
             if pattern[k] == pattern[x]:
                 k += 1
@@ -56,20 +58,18 @@ def kmp(concrete_type, s, p):
             x += 1
 
         q: index = 0
-        for i in allo.grid(S, name = "KMP"):
-            while (q > 0 and pattern[q] != input_str[i]):
-                q = kmp_next[q-1]
+        for i in allo.grid(S, name="KMP"):
+            while q > 0 and pattern[q] != input_str[i]:
+                q = kmp_next[q - 1]
 
-            if (pattern[q] == input_str[i]):
+            if pattern[q] == input_str[i]:
                 q += 1
 
             if q >= P:
                 matches[0] += 1
-                q = kmp_next[q-1]
+                q = kmp_next[q - 1]
 
-
-
-    sch = allo.customize(kmp_kernal, instantiate = [concrete_type, s, p])
+    sch = allo.customize(kmp_kernal, instantiate=[concrete_type, s, p])
 
     return sch
 
@@ -87,10 +87,10 @@ def test_kmp(psize="small"):
     concrete_type = uint8
     sch = kmp(concrete_type, S, P)
 
-    #functional correctness checking
-    Input_str  = np.random.randint(1, 5, size = S).astype(np.uint8)
+    # functional correctness checking
+    Input_str = np.random.randint(1, 5, size=S).astype(np.uint8)
 
-    Pattern =  np.random.randint(1, 5, size = P).astype(np.uint8)
+    Pattern = np.random.randint(1, 5, size=P).astype(np.uint8)
 
     KMP_next = np.zeros(P).astype(np.uint8)
 

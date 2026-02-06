@@ -1,3 +1,6 @@
+# Copyright Allo authors. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 import os
 import sys
 import json
@@ -67,7 +70,9 @@ def test_stencil3d(psize="small"):
 
     np.random.seed(42)
     np_C = np.random.randint(1, 5, size=2).astype(np.int32)
-    np_orig = np.random.randint(0, 100, (row_size, col_size, height_size)).astype(np.int32)
+    np_orig = np.random.randint(0, 100, (row_size, col_size, height_size)).astype(
+        np.int32
+    )
 
     np_sol = mod(np_C, np_orig)
 
@@ -83,27 +88,29 @@ def test_stencil3d(psize="small"):
     # Boundary: front/back col planes
     for i in range(height_size - 1):
         for k in range(row_size):
-            ref_sol[k, 0, i+1] = np_orig[k, 0, i+1]
-            ref_sol[k, col_size - 1, i+1] = np_orig[k, col_size - 1, i+1]
+            ref_sol[k, 0, i + 1] = np_orig[k, 0, i + 1]
+            ref_sol[k, col_size - 1, i + 1] = np_orig[k, col_size - 1, i + 1]
 
     # Boundary: left/right row planes
     for j in range(col_size - 2):
         for i in range(height_size - 2):
-            ref_sol[0, j+1, i+1] = np_orig[0, j+1, i+1]
-            ref_sol[row_size - 1, j+1, i+1] = np_orig[row_size - 1, j+1, i+1]
+            ref_sol[0, j + 1, i + 1] = np_orig[0, j + 1, i + 1]
+            ref_sol[row_size - 1, j + 1, i + 1] = np_orig[row_size - 1, j + 1, i + 1]
 
     # Interior stencil
     for i in range(height_size - 2):
         for j in range(col_size - 2):
             for k in range(row_size - 2):
-                s0 = np_orig[k+1, j+1, i+1]
-                s1 = (np_orig[k+1, j+1, i+2] +
-                      np_orig[k+1, j+1, i] +
-                      np_orig[k+1, j+2, i+1] +
-                      np_orig[k+1, j, i+1] +
-                      np_orig[k+2, j+1, i+1] +
-                      np_orig[k, j+1, i+1])
-                ref_sol[k+1, j+1, i+1] = s0 * np_C[0] + s1 * np_C[1]
+                s0 = np_orig[k + 1, j + 1, i + 1]
+                s1 = (
+                    np_orig[k + 1, j + 1, i + 2]
+                    + np_orig[k + 1, j + 1, i]
+                    + np_orig[k + 1, j + 2, i + 1]
+                    + np_orig[k + 1, j, i + 1]
+                    + np_orig[k + 2, j + 1, i + 1]
+                    + np_orig[k, j + 1, i + 1]
+                )
+                ref_sol[k + 1, j + 1, i + 1] = s0 * np_C[0] + s1 * np_C[1]
 
     np.testing.assert_allclose(np_sol, ref_sol, rtol=1e-5, atol=1e-5)
     print("Stencil3D PASS!")

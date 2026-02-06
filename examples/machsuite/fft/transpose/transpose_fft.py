@@ -8,41 +8,54 @@ from allo.ir.types import float32, int32, float32, int32, index
 import math
 import numpy as np
 
+
 def cmplx_M_x(a_x: float32, a_y: float32, b_x: float32, b_y: float32) -> float32:
     return a_x * b_x - a_y * b_y
+
 
 def cmplx_M_y(a_x: float32, a_y: float32, b_x: float32, b_y: float32) -> float32:
     return a_x * b_y + a_y * b_x
 
+
 def cmplx_MUL_x(a_x: float32, a_y: float32, b_x: float32, b_y: float32) -> float32:
     return a_x * b_x - a_y * b_y
+
 
 def cmplx_MUL_y(a_x: float32, a_y: float32, b_x: float32, b_y: float32) -> float32:
     return a_x * b_y + a_y * b_x
 
+
 def cmplx_mul_x(a_x: float32, a_y: float32, b_x: float32, b_y: float32) -> float32:
     return a_x * b_x - a_y * b_y
+
 
 def cmplx_mul_y(a_x: float32, a_y: float32, b_x: float32, b_y: float32) -> float32:
     return a_x * b_y + a_y * b_x
 
+
 def cmplx_add_x(a_x: float32, b_x: float32) -> float32:
     return a_x + b_x
+
 
 def cmplx_add_y(a_y: float32, b_y: float32) -> float32:
     return a_y + b_y
 
+
 def cmplx_sub_x(a_x: float32, b_x: float32) -> float32:
     return a_x - b_x
+
 
 def cmplx_sub_y(a_y: float32, b_y: float32) -> float32:
     return a_y - b_y
 
+
 def cm_fl_mul_x(a_x: float32, b: float32) -> float32:
     return b * a_x
 
+
 def cm_fl_mul_y(a_y: float32, b: float32) -> float32:
     return b * a_y
+
 
 def twiddles8(a_x: float32[8], a_y: float32[8], i: int32, n: int32):
     PI: float32 = 3.1415926535
@@ -50,12 +63,13 @@ def twiddles8(a_x: float32[8], a_y: float32[8], i: int32, n: int32):
 
     for j in range(1, 8):
         # BUG: WITH COS AND SIN NOT BEING ABLE TO DEAL WITH float32
-        phi: float32 = (-2 * PI * reversed8[j]/n)*i
+        phi: float32 = (-2 * PI * reversed8[j] / n) * i
         phi_x: float32 = allo.cos(phi)
         phi_y: float32 = allo.sin(phi)
         tmp_1: float32 = a_x[j]
         a_x[j] = cmplx_M_x(a_x[j], a_y[j], phi_x, phi_y)
         a_y[j] = cmplx_M_y(tmp_1, a_y[j], phi_x, phi_y)
+
 
 def FF2(a0_x: float32, a0_y: float32, a1_x: float32, a1_y: float32) -> float32[4]:
     d0: float32[4] = 0.0
@@ -66,6 +80,7 @@ def FF2(a0_x: float32, a0_y: float32, a1_x: float32, a1_y: float32) -> float32[4
     d0[3] = cmplx_sub_y(a0_y, a1_y)
 
     return d0
+
 
 # def FFT4(a0_x: float32, a0_y: float32, a1_x: float32, a1_y: float32, a2_x: float32, a2_y: float32, a3_x: float32, a3_y: float32):
 #     exp_1_44_x: float32 = 0
@@ -81,6 +96,7 @@ def FF2(a0_x: float32, a0_y: float32, a1_x: float32, a1_y: float32) -> float32[4
 
 #     # FF2(a0_x, a0_y, a1_x, a1_y)
 #     # FF2(a2_x, a2_y, a3_x, a3_y)
+
 
 def FFT4_1(a_x: float32[8], a_y: float32[8]):
     exp_1_44_x: float32 = 0.0
@@ -117,6 +133,7 @@ def FFT4_1(a_x: float32[8], a_y: float32[8]):
 
     # FFT4(a_x[4], a_y[4], a_x[5], a_y[5], a_x[6], a_y[6], a_x[7], a_y[7])
 
+
 def FFT4_2(a_x: float32[8], a_y: float32[8]):
     exp_1_44_x: float32 = 0.0
     exp_1_44_y: float32 = -1.0
@@ -149,6 +166,7 @@ def FFT4_2(a_x: float32[8], a_y: float32[8]):
     a_y[6] = tmp_5[1]
     a_x[7] = tmp_5[2]
     a_y[7] = tmp_5[3]
+
 
 def FFT8(a_x: float32[8], a_y: float32[8]):
     M_SQRT1_2: float32 = 0.70710678118654752440
@@ -200,6 +218,7 @@ def FFT8(a_x: float32[8], a_y: float32[8]):
     # FFT4(a_x[4], a_y[4], a_x[5], a_y[5], a_x[6], a_y[6], a_x[7], a_y[7])
     FFT4_2(a_x, a_y)
 
+
 def loadx8(a_x, x, offset, sx):
     a_x[0] = x[0 * sx + offset]
     a_x[1] = x[1 * sx + offset]
@@ -210,6 +229,7 @@ def loadx8(a_x, x, offset, sx):
     a_x[6] = x[6 * sx + offset]
     a_x[7] = x[7 * sx + offset]
 
+
 def loady8(a_y: float32[8], x: float32[8 * 8 * 9], offset: int32, sx: int32):
     a_y[0] = x[0 * sx + offset]
     a_y[1] = x[1 * sx + offset]
@@ -219,6 +239,7 @@ def loady8(a_y: float32[8], x: float32[8 * 8 * 9], offset: int32, sx: int32):
     a_y[5] = x[5 * sx + offset]
     a_y[6] = x[6 * sx + offset]
     a_y[7] = x[7 * sx + offset]
+
 
 def fft1D_512(work_x: float32[512], work_y: float32[512]):
     stride: int32 = 64
@@ -269,7 +290,7 @@ def fft1D_512(work_x: float32[512], work_y: float32[512]):
         twiddles8(data_x, data_y, counter, 512)
 
         # Save for fence
-        DATA_x[tid * 8]     = data_x[0]
+        DATA_x[tid * 8] = data_x[0]
         DATA_x[tid * 8 + 1] = data_x[1]
         DATA_x[tid * 8 + 2] = data_x[2]
         DATA_x[tid * 8 + 3] = data_x[3]
@@ -278,7 +299,7 @@ def fft1D_512(work_x: float32[512], work_y: float32[512]):
         DATA_x[tid * 8 + 6] = data_x[6]
         DATA_x[tid * 8 + 7] = data_x[7]
 
-        DATA_y[tid * 8]     = data_y[0]
+        DATA_y[tid * 8] = data_y[0]
         DATA_y[tid * 8 + 1] = data_y[1]
         DATA_y[tid * 8 + 2] = data_y[2]
         DATA_y[tid * 8 + 3] = data_y[3]
@@ -296,7 +317,7 @@ def fft1D_512(work_x: float32[512], work_y: float32[512]):
         hi: index = tid_int >> 3
         lo: index = tid_int & 7
         offset: int32 = hi * 8 + lo
-        
+
         smem[0 * sx + offset] = DATA_x[tid * 8 + 0]
         smem[4 * sx + offset] = DATA_x[tid * 8 + 1]
         smem[1 * sx + offset] = DATA_x[tid * 8 + 4]
@@ -361,7 +382,7 @@ def fft1D_512(work_x: float32[512], work_y: float32[512]):
 
         loady8(data_y, smem, tmp_1, 8)
 
-        DATA_y[tid * 8]     = data_y[0]
+        DATA_y[tid * 8] = data_y[0]
         DATA_y[tid * 8 + 1] = data_y[1]
         DATA_y[tid * 8 + 2] = data_y[2]
         DATA_y[tid * 8 + 3] = data_y[3]
@@ -541,7 +562,7 @@ def fft1D_512(work_x: float32[512], work_y: float32[512]):
         work_y[6 * stride + tid] = data_y[reversed[6]]
         work_y[7 * stride + tid] = data_y[reversed[7]]
 
+
 if __name__ == "__main__":
     s = allo.customize(fft1D_512)
     mod = s.build(target="llvm")
-

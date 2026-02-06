@@ -1,8 +1,11 @@
+# Copyright Allo authors. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
 
 N_NODES = 256
 N_EDGES = 4096
 N_LEVELS = 10
 MAX_LEVEL = 999999
+
 
 def bfs_bulk_test(nodes, edges, starting_node):
     level = [MAX_LEVEL] * N_NODES
@@ -28,10 +31,11 @@ def bfs_bulk_test(nodes, edges, starting_node):
 
         if cnt == 0:
             break
-        else:   
+        else:
             level_counts[horizon + 1] = cnt
 
     return level, level_counts
+
 
 #     0
 #    / \
@@ -52,6 +56,3 @@ def bfs_bulk_test(nodes, edges, starting_node):
 # Print the results
 # print("Node Levels:", level)
 # print("Level Counts:", level_counts)
-
-
-

@@ -113,8 +113,12 @@ def test_nw(psize="small"):
 
     # Generate random DNA-like sequences
     alphabet = [ord(c) for c in "ACGT"]
-    seq_a = np.array([alphabet[i] for i in np.random.randint(0, 4, size=ALEN)], dtype=np.int32)
-    seq_b = np.array([alphabet[i] for i in np.random.randint(0, 4, size=BLEN)], dtype=np.int32)
+    seq_a = np.array(
+        [alphabet[i] for i in np.random.randint(0, 4, size=ALEN)], dtype=np.int32
+    )
+    seq_b = np.array(
+        [alphabet[i] for i in np.random.randint(0, 4, size=BLEN)], dtype=np.int32
+    )
 
     # Build and run
     s = allo.customize(nw.needwun)
@@ -126,6 +130,7 @@ def test_nw(psize="small"):
 
     np.testing.assert_array_equal(out, expected)
     print("PASS!")
+
 
 if __name__ == "__main__":
     test_nw("full")

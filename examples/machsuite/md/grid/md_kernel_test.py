@@ -1,3 +1,6 @@
+# Copyright Allo authors. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 import os
 import sys
 import json
@@ -22,9 +25,9 @@ def md_force_ref(n_points, pos_x, pos_y, pos_z, blockSide):
     for b0x in range(blockSide):
         for b0y in range(blockSide):
             for b0z in range(blockSide):
-                for b1x in range(max(0, b0x-1), min(blockSide, b0x+2)):
-                    for b1y in range(max(0, b0y-1), min(blockSide, b0y+2)):
-                        for b1z in range(max(0, b0z-1), min(blockSide, b0z+2)):
+                for b1x in range(max(0, b0x - 1), min(blockSide, b0x + 2)):
+                    for b1y in range(max(0, b0y - 1), min(blockSide, b0y + 2)):
+                        for b1z in range(max(0, b0z - 1), min(blockSide, b0z + 2)):
                             q_range = n_points[b1x, b1y, b1z]
                             for p_idx in range(n_points[b0x, b0y, b0z]):
                                 px = pos_x[b0x, b0y, b0z, p_idx]
@@ -39,7 +42,7 @@ def md_force_ref(n_points, pos_x, pos_y, pos_z, blockSide):
                                         dx = px - qx
                                         dy = py - qy
                                         dz = pz - qz
-                                        r2inv = 1.0 / (dx*dx + dy*dy + dz*dz)
+                                        r2inv = 1.0 / (dx * dx + dy * dy + dz * dz)
                                         r6inv = r2inv * r2inv * r2inv
                                         potential = r6inv * (lj1 * r6inv - lj2)
                                         f = r2inv * potential
@@ -73,18 +76,32 @@ def test_md_grid(psize="small"):
     np.random.seed(42)
 
     # Generate random atom positions within grid blocks
-    np_n_points = np.full((blockSide, blockSide, blockSide), densityFactor, dtype=np.int32)
-    np_pos_x = np.zeros((blockSide, blockSide, blockSide, densityFactor), dtype=np.float64)
-    np_pos_y = np.zeros((blockSide, blockSide, blockSide, densityFactor), dtype=np.float64)
-    np_pos_z = np.zeros((blockSide, blockSide, blockSide, densityFactor), dtype=np.float64)
+    np_n_points = np.full(
+        (blockSide, blockSide, blockSide), densityFactor, dtype=np.int32
+    )
+    np_pos_x = np.zeros(
+        (blockSide, blockSide, blockSide, densityFactor), dtype=np.float64
+    )
+    np_pos_y = np.zeros(
+        (blockSide, blockSide, blockSide, densityFactor), dtype=np.float64
+    )
+    np_pos_z = np.zeros(
+        (blockSide, blockSide, blockSide, densityFactor), dtype=np.float64
+    )
 
     for bx in range(blockSide):
         for by in range(blockSide):
             for bz in range(blockSide):
                 for a in range(densityFactor):
-                    np_pos_x[bx, by, bz, a] = bx * blockEdge + np.random.rand() * blockEdge
-                    np_pos_y[bx, by, bz, a] = by * blockEdge + np.random.rand() * blockEdge
-                    np_pos_z[bx, by, bz, a] = bz * blockEdge + np.random.rand() * blockEdge
+                    np_pos_x[bx, by, bz, a] = (
+                        bx * blockEdge + np.random.rand() * blockEdge
+                    )
+                    np_pos_y[bx, by, bz, a] = (
+                        by * blockEdge + np.random.rand() * blockEdge
+                    )
+                    np_pos_z[bx, by, bz, a] = (
+                        bz * blockEdge + np.random.rand() * blockEdge
+                    )
 
     s_x = allo.customize(md.md_x)
     mod_x = s_x.build()
@@ -97,7 +114,9 @@ def test_md_grid(psize="small"):
     forceY = mod_y(np_n_points, np_pos_x, np_pos_y, np_pos_z)
     forceZ = mod_z(np_n_points, np_pos_x, np_pos_y, np_pos_z)
 
-    check_x, check_y, check_z = md_force_ref(np_n_points, np_pos_x, np_pos_y, np_pos_z, blockSide)
+    check_x, check_y, check_z = md_force_ref(
+        np_n_points, np_pos_x, np_pos_y, np_pos_z, blockSide
+    )
 
     np.testing.assert_allclose(forceX, check_x, rtol=1e-5, atol=1e-5)
     np.testing.assert_allclose(forceY, check_y, rtol=1e-5, atol=1e-5)

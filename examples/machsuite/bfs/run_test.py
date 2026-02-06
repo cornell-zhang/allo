@@ -1,3 +1,6 @@
+# Copyright Allo authors. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 import os
 import sys
 import json
@@ -63,14 +66,14 @@ def _generate_and_run(mod_func, ref_func, params):
     generated_data = generate.generate_random_graph()
 
     nodes_list = []
-    for node in generated_data['nodes']:
+    for node in generated_data["nodes"]:
         nodes_list.append(node.edge_begin)
         nodes_list.append(node.edge_end)
-    edges_list = [edge.dst for edge in generated_data['edges']]
+    edges_list = [edge.dst for edge in generated_data["edges"]]
 
     np_A = np.array(nodes_list, np.int32)
     np_B = np.array(edges_list, np.int32)
-    np_C = generated_data['starting_node']
+    np_C = generated_data["starting_node"]
 
     (D, F) = mod(np_A, np_B, np_C)
     (golden_D, golden_F) = ref_func(np_A, np_B, np_C)

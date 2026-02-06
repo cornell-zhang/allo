@@ -36,13 +36,17 @@ def ss_sort(a: int32[SIZE]) -> int32[SIZE]:
             for blockID in range(NUMOFBLOCKS):
                 for i_h in range(4):
                     a_indx = blockID * ELEMENTSPERBLOCK + i_h
-                    bucket_indx = ((a[a_indx] >> (exp * 2)) & 0x3) * NUMOFBLOCKS + blockID + 1
+                    bucket_indx = (
+                        ((a[a_indx] >> (exp * 2)) & 0x3) * NUMOFBLOCKS + blockID + 1
+                    )
                     bucket[bucket_indx] = bucket[bucket_indx] + 1
         else:
             for blockID in range(NUMOFBLOCKS):
                 for i_h in range(4):
                     a_indx = blockID * ELEMENTSPERBLOCK + i_h
-                    bucket_indx = ((b[a_indx] >> (exp * 2)) & 0x3) * NUMOFBLOCKS + blockID + 1
+                    bucket_indx = (
+                        ((b[a_indx] >> (exp * 2)) & 0x3) * NUMOFBLOCKS + blockID + 1
+                    )
                     bucket[bucket_indx] = bucket[bucket_indx] + 1
 
         # local_scan
@@ -67,7 +71,9 @@ def ss_sort(a: int32[SIZE]) -> int32[SIZE]:
         if valid_buffer == 0:
             for blockID_u in range(NUMOFBLOCKS):
                 for i_u in range(4):
-                    bucket_indx = ((a[blockID_u * ELEMENTSPERBLOCK + i_u] >> (exp * 2)) & 0x3) * NUMOFBLOCKS + blockID_u
+                    bucket_indx = (
+                        (a[blockID_u * ELEMENTSPERBLOCK + i_u] >> (exp * 2)) & 0x3
+                    ) * NUMOFBLOCKS + blockID_u
                     a_indx = blockID_u * ELEMENTSPERBLOCK + i_u
                     b[bucket[bucket_indx]] = a[a_indx]
                     bucket[bucket_indx] = bucket[bucket_indx] + 1
@@ -75,7 +81,9 @@ def ss_sort(a: int32[SIZE]) -> int32[SIZE]:
         else:
             for blockID_u in range(NUMOFBLOCKS):
                 for i_u in range(4):
-                    bucket_indx = ((b[blockID_u * ELEMENTSPERBLOCK + i_u] >> (exp * 2)) & 0x3) * NUMOFBLOCKS + blockID_u
+                    bucket_indx = (
+                        (b[blockID_u * ELEMENTSPERBLOCK + i_u] >> (exp * 2)) & 0x3
+                    ) * NUMOFBLOCKS + blockID_u
                     a_indx = blockID_u * ELEMENTSPERBLOCK + i_u
                     a[bucket[bucket_indx]] = b[a_indx]
                     bucket[bucket_indx] = bucket[bucket_indx] + 1

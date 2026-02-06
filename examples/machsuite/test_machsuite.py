@@ -27,7 +27,16 @@ def _load_test(subdir, filename, func_name):
         # Remove short module names that might conflict across sub-benchmarks
         mod_file = getattr(mod, "__file__", None)
         if mod_file and _machsuite_dir in mod_file and name.count(".") == 0:
-            if name not in ("allo", "numpy", "np", "os", "sys", "json", "math", "random"):
+            if name not in (
+                "allo",
+                "numpy",
+                "np",
+                "os",
+                "sys",
+                "json",
+                "math",
+                "random",
+            ):
                 del sys.modules[name]
     mod_name = f"machsuite_{subdir.replace('/', '_')}_{filename.replace('.py', '')}"
     spec = importlib.util.spec_from_file_location(mod_name, filepath)

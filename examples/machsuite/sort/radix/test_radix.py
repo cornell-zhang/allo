@@ -40,5 +40,6 @@ def test_radix_sort(psize="small"):
     np.testing.assert_array_equal(result, expected)
     print("PASS!")
 
+
 if __name__ == "__main__":
     test_radix_sort("full")

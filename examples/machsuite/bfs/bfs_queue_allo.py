@@ -1,3 +1,6 @@
+# Copyright Allo authors. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 import os
 import sys
 import allo
@@ -9,14 +12,16 @@ sys.path.insert(0, _dir)
 from generate import generate_random_graph
 from bfs_queue_python import bfs_queue_test
 
-N_NODES:int32 = 256
-N_NODES_2:int32 = 512
-N_EDGES:int32 = 4096
-N_LEVELS:int32 = 10
-MAX_LEVEL:int32 = 999999
+N_NODES: int32 = 256
+N_NODES_2: int32 = 512
+N_EDGES: int32 = 4096
+N_LEVELS: int32 = 10
+MAX_LEVEL: int32 = 999999
 
 
-def bfs_queue(nodes: int32[N_NODES_2], edges: int32[N_EDGES], starting_node: int32) -> (int32[N_NODES], int32[N_LEVELS]):
+def bfs_queue(
+    nodes: int32[N_NODES_2], edges: int32[N_EDGES], starting_node: int32
+) -> (int32[N_NODES], int32[N_LEVELS]):
     level: int32[N_NODES] = MAX_LEVEL
     level_counts: int32[N_LEVELS] = 0
     queue: int32[N_NODES] = 0
@@ -27,7 +32,6 @@ def bfs_queue(nodes: int32[N_NODES_2], edges: int32[N_EDGES], starting_node: int
     level_counts[0] = 1
     queue[rear] = starting_node
     rear = (rear + 1) % N_NODES
-
 
     while front != rear:
         n: int32 = queue[front]
@@ -47,8 +51,10 @@ def bfs_queue(nodes: int32[N_NODES_2], edges: int32[N_EDGES], starting_node: int
 
     return level, level_counts
 
+
 if __name__ == "__main__":
     import random
+
     random.seed(42)
 
     s = allo.customize(bfs_queue)
@@ -58,14 +64,14 @@ if __name__ == "__main__":
     generated_data = generate_random_graph()
 
     nodes_list = []
-    for node in generated_data['nodes']:
+    for node in generated_data["nodes"]:
         nodes_list.append(node.edge_begin)
         nodes_list.append(node.edge_end)
-    edges_list = [edge.dst for edge in generated_data['edges']]
+    edges_list = [edge.dst for edge in generated_data["edges"]]
 
     np_A = np.array(nodes_list, np.int32)
     np_B = np.array(edges_list, np.int32)
-    np_C = generated_data['starting_node']
+    np_C = generated_data["starting_node"]
 
     (D, F) = mod(np_A, np_B, np_C)
 

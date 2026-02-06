@@ -1,3 +1,6 @@
+# Copyright Allo authors. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 import os
 import sys
 import json
@@ -34,13 +37,24 @@ def test_backprop(psize="small"):
     biases2 = np.random.randn(NODES_PER_LAYER).astype(np.float32)
     biases3 = np.random.randn(POSSIBLE_OUTPUTS).astype(np.float32)
     training_data = np.random.randn(TRAINING_SETS * INPUT_DIMENSION).astype(np.float32)
-    training_targets = np.random.randn(TRAINING_SETS * POSSIBLE_OUTPUTS).astype(np.float32)
+    training_targets = np.random.randn(TRAINING_SETS * POSSIBLE_OUTPUTS).astype(
+        np.float32
+    )
 
     s = allo.customize(backprop.backprop)
     mod = s.build(target="llvm")
 
     # Run-only test: MachSuite's check.data is known to not match
-    mod(weights1, weights2, weights3, biases1, biases2, biases3, training_data, training_targets)
+    mod(
+        weights1,
+        weights2,
+        weights3,
+        biases1,
+        biases2,
+        biases3,
+        training_data,
+        training_targets,
+    )
     print("PASS!")
 
 

@@ -1,3 +1,6 @@
+# Copyright Allo authors. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 import os
 import sys
 import json
@@ -28,7 +31,7 @@ def md_knn_force_ref(pos_x, pos_y, pos_z, NL, nAtoms, maxNeighbors):
             dx = ix - jx
             dy = iy - jy
             dz = iz - jz
-            r2 = dx*dx + dy*dy + dz*dz
+            r2 = dx * dx + dy * dy + dz * dz
             if r2 == 0:
                 r2inv = (domainEdge * domainEdge * 3.0) * 1000
             else:
@@ -86,7 +89,9 @@ def test_md_knn(psize="small"):
     forceY = mod_y(np_pos_x, np_pos_y, np_pos_z, np_NL)
     forceZ = mod_z(np_pos_x, np_pos_y, np_pos_z, np_NL)
 
-    check_x, check_y, check_z = md_knn_force_ref(np_pos_x, np_pos_y, np_pos_z, np_NL, nAtoms, maxNeighbors)
+    check_x, check_y, check_z = md_knn_force_ref(
+        np_pos_x, np_pos_y, np_pos_z, np_NL, nAtoms, maxNeighbors
+    )
 
     np.testing.assert_allclose(forceX, check_x, rtol=1e-5, atol=1e-5)
     np.testing.assert_allclose(forceY, check_y, rtol=1e-5, atol=1e-5)
