@@ -5,7 +5,6 @@
 
 import allo
 from allo.ir.types import int32
-import numpy as np
 
 SIZE = 2048
 NUMOFBLOCKS = 512

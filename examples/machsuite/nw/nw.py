@@ -5,7 +5,6 @@
 
 import allo
 from allo.ir.types import int32
-import numpy as np
 
 ALEN = 128
 BLEN = 128

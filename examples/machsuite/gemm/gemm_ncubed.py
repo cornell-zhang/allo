@@ -3,7 +3,6 @@
 
 import allo
 from allo.ir.types import float32
-import numpy as np
 
 
 def gemm(A: float32[64, 64], B: float32[64, 64]) -> float32[64, 64]:
