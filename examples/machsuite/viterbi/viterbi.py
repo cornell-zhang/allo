@@ -1,6 +1,4 @@
 import numpy as np
-from read import read_viterbi_input 
-from write import write_output_data
 
 def viterbi(obs, init, transition, emission):
     N_OBS = len(obs)                # Number of observations
@@ -49,6 +47,7 @@ def viterbi(obs, init, transition, emission):
     return path
 
 if __name__ == '__main__':
+    from read import read_viterbi_input
     inputfile = 'input.data'
     init, transition, emission, obs = read_viterbi_input(inputfile)
 

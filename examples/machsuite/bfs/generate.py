@@ -1,5 +1,4 @@
 import random
-from support import write_data_to_file
 # Constants
 A = 57
 B = 19
@@ -78,5 +77,6 @@ def generate_random_graph():
 
 
 if __name__ == "__main__":
+    from support import write_data_to_file
     generated_data = generate_random_graph()
     write_data_to_file(generated_data)
