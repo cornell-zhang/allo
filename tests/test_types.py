@@ -628,6 +628,68 @@ def test_struct_simple():
     assert allo_result == expected
 
 
+def test_sin_float32():
+    def kernel(A: float32[10]) -> float32[10]:
+        B: float32[10]
+        for i in range(10):
+            B[i] = allo.sin(A[i])
+        return B
+
+    s = allo.customize(kernel)
+    print(s.module)
+    mod = s.build()
+    A = np.random.rand(10).astype(np.float32)
+    B = mod(A)
+    np.testing.assert_allclose(B, np.sin(A), rtol=1e-5)
+
+
+def test_sin_float64():
+    def kernel(A: float64[10]) -> float64[10]:
+        B: float64[10]
+        for i in range(10):
+            B[i] = allo.sin(A[i])
+        return B
+
+    s = allo.customize(kernel)
+    print(s.module)
+    mod = s.build()
+    A = np.random.rand(10).astype(np.float64)
+    B = mod(A)
+    np.testing.assert_allclose(B, np.sin(A), rtol=1e-5)
+
+
+def test_float64_math_ops():
+    def kernel(A: float64[10]) -> float64[10]:
+        B: float64[10]
+        for i in range(10):
+            B[i] = allo.exp(A[i]) + allo.log(A[i]) + allo.sqrt(A[i])
+        return B
+
+    s = allo.customize(kernel)
+    print(s.module)
+    mod = s.build()
+    A = np.random.uniform(0.1, 2.0, size=10).astype(np.float64)
+    B = mod(A)
+    expected = np.exp(A) + np.log(A) + np.sqrt(A)
+    np.testing.assert_allclose(B, expected, rtol=1e-5)
+
+
+def test_float64_trig_ops():
+    def kernel(A: float64[10]) -> float64[10]:
+        B: float64[10]
+        for i in range(10):
+            B[i] = allo.sin(A[i]) + allo.cos(A[i]) + allo.tan(A[i])
+        return B
+
+    s = allo.customize(kernel)
+    print(s.module)
+    mod = s.build()
+    A = np.random.uniform(-1.0, 1.0, size=10).astype(np.float64)
+    B = mod(A)
+    expected = np.sin(A) + np.cos(A) + np.tan(A)
+    np.testing.assert_allclose(B, expected, rtol=1e-5)
+
+
 ######################################################################
 # Legacy tests
 ######################################################################

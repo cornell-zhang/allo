@@ -20,6 +20,7 @@ from .._mlir.ir import (
     ShapedType,
     IntegerType,
     F32Type,
+    F64Type,
     UnitAttr,
     IntegerAttr,
     StringAttr,
@@ -3103,7 +3104,8 @@ class ASTTransformer(ASTBuilder):
                     if hasattr(arg, "result") and hasattr(arg.result, "type"):
                         arg_types.append(arg.result.type)
             if all(
-                isinstance(arg_type, (F32Type, IntegerType)) for arg_type in arg_types
+                isinstance(arg_type, (F32Type, F64Type, IntegerType))
+                for arg_type in arg_types
             ):
                 opcls = {
                     "exp": math_d.ExpOp,
@@ -3111,6 +3113,7 @@ class ASTTransformer(ASTBuilder):
                     "log2": math_d.Log2Op,
                     "log10": math_d.Log10Op,
                     "sqrt": math_d.SqrtOp,
+                    "sin": math_d.SinOp,
                     "cos": math_d.CosOp,
                     "tan": math_d.TanOp,
                     "tanh": math_d.TanhOp,
