@@ -10,7 +10,48 @@ import numpy as np
 _dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _dir)
 import viterbi_allo
-from viterbi import viterbi as viterbi_ref
+
+
+def viterbi_ref(obs, init, transition, emission):
+    """Python/NumPy reference implementation of Viterbi algorithm."""
+    N_OBS = len(obs)
+    N_STATES = len(init)
+
+    llike = np.zeros((N_OBS, N_STATES))
+    path = np.zeros(N_OBS, dtype=int)
+
+    for s in range(N_STATES):
+        llike[0][s] = init[s] + emission[s, obs[0]]
+
+    for t in range(1, N_OBS):
+        for curr in range(N_STATES):
+            min_p = llike[t - 1][0] + transition[0, curr] + emission[curr, obs[t]]
+            for prev in range(1, N_STATES):
+                p = llike[t - 1][prev] + transition[prev, curr] + emission[curr, obs[t]]
+                if p < min_p:
+                    min_p = p
+            llike[t][curr] = min_p
+
+    min_s = 0
+    min_p = llike[N_OBS - 1][0]
+    for s in range(1, N_STATES):
+        p = llike[N_OBS - 1][s]
+        if p < min_p:
+            min_p = p
+            min_s = s
+    path[N_OBS - 1] = min_s
+
+    for t in range(N_OBS - 2, -1, -1):
+        min_s = 0
+        min_p = llike[t][0] + transition[0, path[t + 1]]
+        for s in range(1, N_STATES):
+            p = llike[t][s] + transition[s, path[t + 1]]
+            if p < min_p:
+                min_p = p
+                min_s = s
+        path[t] = min_s
+
+    return path
 
 
 def test_viterbi(psize="small"):
