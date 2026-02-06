@@ -1,0 +1,20 @@
+{
+  "aes":           { "full": {},                                                                    "small": {} },
+  "backprop":      { "full": {"INPUT_DIMENSION": 13, "POSSIBLE_OUTPUTS": 3, "TRAINING_SETS": 163, "NODES_PER_LAYER": 64},           "small": {"INPUT_DIMENSION": 13, "POSSIBLE_OUTPUTS": 3, "TRAINING_SETS": 16, "NODES_PER_LAYER": 8} },
+  "bfs":           { "full": {"N_NODES": 256, "N_EDGES": 4096, "N_LEVELS": 10},                    "small": {"N_NODES": 32, "N_EDGES": 256, "N_LEVELS": 6} },
+  "fft_strided":   { "full": {"FFT_SIZE": 1024},                                                   "small": {"FFT_SIZE": 64} },
+  "fft_transpose": { "full": {"SIZE": 512},                                                        "small": {"SIZE": 512} },
+  "gemm_ncubed":   { "full": {"N": 64},                                                            "small": {"N": 64} },
+  "gemm_blocked":  { "full": {"M": 1024, "N": 1024, "K": 1024, "S": 8},                            "small": {"M": 32, "N": 32, "K": 32, "S": 8} },
+  "kmp":           { "full": {"S": 100, "P": 100},                                                 "small": {"S": 32, "P": 16} },
+  "md_grid":       { "full": {"blockSide": 4, "densityFactor": 10},                                "small": {"blockSide": 2, "densityFactor": 4} },
+  "md_knn":        { "full": {"nAtoms": 256, "maxNeighbors": 16},                                  "small": {"nAtoms": 32, "maxNeighbors": 4} },
+  "merge":         { "full": {"N": 2048},                                                          "small": {"N": 64} },
+  "nw":            { "full": {"ALEN": 128, "BLEN": 128},                                           "small": {"ALEN": 16, "BLEN": 16} },
+  "radix":         { "full": {"SIZE": 2048},                                                       "small": {"SIZE": 64} },
+  "spmv_crs":      { "full": {"N": 494, "NNZ": 1666},                                              "small": {"N": 32, "NNZ": 96} },
+  "spmv_ellpack":  { "full": {"N": 494, "L": 10},                                                  "small": {"N": 32, "L": 4} },
+  "stencil2d":     { "full": {"row_size": 128, "col_size": 64},                                    "small": {"row_size": 16, "col_size": 8} },
+  "stencil3d":     { "full": {"height_size": 32, "col_size": 32, "row_size": 16},                  "small": {"height_size": 8, "col_size": 8, "row_size": 4} },
+  "viterbi":       { "full": {"N_OBS": 140, "N_STATES": 64, "N_TOKENS": 64},                       "small": {"N_OBS": 20, "N_STATES": 8, "N_TOKENS": 8} }
+}
