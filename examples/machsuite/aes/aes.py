@@ -72,47 +72,42 @@ def add_round_key_cpy(buf: uint8[16], key: uint8[32], cpk: uint8[32]):
 
 
 def shift_rows(buf: uint8[16]):
-    i: uint8
-    j: uint8
+    t: uint8[1] = 0
 
-    i = buf[1]
+    t[0] = buf[1]
     buf[1] = buf[5]
     buf[5] = buf[9]
     buf[9] = buf[13]
-    buf[13] = i
+    buf[13] = t[0]
 
-    i = buf[10]
+    t[0] = buf[10]
     buf[10] = buf[2]
-    buf[2] = i
+    buf[2] = t[0]
 
-    j = buf[3]
+    t[0] = buf[3]
     buf[3] = buf[15]
     buf[15] = buf[11]
     buf[11] = buf[7]
-    buf[7] = j
+    buf[7] = t[0]
 
-    j = buf[14]
+    t[0] = buf[14]
     buf[14] = buf[6]
-    buf[6] = j
+    buf[6] = t[0]
 
 
 def mix_columns(buf: uint8[16]):
-    a: uint8
-    b: uint8
-    c: uint8
-    d: uint8
-    e: uint8
+    v: uint8[5] = 0
 
     for i in range(0, 16, 4):
-        a = buf[i]
-        b = buf[i+1]
-        c = buf[i+2]
-        d = buf[i+3]
-        e = a ^ b ^ c ^ d
-        buf[i] ^= e ^ rj_xtime(a^b)
-        buf[i+1] ^= e ^ rj_xtime(b^c)
-        buf[i+2] ^= e ^ rj_xtime(c^d)
-        buf[i+3] ^= e ^ rj_xtime(d^a)
+        v[0] = buf[i]
+        v[1] = buf[i+1]
+        v[2] = buf[i+2]
+        v[3] = buf[i+3]
+        v[4] = v[0] ^ v[1] ^ v[2] ^ v[3]
+        buf[i] ^= v[4] ^ rj_xtime(v[0]^v[1])
+        buf[i+1] ^= v[4] ^ rj_xtime(v[1]^v[2])
+        buf[i+2] ^= v[4] ^ rj_xtime(v[2]^v[3])
+        buf[i+3] ^= v[4] ^ rj_xtime(v[3]^v[0])
 
 
 def expand_enc_key(k: uint8[32], rc: uint8[1]):
@@ -147,23 +142,22 @@ def encrypt_ecb(k: uint8[32], buf: uint8[16]):
     dec_key: uint8[32]
 
     rcon: uint8[1] = [1]
-    i: uint8
-    
-    for i in range(32):
-        enc_key[i] = k[i]
-        dec_key[i] = k[i]
 
-    for i in range(7):
+    for i0 in range(32):
+        enc_key[i0] = k[i0]
+        dec_key[i0] = k[i0]
+
+    for i1 in range(7):
         expand_enc_key(dec_key, rcon)
 
     add_round_key_cpy(buf, enc_key, key)
 
     rcon[0] = 1
-    for i in range(1, 14):
+    for i2 in range(1, 14):
         sub_bytes(buf)
         shift_rows(buf)
         mix_columns(buf)
-        if (i & 1) != 0:
+        if (i2 & 1) != 0:
             temp_key: uint8[16]
             for j in range(16):
                 temp_key[j] = key[16 + j]

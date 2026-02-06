@@ -37,21 +37,13 @@ def md_x(n_points:int32[blockSide,blockSide,blockSide],
         position_z:float64[blockSide,blockSide,blockSide,densityFactor])->float64[blockSide,blockSide,blockSide,densityFactor]:
        
     
-    b0_x: int32=0
-    b0_y: int32=0
-    b0_z: int32=0
-    b1_x: int32=0
-    b1_y: int32=0
-    b1_z: int32=0
     q_x:  float64=0.0
     q_y:  float64=0.0
     q_z:  float64=0.0
     p_x:  float64=0.0
     p_y:  float64=0.0
     p_z:  float64=0.0
- 
-    p_idx:int32=0
-    q_idx:int32=0
+
     dx:float64=0.0
     dy:float64=0.0
     dz:float64=0.0
@@ -64,7 +56,7 @@ def md_x(n_points:int32[blockSide,blockSide,blockSide],
     base_q_z: float64[densityFactor]=0.0
     sum_x:float64=0.0
     force_x:float64[blockSide,blockSide,blockSide,densityFactor]=0.0
-    
+
     q_idx_range:int32=0
 
     # Iterate over the grid, block by block
@@ -83,7 +75,7 @@ def md_x(n_points:int32[blockSide,blockSide,blockSide],
                         p_y = position_y[b0_x,b0_y,b0_z,p_idx]
                         p_z = position_z[b0_x,b0_y,b0_z,p_idx]
                         sum_x = force_x[b0_x,b0_y,b0_z,p_idx]
-                        
+
                         for q_idx in range(q_idx_range):
                             q_x = base_q_x[q_idx]
                             q_y = base_q_y[q_idx]
@@ -93,14 +85,12 @@ def md_x(n_points:int32[blockSide,blockSide,blockSide],
                                 dy = p_y - q_y
                                 dz = p_z - q_z
                                 r2inv = 1.0 / (dx * dx + dy * dy + dz * dz)
-                            else:
-                                r2inv=(domainEdge*domainEdge*3.0)*1000   
-                            r6inv = r2inv * r2inv * r2inv
-                            potential = r6inv * (lj1 * r6inv - lj2)
-                            f = r2inv * potential
-                            sum_x += f * dx
-                            
-                        force_x[b0_x,b0_y,b0_z,p_idx]=sum_x                     
+                                r6inv = r2inv * r2inv * r2inv
+                                potential = r6inv * (lj1 * r6inv - lj2)
+                                f = r2inv * potential
+                                sum_x += f * dx
+
+                        force_x[b0_x,b0_y,b0_z,p_idx]=sum_x
     return force_x
 
 def md_y(n_points:int32[blockSide,blockSide,blockSide],
@@ -110,21 +100,13 @@ def md_y(n_points:int32[blockSide,blockSide,blockSide],
         position_z:float64[blockSide,blockSide,blockSide,densityFactor])->float64[blockSide,blockSide,blockSide,densityFactor]:
        
     
-    b0_x: int32=0
-    b0_y: int32=0
-    b0_z: int32=0
-    b1_x: int32=0
-    b1_y: int32=0
-    b1_z: int32=0
     q_x:  float64=0.0
     q_y:  float64=0.0
     q_z:  float64=0.0
     p_x:  float64=0.0
     p_y:  float64=0.0
     p_z:  float64=0.0
- 
-    p_idx:int32=0
-    q_idx:int32=0
+
     dx:float64=0.0
     dy:float64=0.0
     dz:float64=0.0
@@ -137,7 +119,7 @@ def md_y(n_points:int32[blockSide,blockSide,blockSide],
     base_q_z: float64[densityFactor]=0.0
     sum_y:float64=0.0
     force_y:float64[blockSide,blockSide,blockSide,densityFactor]=0.0
-    
+
     q_idx_range:int32=0
 
     # Iterate over the grid, block by block
@@ -156,7 +138,7 @@ def md_y(n_points:int32[blockSide,blockSide,blockSide],
                         p_y = position_y[b0_x,b0_y,b0_z,p_idx]
                         p_z = position_z[b0_x,b0_y,b0_z,p_idx]
                         sum_y = force_y[b0_x,b0_y,b0_z,p_idx]
-                        
+
                         for q_idx in range(q_idx_range):
                             q_x = base_q_x[q_idx]
                             q_y = base_q_y[q_idx]
@@ -166,15 +148,12 @@ def md_y(n_points:int32[blockSide,blockSide,blockSide],
                                 dy = p_y - q_y
                                 dz = p_z - q_z
                                 r2inv = 1.0 / (dx * dx + dy * dy + dz * dz)
-                            else:
-                                r2inv=(domainEdge*domainEdge*3.0)*1000   
-                            r6inv = r2inv * r2inv * r2inv
-                            potential = r6inv * (lj1 * r6inv - lj2)
-                            f = r2inv * potential
-                            sum_y += f * dy
-                            
-                               
-                        force_y[b0_x,b0_y,b0_z,p_idx]=sum_y                     
+                                r6inv = r2inv * r2inv * r2inv
+                                potential = r6inv * (lj1 * r6inv - lj2)
+                                f = r2inv * potential
+                                sum_y += f * dy
+
+                        force_y[b0_x,b0_y,b0_z,p_idx]=sum_y
     return force_y
 
 def md_z(n_points:int32[blockSide,blockSide,blockSide],
@@ -184,21 +163,13 @@ def md_z(n_points:int32[blockSide,blockSide,blockSide],
         position_z:float64[blockSide,blockSide,blockSide,densityFactor])->float64[blockSide,blockSide,blockSide,densityFactor]:
        
     
-    b0_x: int32=0
-    b0_y: int32=0
-    b0_z: int32=0
-    b1_x: int32=0
-    b1_y: int32=0
-    b1_z: int32=0
     q_x:  float64=0.0
     q_y:  float64=0.0
     q_z:  float64=0.0
     p_x:  float64=0.0
     p_y:  float64=0.0
     p_z:  float64=0.0
- 
-    p_idx:int32=0
-    q_idx:int32=0
+
     dx:float64=0.0
     dy:float64=0.0
     dz:float64=0.0
@@ -211,7 +182,7 @@ def md_z(n_points:int32[blockSide,blockSide,blockSide],
     base_q_z: float64[densityFactor]=0.0
     sum_z:float64=0.0
     force_z:float64[blockSide,blockSide,blockSide,densityFactor]=0.0
-    
+
     q_idx_range:int32=0
 
     # Iterate over the grid, block by block
@@ -230,7 +201,7 @@ def md_z(n_points:int32[blockSide,blockSide,blockSide],
                         p_y = position_y[b0_x,b0_y,b0_z,p_idx]
                         p_z = position_z[b0_x,b0_y,b0_z,p_idx]
                         sum_z = force_z[b0_x,b0_y,b0_z,p_idx]
-                        
+
                         for q_idx in range(q_idx_range):
                             q_x = base_q_x[q_idx]
                             q_y = base_q_y[q_idx]
@@ -240,26 +211,25 @@ def md_z(n_points:int32[blockSide,blockSide,blockSide],
                                 dy = p_y - q_y
                                 dz = p_z - q_z
                                 r2inv = 1.0 / (dx * dx + dy * dy + dz * dz)
-                            else:
-                                r2inv=(domainEdge*domainEdge*3.0)*1000   
-                            r6inv = r2inv * r2inv * r2inv
-                            potential = r6inv * (lj1 * r6inv - lj2)
-                            f = r2inv * potential
-                            sum_z += f * dz
-                               
-                        force_z[b0_x,b0_y,b0_z,p_idx]=sum_z                     
+                                r6inv = r2inv * r2inv * r2inv
+                                potential = r6inv * (lj1 * r6inv - lj2)
+                                f = r2inv * potential
+                                sum_z += f * dz
+
+                        force_z[b0_x,b0_y,b0_z,p_idx]=sum_z
     return force_z
 
-s_x=allo.customize(md_x)
-print(s_x.module)
-s_x.build()
+if __name__ == "__main__":
+    s_x=allo.customize(md_x)
+    print(s_x.module)
+    s_x.build()
 
-s_y=allo.customize(md_y)
-print(s_y.module)
-s_y.build()
+    s_y=allo.customize(md_y)
+    print(s_y.module)
+    s_y.build()
 
-s_z=allo.customize(md_z)
-print(s_z.module)
-s_z.build()
+    s_z=allo.customize(md_z)
+    print(s_z.module)
+    s_z.build()
 
-print("build success")
+    print("build success")

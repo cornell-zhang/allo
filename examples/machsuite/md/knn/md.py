@@ -14,8 +14,6 @@ def md_x(position_x:float64[nAtoms], position_y:float64[nAtoms],position_z:float
     i_x: float64=0.0
     i_y: float64=0.0
     i_z: float64=0.0
-    i: int32=0
-    j: int32=0
     jidx: int32=0
     j_x: float64=0.0
     j_y: float64=0.0
@@ -29,7 +27,6 @@ def md_x(position_x:float64[nAtoms], position_y:float64[nAtoms],position_z:float
     force: float64=0.0
     fx: float64=0.0
     force_x:float64[nAtoms]=0.0
-    #force_x=np.zeros_like(position_x)
 
     for i in range(nAtoms):
         i_x= position_x[i]
@@ -67,17 +64,11 @@ def md_x(position_x:float64[nAtoms], position_y:float64[nAtoms],position_z:float
     return force_x
     #print(f"dF={fx},{fy},{fz}")
 
-s_x=allo.customize(md_x)
-print(s_x.module)
-s_x.build()
-
 def md_y(position_x:float64[nAtoms], position_y:float64[nAtoms],position_z:float64[nAtoms],NL:int32[nAtoms*maxNeighbors])->float64[nAtoms]: 
                 #-> (float64[nAtoms],float64[nAtoms],float64[nAtoms]):
     i_x: float64=0.0
     i_y: float64=0.0
     i_z: float64=0.0
-    i: int32=0
-    j: int32=0
     jidx: int32=0
     j_x: float64=0.0
     j_y: float64=0.0
@@ -91,7 +82,6 @@ def md_y(position_x:float64[nAtoms], position_y:float64[nAtoms],position_z:float
     force: float64=0.0
     fy: float64=0.0
     force_y:float64[nAtoms]
-    #force_y=np.zeros_like(position_y)
 
     for i in range(nAtoms):
         i_x= position_x[i]
@@ -129,17 +119,11 @@ def md_y(position_x:float64[nAtoms], position_y:float64[nAtoms],position_z:float
     return force_y
     #print(f"dF={fx},{fy},{fz}")
 
-s_y=allo.customize(md_y)
-print(s_y.module)
-s_y.build()
-
 def md_z(position_x:float64[nAtoms], position_y:float64[nAtoms],position_z:float64[nAtoms],NL:int32[nAtoms*maxNeighbors])->float64[nAtoms]: 
                 #-> (float64[nAtoms],float64[nAtoms],float64[nAtoms]):
     i_x: float64=0.0
     i_y: float64=0.0
     i_z: float64=0.0
-    i: int32=0
-    j: int32=0
     jidx: int32=0
     j_x: float64=0.0
     j_y: float64=0.0
@@ -153,7 +137,6 @@ def md_z(position_x:float64[nAtoms], position_y:float64[nAtoms],position_z:float
     force: float64=0.0
     fz: float64=0.0
     force_z:float64[nAtoms]
-    #force_z=np.zeros_like(position_z)
 
     for i in range(nAtoms):
         i_x= position_x[i]
@@ -191,9 +174,18 @@ def md_z(position_x:float64[nAtoms], position_y:float64[nAtoms],position_z:float
     return force_z
     #print(f"dF={fx},{fy},{fz}")
 
-s_z=allo.customize(md_z)
-print(s_z.module)
-s_z.build()
+if __name__ == "__main__":
+    s_x=allo.customize(md_x)
+    print(s_x.module)
+    s_x.build()
 
-print("build success")
+    s_y=allo.customize(md_y)
+    print(s_y.module)
+    s_y.build()
+
+    s_z=allo.customize(md_z)
+    print(s_z.module)
+    s_z.build()
+
+    print("build success")
 

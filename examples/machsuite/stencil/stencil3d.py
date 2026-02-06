@@ -105,8 +105,10 @@ def read_check_data(file_path):
 
     return check_sol
 
-file_path_data = "input.data"
-file_path_check = "check.data"
+import os
+_dir = os.path.dirname(os.path.abspath(__file__))
+file_path_data = os.path.join(_dir, "stencil3d_input.data")
+file_path_check = os.path.join(_dir, "stencil3d_check.data")
 np_orig, np_C = read_data(file_path_data)
 check_sol = read_check_data(file_path_check)
 print("\nnp_C:")

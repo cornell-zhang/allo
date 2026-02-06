@@ -1,5 +1,10 @@
+import os
 import allo
 import numpy as np
+import sys
+
+_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, _dir)
 from aes import encrypt_ecb
 
 def parse_data(file_name):
@@ -21,8 +26,8 @@ def parse_data(file_name):
     return data_arrays
 
 if __name__ == "__main__":
-    input_data = parse_data("input.data")
-    check_data = parse_data("check.data")
+    input_data = parse_data(os.path.join(_dir, "input.data"))
+    check_data = parse_data(os.path.join(_dir, "check.data"))
 
     np_input = [np.asarray(lst).astype(np.uint8) for lst in input_data]
     np_check = [np.asarray(lst) for lst in check_data]

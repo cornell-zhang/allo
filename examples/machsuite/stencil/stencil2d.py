@@ -80,8 +80,10 @@ def read_check_data(file_path):
 
     return check_sol
 
-file_path_data = "input.data"
-file_path_check = "check.data"
+import os
+_dir = os.path.dirname(os.path.abspath(__file__))
+file_path_data = os.path.join(_dir, "stencil2d_input.data")
+file_path_check = os.path.join(_dir, "stencil2d_check.data")
 np_orig, np_filter = read_data(file_path_data)
 check_sol = read_check_data(file_path_check)
 # print("np_orig:")

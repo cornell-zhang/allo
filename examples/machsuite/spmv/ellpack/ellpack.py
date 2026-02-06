@@ -1,6 +1,6 @@
 import allo
 import numpy as np
-from allo.ir.types import int32
+from allo.ir.types import int32, float64
 
 # Generate a random size for a matrix
 r = np.random.randint(1, 10)

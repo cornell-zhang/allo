@@ -1,7 +1,12 @@
+import os
+import sys
 import allo
 import numpy as np
-from mergesort import merge_sort
 from allo.ir.types import int32
+
+_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, _dir)
+from mergesort import merge_sort
 
 def read_data(filename):
     with open(filename, 'r') as file:
@@ -10,8 +15,8 @@ def read_data(filename):
     return data
 
 def main():
-    input_data = read_data("input.data")
-    check_data = read_data("check.data")
+    input_data = read_data(os.path.join(_dir, "input.data"))
+    check_data = read_data(os.path.join(_dir, "check.data"))
 
     values = np.array(input_data).astype(np.int32)
     

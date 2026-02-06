@@ -48,10 +48,14 @@ def viterbi(obs: int32[N_OBS], init: float32[N_STATES], transition: float32[N_ST
 
     return path
 
+import os
+from viterbi import viterbi as viterbi_ref
+
 s = allo.customize(viterbi)
 mod = s.build()
 
-inputfile = 'input.data'
+data_dir = os.path.dirname(os.path.abspath(__file__))
+inputfile = os.path.join(data_dir, 'input.data')
 init, transition, emission, obs = read_viterbi_input(inputfile)
 
 init = np.array(init, dtype=np.float32)
@@ -59,14 +63,10 @@ transition = np.array(transition, dtype=np.float32)
 emission = np.array(emission, dtype=np.float32)
 obs = np.array(obs, dtype=np.int32)
 
-# init = -np.log(init)
-# transition = -np.log(transition)
-# emission = -np.log(emission)
-
-# print("Initial probabilities (log-space):\n", init)
-# print("Transition matrix (log-space):\n", transition)
-# print("Emission matrix (log-space):\n", emission)
-# print("Observations:\n", obs)
-
 path = mod(obs, init, transition, emission)
-print("Predicted path:", path)
+
+# Run Python reference for comparison
+ref_path = viterbi_ref(obs, init, transition, emission)
+
+np.testing.assert_array_equal(path, ref_path)
+print("PASS!")

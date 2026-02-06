@@ -1,6 +1,11 @@
+import os
+import sys
 import allo
 from allo.ir.types import int32
 import numpy as np
+
+_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, _dir)
 from support import read_data_from_file, write_data_to_file, write_data_to_file_2
 from generate import generate_random_graph
 from bfs_bulk_python import bfs_bulk_test
@@ -45,7 +50,7 @@ mod = s.build(target="llvm")
 #Prepare Input Data
 # generated_data = generate_random_graph()
 # write_data_to_file(generated_data)
-input_data = read_data_from_file("input.data")
+input_data = read_data_from_file(os.path.join(_dir, "input.data"))
 
 np_A = np.array(input_data['nodes'],np.int32)
 np_B = np.array(input_data['edges'],np.int32)
@@ -53,7 +58,7 @@ np_C = input_data['starting_node'][0]
 
 (D, F)= mod(np_A, np_B, np_C)
 
-write_data_to_file_2(F,"check.data")
+write_data_to_file_2(F, os.path.join(_dir, "check.data"))
 
 (golden_D, golden_F) = bfs_bulk_test(np_A, np_B, np_C)
 

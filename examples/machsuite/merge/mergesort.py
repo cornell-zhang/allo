@@ -35,7 +35,6 @@ def merge_sort(a:int32[N]) -> int32[N]:
     start:int32 = 0
     stop:int32 = N - 1
 
-    i:int32 = 0
     f:int32
     m:int32 = 1
     mid:int32
@@ -43,12 +42,12 @@ def merge_sort(a:int32[N]) -> int32[N]:
 
 
     while (m < stop-start + 1):
-        for i in range(start, stop, m+m):
-            f = i
-           
-            mid = i + m - 1
-         
-            to = i + m + m - 1
+        for ii in range(start, stop, m+m):
+            f = ii
+
+            mid = ii + m - 1
+
+            to = ii + m + m - 1
             if (to <= stop):
                 merge(a, f, mid, to)
             else:
@@ -61,4 +60,10 @@ def merge_sort(a:int32[N]) -> int32[N]:
     
 s = allo.customize(merge_sort)
 mod = s.build()
-print(s.module)
+
+# Test
+a = np.random.randint(0, 10000, N).astype(np.int32)
+result = mod(a)
+expected = np.sort(a).astype(np.int32)
+np.testing.assert_array_equal(result, expected)
+print("PASS!")

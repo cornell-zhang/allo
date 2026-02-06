@@ -1,5 +1,10 @@
+import os
+import sys
 import allo
 import numpy as np
+
+_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, _dir)
 from ellpack import ellpack
 
 def parse_data(file):
@@ -20,8 +25,8 @@ def parse_data(file):
     return data_arrays
 
 if __name__ == "__main__":
-    input = parse_data("input.data")
-    check = parse_data("check.data")
+    input = parse_data(os.path.join(_dir, "input.data"))
+    check = parse_data(os.path.join(_dir, "check.data"))
 
     values = np.array(input[0]).astype(np.float64)
     columns = np.array(input[1]).astype(np.int32)
