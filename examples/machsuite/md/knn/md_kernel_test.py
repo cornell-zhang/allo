@@ -3,33 +3,62 @@ import allo
 import numpy as np
 import os
 
-def parse_data(file):
-    data_arrays = []
-    current_array = []
-    with open(file, 'r') as f:
-        for line in f:
-            if line.strip() == '%%':
-                if current_array:
-                    data_arrays.append(current_array)
-                    current_array = []
+nAtoms = 256
+maxNeighbors = 16
+domainEdge = 20.0
+lj1 = 1.5
+lj2 = 2.0
+
+
+def md_knn_force_ref(pos_x, pos_y, pos_z, NL):
+    """Python reference for MD KNN force computation."""
+    force_x = np.zeros(nAtoms, dtype=np.float64)
+    force_y = np.zeros(nAtoms, dtype=np.float64)
+    force_z = np.zeros(nAtoms, dtype=np.float64)
+
+    for i in range(nAtoms):
+        ix, iy, iz = pos_x[i], pos_y[i], pos_z[i]
+        fx, fy, fz = 0.0, 0.0, 0.0
+        for j in range(maxNeighbors):
+            jidx = NL[i * maxNeighbors + j]
+            jx, jy, jz = pos_x[jidx], pos_y[jidx], pos_z[jidx]
+            dx = ix - jx
+            dy = iy - jy
+            dz = iz - jz
+            r2 = dx*dx + dy*dy + dz*dz
+            if r2 == 0:
+                r2inv = (domainEdge * domainEdge * 3.0) * 1000
             else:
-                num = float(line.strip())
-                current_array.append(num)
-    data_arrays.append(current_array)
-    return data_arrays
+                r2inv = 1.0 / r2
+            r6inv = r2inv * r2inv * r2inv
+            potential = r6inv * (lj1 * r6inv - lj2)
+            force = r2inv * potential
+            fx += dx * force
+            fy += dy * force
+            fz += dz * force
+        force_x[i] = fx
+        force_y[i] = fy
+        force_z[i] = fz
+
+    return force_x, force_y, force_z
+
 
 if __name__ == "__main__":
-    data_dir = os.path.dirname(os.path.abspath(__file__))
-    input_data = parse_data(os.path.join(data_dir, "input.data"))
-    check_data = parse_data(os.path.join(data_dir, "check.data"))
-    check_x = np.array(check_data[0]).astype(np.float64)
-    check_y = np.array(check_data[1]).astype(np.float64)
-    check_z = np.array(check_data[2]).astype(np.float64)
+    np.random.seed(42)
 
-    np_pos_x = np.array(input_data[0]).astype(np.float64)
-    np_pos_y = np.array(input_data[1]).astype(np.float64)
-    np_pos_z = np.array(input_data[2]).astype(np.float64)
-    np_NL = np.array(input_data[3]).astype(np.int32)
+    # Generate random atom positions
+    np_pos_x = np.random.rand(nAtoms).astype(np.float64) * domainEdge
+    np_pos_y = np.random.rand(nAtoms).astype(np.float64) * domainEdge
+    np_pos_z = np.random.rand(nAtoms).astype(np.float64) * domainEdge
+
+    # Generate neighbor list: for each atom, pick maxNeighbors distinct neighbors
+    np_NL = np.zeros(nAtoms * maxNeighbors, dtype=np.int32)
+    for i in range(nAtoms):
+        others = list(range(nAtoms))
+        others.remove(i)
+        neighbors = np.random.choice(others, size=maxNeighbors, replace=False)
+        for j in range(maxNeighbors):
+            np_NL[i * maxNeighbors + j] = neighbors[j]
 
     s_x = allo.customize(md.md_x)
     mod_x = s_x.build()
@@ -42,7 +71,9 @@ if __name__ == "__main__":
     forceY = mod_y(np_pos_x, np_pos_y, np_pos_z, np_NL)
     forceZ = mod_z(np_pos_x, np_pos_y, np_pos_z, np_NL)
 
-    np.testing.assert_allclose(forceX, check_x, rtol=2, atol=20)
-    np.testing.assert_allclose(forceY, check_y, rtol=2, atol=20)
-    np.testing.assert_allclose(forceZ, check_z, rtol=2, atol=20)
+    check_x, check_y, check_z = md_knn_force_ref(np_pos_x, np_pos_y, np_pos_z, np_NL)
+
+    np.testing.assert_allclose(forceX, check_x, rtol=1e-5, atol=1e-5)
+    np.testing.assert_allclose(forceY, check_y, rtol=1e-5, atol=1e-5)
+    np.testing.assert_allclose(forceZ, check_z, rtol=1e-5, atol=1e-5)
     print("PASS!")

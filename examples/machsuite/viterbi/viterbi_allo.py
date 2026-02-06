@@ -1,8 +1,12 @@
+import os
+import sys
 import allo
 from allo.ir.types import float32, int32
 import numpy as np
-from read import read_viterbi_input 
-from write import write_output_data
+
+_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, _dir)
+from viterbi import viterbi as viterbi_ref
 
 N_OBS:int32 = 140
 N_STATES:int32 = 64
@@ -31,7 +35,7 @@ def viterbi(obs: int32[N_OBS], init: float32[N_STATES], transition: float32[N_ST
         if p < min_p:
             min_p = p
             min_s = s
-    
+
     path:int32[N_OBS]
     path[N_OBS-1] = min_s
 
@@ -48,20 +52,16 @@ def viterbi(obs: int32[N_OBS], init: float32[N_STATES], transition: float32[N_ST
 
     return path
 
-import os
-from viterbi import viterbi as viterbi_ref
+np.random.seed(42)
+
+# Generate random HMM parameters in -log probability space
+init = np.random.rand(N_STATES).astype(np.float32) * 10.0
+transition = np.random.rand(N_STATES, N_STATES).astype(np.float32) * 10.0
+emission = np.random.rand(N_STATES, N_TOKENS).astype(np.float32) * 10.0
+obs = np.random.randint(0, N_TOKENS, size=N_OBS).astype(np.int32)
 
 s = allo.customize(viterbi)
 mod = s.build()
-
-data_dir = os.path.dirname(os.path.abspath(__file__))
-inputfile = os.path.join(data_dir, 'input.data')
-init, transition, emission, obs = read_viterbi_input(inputfile)
-
-init = np.array(init, dtype=np.float32)
-transition = np.array(transition, dtype=np.float32)
-emission = np.array(emission, dtype=np.float32)
-obs = np.array(obs, dtype=np.int32)
 
 path = mod(obs, init, transition, emission)
 

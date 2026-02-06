@@ -5,38 +5,39 @@ import numpy as np
 
 _dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _dir)
-from ellpack import ellpack
+from ellpack import ellpack, N, L
 
-def parse_data(file):
-    data_arrays = []
-    current_array = []
 
-    with open(file, 'r') as f:
-        for line in f:
-            if line.strip() == '%%':
-                if current_array:
-                    data_arrays.append(current_array)
-                    current_array = []
-            else:
-                num = float(line.strip())
-                current_array.append(num)
+def generate_sparse_ellpack(n, l, rng):
+    """Generate a random sparse matrix in ELLPACK format."""
+    values = np.zeros(n * l, dtype=np.float64)
+    columns = np.zeros(n * l, dtype=np.int32)
 
-    data_arrays.append(current_array)
-    return data_arrays
+    for i in range(n):
+        cols = np.sort(rng.choice(n, size=l, replace=False))
+        for j in range(l):
+            values[i * l + j] = rng.random()
+            columns[i * l + j] = cols[j]
+
+    return values, columns
+
 
 if __name__ == "__main__":
-    input = parse_data(os.path.join(_dir, "input.data"))
-    check = parse_data(os.path.join(_dir, "check.data"))
+    rng = np.random.default_rng(42)
 
-    values = np.array(input[0]).astype(np.float64)
-    columns = np.array(input[1]).astype(np.int32)
-    vector = np.array(input[2]).astype(np.float64)
+    values, columns = generate_sparse_ellpack(N, L, rng)
+    vector = rng.random(N).astype(np.float64)
 
-    check = np.array(check[0]).astype(np.float64)
+    # Python reference: dense matmul
+    dense = np.zeros((N, N), dtype=np.float64)
+    for i in range(N):
+        for j in range(L):
+            dense[i, columns[i * L + j]] = values[i * L + j]
+    expected = dense @ vector
 
-    ##Building
     s = allo.customize(ellpack)
     mod = s.build()
-
     observed = mod(values, columns, vector)
-    np.testing.assert_allclose(observed, check, rtol=1e-5, atol=1e-5)
+
+    np.testing.assert_allclose(observed, expected, rtol=1e-5, atol=1e-5)
+    print("PASS!")

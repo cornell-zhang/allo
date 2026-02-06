@@ -1,65 +1,70 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# test_strided.py
-
-import os
 import numpy as np
-import allo
+import math
 
-from strided_fft import fft, mod
+from strided_fft import fft, mod, FFT_SIZE, FFT_SIZE_HALF
 
-from allo.ir.types import int32, float32, float64
+
+def python_strided_fft(real, img, real_twid, img_twid):
+    """Python reference matching the Allo strided FFT (decimation-in-frequency)."""
+    N = len(real)
+    r = real.copy()
+    im = img.copy()
+
+    span = N >> 1
+    log = 0
+    while span > 0:
+        odd = span
+        while odd < N:
+            odd |= span
+            even = odd ^ span
+
+            temp = r[even] + r[odd]
+            r[odd] = r[even] - r[odd]
+            r[even] = temp
+
+            temp = im[even] + im[odd]
+            im[odd] = im[even] - im[odd]
+            im[even] = temp
+
+            rootindex = (even << log) & (N - 1)
+            if rootindex > 0:
+                temp = real_twid[rootindex] * r[odd] - img_twid[rootindex] * im[odd]
+                im[odd] = real_twid[rootindex] * im[odd] + img_twid[rootindex] * r[odd]
+                r[odd] = temp
+
+            odd += 1
+        span >>= 1
+        log += 1
+
+    return r, im
+
 
 def test_strided_fft():
-    data_dir = os.path.dirname(os.path.abspath(__file__))
-    file_path = os.path.join(data_dir, "input_strided.data")
-    counter = 0
-    real = []
-    img = []
-    real_twid = []
-    img_twid = []
+    np.random.seed(42)
 
-    with open(file_path, 'r') as file:
-        for line in file:
-            number = line.strip()
-            if "%%" in line:
-                counter += 1
-                continue
-            if counter == 1:
-                real.append(float(number))
-            elif counter == 2:
-                img.append(float(number))
-            elif counter == 3:
-                real_twid.append(float(number))
-            elif counter == 4:
-                img_twid.append(float(number))
+    # Generate random complex input
+    real = np.random.randn(FFT_SIZE).astype(np.float32)
+    img = np.random.randn(FFT_SIZE).astype(np.float32)
 
-    real = np.array(real, dtype=np.float32)
-    img = np.array(img, dtype=np.float32)
-    real_twid = np.array(real_twid, dtype=np.float32)
-    img_twid = np.array(img_twid, dtype=np.float32)
+    # Precompute twiddle factors
+    real_twid = np.zeros(FFT_SIZE_HALF, dtype=np.float32)
+    img_twid = np.zeros(FFT_SIZE_HALF, dtype=np.float32)
+    for i in range(FFT_SIZE_HALF):
+        angle = 2.0 * math.pi * i / FFT_SIZE
+        real_twid[i] = np.float32(math.cos(angle))
+        img_twid[i] = np.float32(math.sin(angle))
 
+    # Compute Python reference
+    ref_real, ref_img = python_strided_fft(real.copy(), img.copy(), real_twid, img_twid)
+
+    # Run Allo kernel (in-place)
     mod(real, img, real_twid, img_twid)
 
-    output_path = os.path.join(data_dir, "check_strided.data")
-    counter = 0
-
-    golden_real = []
-    golden_img = []
-    with open(output_path, 'r') as file:
-        for line in file:
-            number = line.strip()
-            if "%%" in line:
-                counter += 1
-                continue
-            if counter == 1:
-                golden_real.append(float(number))
-            elif counter == 2:
-                golden_img.append(float(number))
-
-    np.testing.assert_allclose(real, golden_real, rtol=1e-5, atol=1e-5)
-    np.testing.assert_allclose(img, golden_img, rtol=1e-5, atol=1e-5)
+    np.testing.assert_allclose(real, ref_real, rtol=1e-5, atol=1e-5)
+    np.testing.assert_allclose(img, ref_img, rtol=1e-5, atol=1e-5)
     print("PASS!")
 
 test_strided_fft()

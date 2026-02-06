@@ -3,36 +3,70 @@ import allo
 import numpy as np
 import os
 
-def parse_data(file):
-    data_arrays = []
-    current_array = []
-    with open(file, 'r') as f:
-        for line in f:
-            if line.strip() == '%%':
-                if current_array:
-                    data_arrays.append(current_array)
-                    current_array = []
-            else:
-                num = float(line.strip())
-                current_array.append(num)
-    data_arrays.append(current_array)
-    return data_arrays
+blockSide = 4
+densityFactor = 10
+domainEdge = 20.0
+blockEdge = domainEdge / blockSide
+lj1 = 1.5
+lj2 = 2.0
+
+
+def md_force_ref(n_points, pos_x, pos_y, pos_z):
+    """Python reference for MD grid force computation."""
+    force_x = np.zeros_like(pos_x)
+    force_y = np.zeros_like(pos_y)
+    force_z = np.zeros_like(pos_z)
+
+    for b0x in range(blockSide):
+        for b0y in range(blockSide):
+            for b0z in range(blockSide):
+                for b1x in range(max(0, b0x-1), min(blockSide, b0x+2)):
+                    for b1y in range(max(0, b0y-1), min(blockSide, b0y+2)):
+                        for b1z in range(max(0, b0z-1), min(blockSide, b0z+2)):
+                            q_range = n_points[b1x, b1y, b1z]
+                            for p_idx in range(n_points[b0x, b0y, b0z]):
+                                px = pos_x[b0x, b0y, b0z, p_idx]
+                                py = pos_y[b0x, b0y, b0z, p_idx]
+                                pz = pos_z[b0x, b0y, b0z, p_idx]
+                                sx, sy, sz = 0.0, 0.0, 0.0
+                                for q_idx in range(q_range):
+                                    qx = pos_x[b1x, b1y, b1z, q_idx]
+                                    qy = pos_y[b1x, b1y, b1z, q_idx]
+                                    qz = pos_z[b1x, b1y, b1z, q_idx]
+                                    if qx != px or qy != py or qz != pz:
+                                        dx = px - qx
+                                        dy = py - qy
+                                        dz = pz - qz
+                                        r2inv = 1.0 / (dx*dx + dy*dy + dz*dz)
+                                        r6inv = r2inv * r2inv * r2inv
+                                        potential = r6inv * (lj1 * r6inv - lj2)
+                                        f = r2inv * potential
+                                        sx += f * dx
+                                        sy += f * dy
+                                        sz += f * dz
+                                force_x[b0x, b0y, b0z, p_idx] += sx
+                                force_y[b0x, b0y, b0z, p_idx] += sy
+                                force_z[b0x, b0y, b0z, p_idx] += sz
+
+    return force_x, force_y, force_z
+
 
 if __name__ == "__main__":
-    data_dir = os.path.dirname(os.path.abspath(__file__))
-    input_data = parse_data(os.path.join(data_dir, "input.data"))
-    check_data = parse_data(os.path.join(data_dir, "check.data"))
-    # C code uses dvector_t structs (AoS layout: x0,y0,z0,x1,y1,z1,...)
-    force_data = np.array(check_data[0]).astype(np.float64)
-    check_x = np.ascontiguousarray(force_data[0::3].reshape((4,4,4,10)))
-    check_y = np.ascontiguousarray(force_data[1::3].reshape((4,4,4,10)))
-    check_z = np.ascontiguousarray(force_data[2::3].reshape((4,4,4,10)))
+    np.random.seed(42)
 
-    np_n_points = np.array(input_data[0]).astype(np.int32).reshape((4,4,4))
-    pos_data = np.array(input_data[1]).astype(np.float64)
-    np_pos_x = np.ascontiguousarray(pos_data[0::3].reshape((4,4,4,10)))
-    np_pos_y = np.ascontiguousarray(pos_data[1::3].reshape((4,4,4,10)))
-    np_pos_z = np.ascontiguousarray(pos_data[2::3].reshape((4,4,4,10)))
+    # Generate random atom positions within grid blocks
+    np_n_points = np.full((blockSide, blockSide, blockSide), densityFactor, dtype=np.int32)
+    np_pos_x = np.zeros((blockSide, blockSide, blockSide, densityFactor), dtype=np.float64)
+    np_pos_y = np.zeros((blockSide, blockSide, blockSide, densityFactor), dtype=np.float64)
+    np_pos_z = np.zeros((blockSide, blockSide, blockSide, densityFactor), dtype=np.float64)
+
+    for bx in range(blockSide):
+        for by in range(blockSide):
+            for bz in range(blockSide):
+                for a in range(densityFactor):
+                    np_pos_x[bx, by, bz, a] = bx * blockEdge + np.random.rand() * blockEdge
+                    np_pos_y[bx, by, bz, a] = by * blockEdge + np.random.rand() * blockEdge
+                    np_pos_z[bx, by, bz, a] = bz * blockEdge + np.random.rand() * blockEdge
 
     s_x = allo.customize(md.md_x)
     mod_x = s_x.build()
@@ -44,6 +78,8 @@ if __name__ == "__main__":
     forceX = mod_x(np_n_points, np_pos_x, np_pos_y, np_pos_z)
     forceY = mod_y(np_n_points, np_pos_x, np_pos_y, np_pos_z)
     forceZ = mod_z(np_n_points, np_pos_x, np_pos_y, np_pos_z)
+
+    check_x, check_y, check_z = md_force_ref(np_n_points, np_pos_x, np_pos_y, np_pos_z)
 
     np.testing.assert_allclose(forceX, check_x, rtol=1e-5, atol=1e-5)
     np.testing.assert_allclose(forceY, check_y, rtol=1e-5, atol=1e-5)

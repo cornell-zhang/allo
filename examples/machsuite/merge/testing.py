@@ -8,32 +8,19 @@ _dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _dir)
 from mergesort import merge_sort
 
-def read_data(filename):
-    with open(filename, 'r') as file:
-        lines = file.readlines()
-        data = [int(line.strip()) for line in lines if not line.startswith("%%")]
-    return data
 
 def main():
-    input_data = read_data(os.path.join(_dir, "input.data"))
-    check_data = read_data(os.path.join(_dir, "check.data"))
-
-    values = np.array(input_data).astype(np.int32)
-    
-    check = np.array(check_data).astype(np.int32)
-
+    np.random.seed(42)
+    values = np.random.randint(0, 100000, size=2048).astype(np.int32)
 
     s = allo.customize(merge_sort)
-
     mod = s.build()
 
     actual = mod(values)
-
-
-    np.testing.assert_allclose(actual, check, rtol=1e-5, atol=1e-5)
-    
+    expected = np.sort(values)
+    np.testing.assert_allclose(actual, expected, rtol=1e-5, atol=1e-5)
+    print("PASS!")
 
 
 if __name__ == "__main__":
     main()
-

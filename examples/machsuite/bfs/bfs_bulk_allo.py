@@ -6,7 +6,6 @@ import numpy as np
 
 _dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _dir)
-from support import read_data_from_file, write_data_to_file, write_data_to_file_2
 from generate import generate_random_graph
 from bfs_bulk_python import bfs_bulk_test
 
@@ -43,29 +42,30 @@ def bfs_bulk(nodes: int32[N_NODES_2], edges: int32[N_EDGES], starting_node: int3
     return level, level_counts
 
 
+import random
+random.seed(42)
 
 s = allo.customize(bfs_bulk)
 mod = s.build(target="llvm")
 
-#Prepare Input Data
-# generated_data = generate_random_graph()
-# write_data_to_file(generated_data)
-input_data = read_data_from_file(os.path.join(_dir, "input.data"))
+# Generate graph programmatically
+generated_data = generate_random_graph()
 
-np_A = np.array(input_data['nodes'],np.int32)
-np_B = np.array(input_data['edges'],np.int32)
-np_C = input_data['starting_node'][0]
+# Convert to numpy arrays matching the data file format
+nodes_list = []
+for node in generated_data['nodes']:
+    nodes_list.append(node.edge_begin)
+    nodes_list.append(node.edge_end)
+edges_list = [edge.dst for edge in generated_data['edges']]
 
-(D, F)= mod(np_A, np_B, np_C)
+np_A = np.array(nodes_list, np.int32)
+np_B = np.array(edges_list, np.int32)
+np_C = generated_data['starting_node']
 
-write_data_to_file_2(F, os.path.join(_dir, "check.data"))
+(D, F) = mod(np_A, np_B, np_C)
 
 (golden_D, golden_F) = bfs_bulk_test(np_A, np_B, np_C)
 
-
-print(F)
-print(golden_F)
-
 np.testing.assert_allclose(D, golden_D, rtol=1e-5, atol=1e-5)
 np.testing.assert_allclose(F, golden_F, rtol=1e-5, atol=1e-5)
-
+print("PASS!")

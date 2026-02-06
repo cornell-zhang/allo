@@ -2,64 +2,112 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import os
+import sys
 import numpy as np
 import allo
+
+_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, _dir)
 from nw import needwun, ALEN, BLEN, RESULT_LEN
 
-def test_nw():
-    data_dir = os.path.dirname(os.path.abspath(__file__))
 
-    # Read input sequences
-    input_path = os.path.join(data_dir, "input.data")
-    sections = []
-    with open(input_path, 'r') as f:
-        current = []
-        for line in f:
-            if line.strip() == '%%':
-                if current:
-                    sections.append(''.join(current))
-                current = []
+def nw_reference(seq_a, seq_b):
+    """Python reference for Needleman-Wunsch alignment."""
+    MATCH_SCORE = 1
+    MISMATCH_SCORE = -1
+    GAP_SCORE = -1
+    ALIGN_VAL = 1
+    SKIPA_VAL = 2
+    SKIPB_VAL = 3
+
+    alen = len(seq_a)
+    blen = len(seq_b)
+    result_len = alen + blen
+
+    M = np.zeros((blen + 1, alen + 1), dtype=np.int32)
+    ptr = np.zeros((blen + 1, alen + 1), dtype=np.int32)
+
+    for i in range(alen + 1):
+        M[0, i] = i * GAP_SCORE
+    for j in range(blen + 1):
+        M[j, 0] = j * GAP_SCORE
+
+    for bi in range(1, blen + 1):
+        for ai in range(1, alen + 1):
+            score = MATCH_SCORE if seq_a[ai - 1] == seq_b[bi - 1] else MISMATCH_SCORE
+            up_left = M[bi - 1, ai - 1] + score
+            up = M[bi - 1, ai] + GAP_SCORE
+            left = M[bi, ai - 1] + GAP_SCORE
+
+            max_val = max(up_left, up, left)
+            M[bi, ai] = max_val
+            if max_val == left:
+                ptr[bi, ai] = SKIPB_VAL
+            elif max_val == up:
+                ptr[bi, ai] = SKIPA_VAL
             else:
-                current.append(line.strip())
-        if current:
-            sections.append(''.join(current))
+                ptr[bi, ai] = ALIGN_VAL
 
-    seq_a_str = sections[0][:ALEN]
-    seq_b_str = sections[1][:BLEN]
+    result = np.zeros((2, result_len), dtype=np.int32)
+    a_idx, b_idx = alen, blen
+    idx = 0
+    for _ in range(result_len):
+        if a_idx > 0 or b_idx > 0:
+            if a_idx == 0:
+                result[0, idx] = 45  # '-'
+                result[1, idx] = seq_b[b_idx - 1]
+                idx += 1
+                b_idx -= 1
+            elif b_idx == 0:
+                result[0, idx] = seq_a[a_idx - 1]
+                result[1, idx] = 45  # '-'
+                idx += 1
+                a_idx -= 1
+            else:
+                if ptr[b_idx, a_idx] == ALIGN_VAL:
+                    result[0, idx] = seq_a[a_idx - 1]
+                    result[1, idx] = seq_b[b_idx - 1]
+                    idx += 1
+                    a_idx -= 1
+                    b_idx -= 1
+                elif ptr[b_idx, a_idx] == SKIPB_VAL:
+                    result[0, idx] = seq_a[a_idx - 1]
+                    result[1, idx] = 45  # '-'
+                    idx += 1
+                    a_idx -= 1
+                else:
+                    result[0, idx] = 45  # '-'
+                    result[1, idx] = seq_b[b_idx - 1]
+                    idx += 1
+                    b_idx -= 1
 
-    # Convert to int32 arrays (ASCII values)
-    seq_a = np.array([ord(c) for c in seq_a_str], dtype=np.int32)
-    seq_b = np.array([ord(c) for c in seq_b_str], dtype=np.int32)
+    # Pad with '_' (95)
+    for i in range(result_len):
+        if result[0, i] == 0:
+            result[0, i] = 95
+        if result[1, i] == 0:
+            result[1, i] = 95
+
+    return result
+
+
+def test_nw():
+    np.random.seed(42)
+
+    # Generate random DNA-like sequences
+    alphabet = [ord(c) for c in "ACGT"]
+    seq_a = np.array([alphabet[i] for i in np.random.randint(0, 4, size=ALEN)], dtype=np.int32)
+    seq_b = np.array([alphabet[i] for i in np.random.randint(0, 4, size=BLEN)], dtype=np.int32)
 
     # Build and run
     s = allo.customize(needwun)
     mod = s.build()
     out = mod(seq_a, seq_b)
 
-    # Convert result back to strings
-    aligned_a = ''.join(chr(c) for c in out[0])
-    aligned_b = ''.join(chr(c) for c in out[1])
+    # Python reference
+    expected = nw_reference(seq_a, seq_b)
 
-    # Read expected output
-    check_path = os.path.join(data_dir, "check.data")
-    check_sections = []
-    with open(check_path, 'r') as f:
-        current = []
-        for line in f:
-            if line.strip() == '%%':
-                if current:
-                    check_sections.append(''.join(current))
-                current = []
-            else:
-                current.append(line.strip())
-        if current:
-            check_sections.append(''.join(current))
-
-    expected_a = check_sections[0][:RESULT_LEN]
-    expected_b = check_sections[1][:RESULT_LEN]
-
-    assert aligned_a == expected_a, f"AlignedA mismatch!\nGot:      {aligned_a[:80]}...\nExpected: {expected_a[:80]}..."
-    assert aligned_b == expected_b, f"AlignedB mismatch!\nGot:      {aligned_b[:80]}...\nExpected: {expected_b[:80]}..."
+    np.testing.assert_array_equal(out, expected)
     print("PASS!")
 
 if __name__ == "__main__":
