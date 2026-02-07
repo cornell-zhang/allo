@@ -375,6 +375,41 @@ def test_partition_dim_factor():
     assert "affine_map<(d0, d1) -> (d0, 0, 0, d1)>" in ir
 
 
+def test_partition_multi_dim():
+    def multi_dim_partition(A: int32[8, 8, 8]) -> int32[8, 8, 8]:
+        B: int32[8, 8, 8] = 0
+        for x, y, z in allo.grid(8, 8, 8):
+            B[x, y, z] = A[x, y, z]
+        return B
+
+    # Test 1: Complete partition on two different dimensions
+    s1 = allo.customize(multi_dim_partition)
+    s1.partition(s1.A, dim=1)
+    s1.partition(s1.A, dim=2)
+    ir1 = str(s1.module)
+    # Should have composed layout map from two partition ops
+    assert "affine_map" in ir1
+
+    # Test 2: Block partition on two different dimensions with factors
+    s2 = allo.customize(multi_dim_partition)
+    s2.partition(s2.A, partition_type=1, dim=1, factor=4)
+    s2.partition(s2.A, partition_type=1, dim=2, factor=4)
+    ir2 = str(s2.module)
+    assert "affine_map" in ir2
+
+    # Test 3: Partitioning the same dimension twice should raise an error
+    s3 = allo.customize(multi_dim_partition)
+    s3.partition(s3.A, dim=1)
+    with pytest.raises(Exception, match="Cannot partition the same array on dimension 1 twice"):
+        s3.partition(s3.A, dim=1)
+
+    # Test 4: Mixing all-dim (dim=0) with per-dim should raise an error
+    s4 = allo.customize(multi_dim_partition)
+    s4.partition(s4.A, dim=1)
+    with pytest.raises(Exception, match="Cannot partition the same array twice"):
+        s4.partition(s4.A, dim=0)
+
+
 def test_reshape():
     def reshape(A: int32[10, 10]) -> int32[10, 10]:
         B: int32[10, 10] = 0

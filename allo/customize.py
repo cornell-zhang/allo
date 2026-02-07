@@ -312,12 +312,20 @@ class Schedule:
         # Check for duplicate partitioning
         target_key = f"{target.func}:{target.name}"
         if target_key in self.partitioned_arrays:
-            for item in self.partitioned_arrays[target_key]:
-                if item[0] == Partition.Complete and item[1] == 0:
-                    return  # Already completely partitioned
-                raise AlloValueError(
-                    f"Cannot partition the same array twice: {target_key}"
-                )
+            for existing_type, existing_dim, _ in self.partitioned_arrays[target_key]:
+                # If already completely partitioned on all dims, nothing more to do
+                if existing_type == Partition.Complete and existing_dim == 0:
+                    return
+                # Cannot mix all-dim partition (dim=0) with per-dim partitions
+                if existing_dim == 0 or dim == 0:
+                    raise AlloValueError(
+                        f"Cannot partition the same array twice: {target_key}"
+                    )
+                # Cannot partition the same specific dimension twice
+                if existing_dim == dim:
+                    raise AlloValueError(
+                        f"Cannot partition the same array on dimension {dim} twice: {target_key}"
+                    )
 
         # Collect all buffers that need partitioning via propagation
         buffers_to_partition = self._collect_partition_targets(target)
