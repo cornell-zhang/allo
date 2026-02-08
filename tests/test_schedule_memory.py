@@ -387,14 +387,12 @@ def test_partition_multi_dim():
     s1.partition(s1.A, dim=1)
     s1.partition(s1.A, dim=2)
     ir1 = str(s1.module)
-    # Should have composed layout map from two partition ops
     assert "affine_map" in ir1
-    # Verify HLS code generation emits per-dimension pragmas
+    # Verify HLS code emits two separate array_partition pragmas
     mod1 = s1.build(target="vhls")
     hls1 = mod1.hls_code
-    assert "#pragma HLS array_partition" in hls1
-    assert "complete dim=1" in hls1
-    assert "complete dim=2" in hls1
+    assert "#pragma HLS array_partition variable=v0 complete dim=1" in hls1
+    assert "#pragma HLS array_partition variable=v0 complete dim=2" in hls1
 
     # Test 2: Block partition on two different dimensions with factors
     s2 = allo.customize(multi_dim_partition)
@@ -402,24 +400,44 @@ def test_partition_multi_dim():
     s2.partition(s2.A, partition_type=1, dim=2, factor=4)
     ir2 = str(s2.module)
     assert "affine_map" in ir2
-    # Verify HLS code generation emits block partition pragmas for both dims
+    # Verify HLS code emits two separate block partition pragmas
     mod2 = s2.build(target="vhls")
     hls2 = mod2.hls_code
-    assert "#pragma HLS array_partition" in hls2
-    assert "block dim=1 factor=4" in hls2
-    assert "block dim=2 factor=4" in hls2
+    assert "#pragma HLS array_partition variable=v0 block dim=1 factor=4" in hls2
+    assert "#pragma HLS array_partition variable=v0 block dim=2 factor=4" in hls2
 
-    # Test 3: Partitioning the same dimension twice should raise an error
-    s3 = allo.customize(multi_dim_partition)
-    s3.partition(s3.A, dim=1)
-    with pytest.raises(Exception, match="Cannot partition the same array on dimension 1 twice"):
-        s3.partition(s3.A, dim=1)
+    # Test 3: Mixed partition types on different dimensions
+    # Complete on dim=1 + Block on dim=2
+    s3a = allo.customize(multi_dim_partition)
+    s3a.partition(s3a.A, partition_type=0, dim=1)  # Complete
+    s3a.partition(s3a.A, partition_type=1, dim=2, factor=4)  # Block
+    mod3a = s3a.build(target="vhls")
+    hls3a = mod3a.hls_code
+    assert "#pragma HLS array_partition variable=v0 complete dim=1" in hls3a
+    assert "#pragma HLS array_partition variable=v0 block dim=2 factor=4" in hls3a
 
-    # Test 4: Mixing all-dim (dim=0) with per-dim should raise an error
+    # Cyclic on dim=1 + Complete on dim=2
+    s3b = allo.customize(multi_dim_partition)
+    s3b.partition(s3b.A, partition_type=2, dim=1, factor=2)  # Cyclic
+    s3b.partition(s3b.A, partition_type=0, dim=2)  # Complete
+    mod3b = s3b.build(target="vhls")
+    hls3b = mod3b.hls_code
+    assert "#pragma HLS array_partition variable=v0 cyclic dim=1 factor=2" in hls3b
+    assert "#pragma HLS array_partition variable=v0 complete dim=2" in hls3b
+
+    # Test 4: Partitioning the same dimension twice should raise an error
     s4 = allo.customize(multi_dim_partition)
     s4.partition(s4.A, dim=1)
+    with pytest.raises(
+        Exception, match="Cannot partition the same array on dimension 1 twice"
+    ):
+        s4.partition(s4.A, dim=1)
+
+    # Test 5: Mixing all-dim (dim=0) with per-dim should raise an error
+    s5 = allo.customize(multi_dim_partition)
+    s5.partition(s5.A, dim=1)
     with pytest.raises(Exception, match="Cannot partition the same array twice"):
-        s4.partition(s4.A, dim=0)
+        s5.partition(s5.A, dim=0)
 
 
 def test_reshape():
