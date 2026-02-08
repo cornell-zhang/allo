@@ -319,7 +319,7 @@ class Schedule:
                 # Cannot mix all-dim partition (dim=0) with per-dim partitions
                 if existing_dim == 0 or dim == 0:
                     raise AlloValueError(
-                        f"Cannot partition the same array twice: {target_key}"
+                        f"Cannot mix all-dim partitioning (dim=0) with per-dimension partitions for array {target_key}"
                     )
                 # Cannot partition the same specific dimension twice
                 if existing_dim == dim:

@@ -436,7 +436,7 @@ def test_partition_multi_dim():
     # Test 5: Mixing all-dim (dim=0) with per-dim should raise an error
     s5 = allo.customize(multi_dim_partition)
     s5.partition(s5.A, dim=1)
-    with pytest.raises(Exception, match="Cannot partition the same array twice"):
+    with pytest.raises(Exception, match="Cannot mix all-dim partitioning"):
         s5.partition(s5.A, dim=0)
 
 
