@@ -389,6 +389,12 @@ def test_partition_multi_dim():
     ir1 = str(s1.module)
     # Should have composed layout map from two partition ops
     assert "affine_map" in ir1
+    # Verify HLS code generation emits per-dimension pragmas
+    mod1 = s1.build(target="vhls")
+    hls1 = mod1.hls_code
+    assert "#pragma HLS array_partition" in hls1
+    assert "complete dim=1" in hls1
+    assert "complete dim=2" in hls1
 
     # Test 2: Block partition on two different dimensions with factors
     s2 = allo.customize(multi_dim_partition)
@@ -396,6 +402,12 @@ def test_partition_multi_dim():
     s2.partition(s2.A, partition_type=1, dim=2, factor=4)
     ir2 = str(s2.module)
     assert "affine_map" in ir2
+    # Verify HLS code generation emits block partition pragmas for both dims
+    mod2 = s2.build(target="vhls")
+    hls2 = mod2.hls_code
+    assert "#pragma HLS array_partition" in hls2
+    assert "block dim=1 factor=4" in hls2
+    assert "block dim=2 factor=4" in hls2
 
     # Test 3: Partitioning the same dimension twice should raise an error
     s3 = allo.customize(multi_dim_partition)
