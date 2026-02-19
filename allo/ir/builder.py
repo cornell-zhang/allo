@@ -2660,6 +2660,27 @@ class ASTTransformer(ASTBuilder):
                     ASTTransformer.get_mlir_op_result(ctx, rhs),
                     ip=ctx.get_ip(),
                 )
+
+            if node.func.id == "roundeven":
+                stmts = build_stmts(ctx, node.args)
+                assert len(stmts) == 1, "roundeven expects 1 argument"
+                return ASTTransformer.build_library_op(
+                    ctx,
+                    node=node,
+                    attr="roundeven",
+                    new_args=stmts,
+                )
+
+            if node.func.id == "clampf":
+                stmts = build_stmts(ctx, node.args)
+                assert len(stmts) == 3, "clampf expects 3 arguments"
+                return ASTTransformer.build_library_op(
+                    ctx,
+                    node=node,
+                    attr="clampf",
+                    new_args=stmts,
+                )
+
             raise RuntimeError(f"Cannot resolve function `{node.func.id}`")
 
         # Check if it is a Allo dataflow region/kernel (has mappings attribute from @df.region decorator)
@@ -3107,6 +3128,10 @@ class ASTTransformer(ASTBuilder):
                         )
                 return tuple(res)
             arg_types = []
+
+            arg_results = [ASTTransformer.get_mlir_op_result(ctx, x) for x in new_args]
+            arg_types = [v.type for v in arg_results]
+
             if isinstance(new_args[0].result, OpResultList):
                 for arg in new_args:
                     if hasattr(arg, "result") and isinstance(arg.result, OpResultList):
@@ -3120,6 +3145,8 @@ class ASTTransformer(ASTBuilder):
             if all(
                 isinstance(arg_type, (F32Type, F64Type, IntegerType))
                 for arg_type in arg_types
+                and not any(isinstance(arg_type, (MemRefType, RankedTensorType)) 
+                for arg_type in arg_types)
             ):
                 opcls = {
                     "exp": math_d.ExpOp,
@@ -3133,6 +3160,8 @@ class ASTTransformer(ASTBuilder):
                     "tanh": math_d.TanhOp,
                     "power": math_d.PowFOp,
                     "abs": math_d.AbsIOp,
+                    "roundeven": math_d.RoundEvenOp,
+                    "clampf": math_d.ClampFOp,
                 }.get(fn_name)
                 return opcls(
                     *[ASTTransformer.get_mlir_op_result(ctx, x) for x in new_args],
@@ -3161,6 +3190,8 @@ class ASTTransformer(ASTBuilder):
                 "linear",
                 "view",
                 "concat",
+                "roundeven",
+                "clampf",
             }:
                 if fn_name in {"add", "sub", "mul", "div"}:
                     new_args[0] = ASTTransformer.build_broadcast_op(
@@ -3463,6 +3494,78 @@ class ASTTransformer(ASTBuilder):
                     ],
                 )
                 op = op.owner if hasattr(op, "owner") else op
+
+            elif attr in {"roundeven", "clampf"}:
+                # 1) Make sure clamp bounds are tensors if inputs are tensors/memrefs
+                if attr == "clampf":
+                    # If lo/hi are scalars, splat them to tensor/memref via fill
+                    if len(node.args[1].shape) == 0:
+                        lo_buf = ASTTransformer.build_array(ctx, dtype, shape)
+                        linalg_d.fill(
+                            ASTTransformer.get_mlir_op_result(ctx, new_args[1]),
+                            outs=[ASTTransformer.get_mlir_op_result(ctx, lo_buf)],
+                        )
+                        new_args[1] = lo_buf
+                    if len(node.args[2].shape) == 0:
+                        hi_buf = ASTTransformer.build_array(ctx, dtype, shape)
+                        linalg_d.fill(
+                            ASTTransformer.get_mlir_op_result(ctx, new_args[2]),
+                            outs=[ASTTransformer.get_mlir_op_result(ctx, hi_buf)],
+                        )
+                        new_args[2] = hi_buf
+
+                # 2) Call the same elementwise path used by exp/log
+                # (copy the exp/log generic construction exactly)
+                in_vals = [ASTTransformer.get_mlir_op_result(ctx, a) for a in new_args]
+                out_val = ASTTransformer.get_mlir_op_result(ctx, result_tensor)
+                
+                # Identity indexing maps
+                index_exprs = [AffineExpr.get_dim(d) for d in range(len(shape))]
+                affine_map = AffineMap.get(
+                    dim_count=len(shape), symbol_count=0, exprs=index_exprs
+                )
+                indexing_maps_attr = ArrayAttr.get(
+                    [AffineMapAttr.get(affine_map)] * (len(in_vals) + 1)
+                )
+                iterator_types_attr = ArrayAttr.get(
+                    [Attribute.parse("#linalg.iterator_type<parallel>")] * len(shape)
+                )
+
+                gen = linalg_d.GenericOp(
+                    indexing_maps=indexing_maps_attr,
+                    iterator_types=iterator_types_attr,
+                    inputs=in_vals,
+                    outputs=[out_val],
+                    result_tensors=[],
+                    ip=ctx.get_ip(),
+                )
+
+                # Region: elementwise math op
+                # IMPORTANT: region arg types must match the element types
+                def _elem_type(t):
+                    return t.element_type if hasattr(t, "element_type") else t
+                
+                out_ty = out_val.type
+                elem_ty = out_ty.element_type if hasattr(out_ty, "element_type") else out_ty
+
+                block_arg_types = [_elem_type(v.type) for v in in_vals] + [elem_ty]
+                block = gen.regions[0].blocks.append(*block_arg_types)
+                ctx.set_ip(block)
+
+                if attr == "roundeven":
+                    y = math_d.RoundEvenOp(block.arguments[0], ip=ctx.get_ip()).result
+                else:
+                    y = math_d.ClampFOp(
+                        block.arguments[0],
+                        block.arguments[1],
+                        block.arguments[2],
+                        ip=ctx.get_ip(),
+                    ).result
+
+                linalg_d.YieldOp([y], ip=ctx.get_ip())
+                ctx.pop_ip()
+                op = gen
+
             elif attr == "softmax":
                 # TODO: Failed to lower to LLVM, see https://reviews.llvm.org/D153422
                 # We temporarily replace SoftmaxOp with a predefined lowered function to enable LLVM execution

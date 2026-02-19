@@ -1107,6 +1107,7 @@ class TypeInferer(ASTVisitor):
                 new_args = visit_stmts(ctx, node.args)
                 node.shape = tuple()
                 node.dtype = float32 if node.func.id == "float" else int32
+
             elif node.func.id in {"min", "max"}:
                 # Python-Builtin functions
                 assert (
@@ -1117,6 +1118,20 @@ class TypeInferer(ASTVisitor):
                 res_type = typing_rule(new_args[0].dtype, new_args[1].dtype)
                 node.dtype = res_type
                 node.shape = new_args[0].shape
+            elif node.func.id == "roundeven":
+                # Builtin lowering stub; real lowering happens later in IR builder.
+                assert len(node.args) == 1, "Only support one argument for `roundeven`"
+                new_args = visit_stmts(ctx, node.args)
+                node.shape = new_args[0].shape
+                node.dtype = new_args[0].dtype
+
+            elif node.func.id == "clampf":
+                # clampf(x, lo, hi): elementwise clamp; lo/hi can be scalars.
+                assert len(node.args) == 3, "Only support three arguments for `clampf`"
+                new_args = visit_stmts(ctx, node.args)
+                node.shape = new_args[0].shape
+                node.dtype = new_args[0].dtype
+
             else:
                 raise RuntimeError(f"Unsupported function call {node.func.id}")
             return node
