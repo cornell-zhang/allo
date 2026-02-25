@@ -198,23 +198,26 @@ def test_FEATHER_GEMM():
 
     hls_test_passed, vs_passed = False, False
     if hls.is_available("vitis_hls"):
-        print("Running Vitis Synthesis and On-Board Execution...")
         s = get_scheduled_feather(AW, AH, Ty)
-        # Use "hw" mode for full hardware synthesis when ALLO_FPGA_HW_MODE is set,
-        # otherwise default to "hw_emu" (hardware emulation) for faster iteration.
-        hls_mode = "hw" if os.environ.get("ALLO_FPGA_HW_MODE") else "hw_emu"
-        csyn_mod = s.build(
+        hls_mode = os.environ.get("ALLO_HLS_MODE", "hw_emu")
+        if os.environ.get("ALLO_FPGA_HW_MODE"):
+            hls_mode = "hw"
+        print(f"Running Vitis HLS (mode={hls_mode})...")
+        hls_mod = s.build(
             target="vitis_hls",
             mode=hls_mode,
             project=f"feather_gemm_{M}_{N}_{K}_{AW}_{AH}_new.prj",
         )
-        oActs_hls = np.zeros((N, 2 * M), dtype=np.int8)
-        call_feather_kernel(iActs_no_layout, weights, oActs_hls, csyn_mod, inst)
-        oActs_hls_compare = extract_output_for_compare(oActs_hls, ref)
-
-        hls_test_passed = result_check(oActs_hls_compare, ref, True)
-
-        vs_passed = compare_sim_hls_result(oActs_compare, oActs_hls_compare)
+        if hls_mode == "csyn":
+            hls_mod()
+            hls_test_passed = True
+            print("HLS synthesis completed successfully.")
+        else:
+            oActs_hls = np.zeros((N, 2 * M), dtype=np.int8)
+            call_feather_kernel(iActs_no_layout, weights, oActs_hls, hls_mod, inst)
+            oActs_hls_compare = extract_output_for_compare(oActs_hls, ref)
+            hls_test_passed = result_check(oActs_hls_compare, ref, True)
+            vs_passed = compare_sim_hls_result(oActs_compare, oActs_hls_compare)
 
     print_summary(test_passed, hls_test_passed, vs_passed)
 
