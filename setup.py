@@ -36,6 +36,25 @@ class CMakeBuild(build_ext):
         if not llvm_build_dir:
             raise RuntimeError("LLVM_BUILD_DIR environment variable is not set")
 
+        # Pull mlir-python-extra
+        try:
+            print("Pulling external submodule (mlir-python-extra)...")
+            subprocess.check_call(
+                [
+                    "git",
+                    "submodule",
+                    "update",
+                    "--init",
+                    "--recursive",
+                    "externals/mlir-python-extra",
+                ],
+                cwd=ext.sourcedir.replace("/mlir", ""),
+            )
+        except subprocess.CalledProcessError as e:
+            print(
+                f"Warning: Failed to update mlir-python-extra. Ensure you have network access and git installed.\n{e}"
+            )
+
         # Pull external modules down if BUILD_DATAFLOW is enabled
         build_dataflow = os.environ.get("BUILD_DATAFLOW", "False")
         if build_dataflow == "True":
