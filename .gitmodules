@@ -16,3 +16,7 @@
 	url = https://github.com/Fangtangtang/shardy.git
 	branch = dev
 
+[submodule "externals/mlir-python-extra"]
+	path = externals/mlir-python-extra
+	url = https://github.com/Fangtangtang/mlir-python-extra.git
+	branch = main

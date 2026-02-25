@@ -21,7 +21,7 @@ add_mlir_public_c_api_library(MLIRAlloCAPI
   MLIRAlloConversion
 )
 
-if("$ENV{BUILD_DATAFLOW}" STREQUAL "True")
+if(BUILD_DATAFLOW)
   target_link_libraries(MLIRAlloCAPI PUBLIC
     StablehloRegister
     SdyRegister

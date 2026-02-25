@@ -75,7 +75,7 @@ set(_source_components
   MLIRPythonExtension.RegisterEverything
 )
 
-if("$ENV{BUILD_DATAFLOW}" STREQUAL "True")
+if(BUILD_DATAFLOW)
   list(APPEND _source_components
     SdyPythonSources
     SdyPythonExtensions

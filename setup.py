@@ -36,6 +36,30 @@ class CMakeBuild(build_ext):
         if not llvm_build_dir:
             raise RuntimeError("LLVM_BUILD_DIR environment variable is not set")
 
+        # Pull external modules down if BUILD_DATAFLOW is enabled
+        build_dataflow = os.environ.get("BUILD_DATAFLOW", "False")
+        if build_dataflow == "True":
+            try:
+                print(
+                    "BUILD_DATAFLOW is enabled, pulling external submodules (shardy, stablehlo)..."
+                )
+                subprocess.check_call(
+                    [
+                        "git",
+                        "submodule",
+                        "update",
+                        "--init",
+                        "--recursive",
+                        "externals/shardy",
+                        "externals/stablehlo",
+                    ],
+                    cwd=ext.sourcedir.replace("/mlir", ""),
+                )
+            except subprocess.CalledProcessError as e:
+                print(
+                    f"Warning: Failed to update submodules. Ensure you have network access and git installed.\n{e}"
+                )
+
         # Auto-detect nanobind cmake directory if not set
         nanobind_cmake_dir = os.environ.get("NANOBIND_CMAKE_DIR")
         if not nanobind_cmake_dir:
@@ -54,6 +78,8 @@ class CMakeBuild(build_ext):
             f"-Dnanobind_DIR={nanobind_cmake_dir}",
             "-DMLIR_BINDINGS_PYTHON_NB_DOMAIN=allo",
         ]
+        if build_dataflow == "True":
+            cmake_args.append("-DBUILD_DATAFLOW=ON")
 
         build_temp = os.path.join(ext.sourcedir, "build")
         if not os.path.exists(build_temp):

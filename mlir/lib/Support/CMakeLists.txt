@@ -18,7 +18,7 @@ add_mlir_library(MLIRAlloSupport
   MLIRAffineAnalysis
 )
 
-if("$ENV{BUILD_DATAFLOW}" STREQUAL "True")
+if(BUILD_DATAFLOW)
   target_link_libraries(MLIRAlloSupport PUBLIC
     SdyDialect          # Linked from Shardy
     StablehloOps        # Linked from StableHLO
