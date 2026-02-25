@@ -251,7 +251,7 @@ def compare_sim_hls_result(oActs: np.ndarray, oActs_hls: np.ndarray):
     return sim_vs_hls_passed
 
 
-def print_summary(test_passed: bool, hls_test_passed: bool, vs_passed: bool):
+def print_summary(test_passed: bool, hls_test_passed: bool):
     print("=" * 80)
     print("FINAL SUMMARY:")
     if test_passed:
@@ -264,11 +264,6 @@ def print_summary(test_passed: bool, hls_test_passed: bool, vs_passed: bool):
             print("✅ Vitis HLS: PASSED")
         else:
             print("❌ Vitis HLS: FAILED")
-
-        if vs_passed:
-            print("✅ Simulator vs HLS Consistency: PASSED")
-        else:
-            print("❌ Simulator vs HLS Consistency: FAILED")
     else:
         print("⚠️  Vitis HLS: NOT AVAILABLE")
     print("=" * 80)

@@ -27,7 +27,6 @@ jobs:
       XILINX_VITIS: /opt/xilinx/Vitis/2023.2
       XILINX_VIVADO: /opt/xilinx/Vivado/2023.2
       XILINX_HLS: /opt/xilinx/Vitis_HLS/2023.2
-      ALLO_HLS_MODE: csyn
       LANG: en_US.UTF-8
       LC_ALL: en_US.UTF-8
     steps:

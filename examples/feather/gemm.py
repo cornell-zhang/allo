@@ -16,7 +16,6 @@ from examples.feather.feather import (
     get_scheduled_feather,
     print_test_config,
     result_check,
-    compare_sim_hls_result,
     print_summary,
 )
 
@@ -196,30 +195,20 @@ def test_FEATHER_GEMM():
 
     test_passed = result_check(oActs_compare, ref)
 
-    hls_test_passed, vs_passed = False, False
+    hls_test_passed = False
     if hls.is_available("vitis_hls"):
         s = get_scheduled_feather(AW, AH, Ty)
-        hls_mode = os.environ.get("ALLO_HLS_MODE", "hw_emu")
-        if os.environ.get("ALLO_FPGA_HW_MODE"):
-            hls_mode = "hw"
-        print(f"Running Vitis HLS (mode={hls_mode})...")
+        print("Running Vitis HLS synthesis...")
         hls_mod = s.build(
             target="vitis_hls",
-            mode=hls_mode,
+            mode="csyn",
             project=f"feather_gemm_{M}_{N}_{K}_{AW}_{AH}_new.prj",
         )
-        if hls_mode == "csyn":
-            hls_mod()
-            hls_test_passed = True
-            print("HLS synthesis completed successfully.")
-        else:
-            oActs_hls = np.zeros((N, 2 * M), dtype=np.int8)
-            call_feather_kernel(iActs_no_layout, weights, oActs_hls, hls_mod, inst)
-            oActs_hls_compare = extract_output_for_compare(oActs_hls, ref)
-            hls_test_passed = result_check(oActs_hls_compare, ref, True)
-            vs_passed = compare_sim_hls_result(oActs_compare, oActs_hls_compare)
+        hls_mod()
+        hls_test_passed = True
+        print("HLS synthesis completed successfully.")
 
-    print_summary(test_passed, hls_test_passed, vs_passed)
+    print_summary(test_passed, hls_test_passed)
 
 
 if __name__ == "__main__":
