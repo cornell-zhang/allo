@@ -9,6 +9,7 @@
 #include "allo-c/Dialect/AlloTypes.h"
 #include "allo-c/Dialect/Dialects.h"
 #include "allo-c/Dialect/Registration.h"
+#include "allo-c/Translation/EmitCatapultHLS.h"
 #include "allo-c/Translation/EmitIntelHLS.h"
 #include "allo-c/Translation/EmitTapaHLS.h"
 #include "allo-c/Translation/EmitVivadoHLS.h"
@@ -140,6 +141,13 @@ static bool emitTapaHls(MlirModule &mod, nb::object fileObject) {
   nb::gil_scoped_release release;
   return mlirLogicalResultIsSuccess(
       mlirEmitTapaHls(mod, accum.getCallback(), accum.getUserData()));
+}
+
+static bool emitCatapultHls(MlirModule &mod, nb::object fileObject) {
+  PyFileAccumulator accum(fileObject, false);
+  nb::gil_scoped_release release;
+  return mlirLogicalResultIsSuccess(
+      mlirEmitCatapultHls(mod, accum.getCallback(), accum.getUserData()));
 }
 
 //===----------------------------------------------------------------------===//
@@ -331,6 +339,7 @@ NB_MODULE(_allo, m) {
   allo_m.def("emit_thls", &emitTapaHls);
   allo_m.def("emit_xhls", &emitXlsHls, nb::arg("module"),
              nb::arg("file_object"), nb::arg("use_memory") = false);
+  allo_m.def("emit_catapult", &emitCatapultHls);
 
   // LLVM backend APIs.
   allo_m.def("lower_allo_to_llvm", &lowerAlloToLLVM);

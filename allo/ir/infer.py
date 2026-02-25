@@ -4,8 +4,9 @@
 
 import ast
 import copy
-import sys
-import traceback
+import os
+import inspect
+import textwrap
 import warnings
 import sympy
 import numpy as np
@@ -40,26 +41,8 @@ from ..utils import (
     np_supported_types,
 )
 from ..memory import DTensor, Layout
-from ..logging import print_error_message
-from .utils import parse_ast, resolve_generic_types
+from .utils import parse_ast, get_func_id_from_param_types, resolve_generic_types
 
-def get_symbolic_expr(node: ast.AST, ctx: ASTContext):
-    class SymbolicChecker(ast.NodeVisitor):
-        def __init__(self, ctx: ASTContext):
-            self.ctx = ctx
-            self.alive_vars = ctx.get_alive_var_names()
-
-        def visit_Name(self, node):
-            if node.id in self.alive_vars:
-                sym = self.ctx.get_symbol(node.id)
-                if not (
-                    hasattr(sym, "dtype") and getattr(sym.dtype, "constexpr", False)
-                ):
-                    raise ValueError(
-                        "Fail to resolve the expression as symbolic expression."
-                    )
-
-    SymbolicChecker(ctx).visit(node)
 
 # pylint: disable=too-many-public-methods
 class TypeInferer(ASTVisitor):
@@ -701,29 +684,28 @@ class TypeInferer(ASTVisitor):
             )
             value.dtype = target_dtype
         elif isinstance(value, ast.Subscript) and isinstance(value.value, ast.Name):
-            # Handle slicing of a constant numpy array, e.g., np_array[i]
+            # Handle slicing of a constant numpy array, e.g., np_array[pid]
             array_name = value.value.id
             if array_name in ctx.global_vars and isinstance(
                 ctx.global_vars[array_name], np.ndarray
             ):
                 assert target_shape is not None and target_dtype is not None
                 np_array = ctx.global_vars[array_name]
-                # Evaluate the slice at compile time
+                # Evaluate slice with current context to validate shape
                 slice_expr = compile(ast.Expression(value.slice), "", "eval")
                 # pylint: disable=eval-used
                 slice_val = eval(slice_expr, ctx.global_vars)
-                # Extract the slice
                 sliced_array = np_array[slice_val]
-                # Ensure it's still a numpy array (scalar case)
                 if not isinstance(sliced_array, np.ndarray):
                     sliced_array = np.array([sliced_array], dtype=np_array.dtype)
                 assert (
                     sliced_array.shape == target_shape
                 ), f"Slice shape mismatch, got {sliced_array.shape} and {target_shape}"
-                TypeInferer.visit_constant_tensor(
-                    ctx, value, sliced_array, dtype=target_dtype
-                )
+                # Store source array for deferred evaluation in builder
+                # The slice AST is already available as value.slice
+                value.const_array_source = np_array
                 value.dtype = target_dtype
+                value.shape = target_shape
             else:
                 visit_stmt(ctx, value)
         else:
@@ -1527,11 +1509,5 @@ visit_stmt = TypeInferer()
 def visit_stmts(ctx: ASTContext, stmts: list[ast.expr]):
     results = []
     for stmt in stmts:
-        try:
-            results.append(visit_stmt(ctx, stmt))
-        # pylint: disable=broad-exception-caught
-        except Exception as e:
-            print(f"{traceback.format_exc()}")
-            print_error_message(str(e), stmt, ctx.top_func_tree)
-            sys.exit(1)
+        results.append(visit_stmt(ctx, stmt))
     return results

@@ -429,9 +429,26 @@ def generate_description_file(top, src_path, dst_path, frequency):
         desc = f.read()
     desc = desc.replace("top", top)
     desc = json.loads(desc)
+    # Use a config file for HLS options (--hls.* can only be in config files)
+    desc["containers"][0]["accelerators"][0]["clflags"] = "--config hls.cfg"
+    # Set kernel frequency at link time for placement & routing
     desc["containers"][0]["ldclflags"] += f"  --kernel_frequency {frequency}"
     with open(dst_path, "w", encoding="utf-8") as outfile:
         json.dump(desc, outfile, indent=4)
+
+    # Generate HLS pre-tcl script to set clock
+    # This bypasses v++ option parsing validation issues
+    assert frequency > 0, "Frequency must be positive"
+    clock_period_ns = 1000.0 / frequency
+    hls_tcl_path = dst_path.replace("description.json", "hls_pre.tcl")
+    with open(hls_tcl_path, "w", encoding="utf-8") as tcl_file:
+        tcl_file.write(f"create_clock -period {clock_period_ns:.4f} -name default\n")
+
+    # Generate HLS config file referencing the pre-tcl script
+    hls_cfg_path = dst_path.replace("description.json", "hls.cfg")
+    with open(hls_cfg_path, "w", encoding="utf-8") as cfg_file:
+        cfg_file.write("[hls]\n")
+        cfg_file.write("pre_tcl=hls_pre.tcl\n")
 
 
 def update_makefile(file_name, ext_libs):

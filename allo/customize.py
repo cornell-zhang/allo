@@ -2,8 +2,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # pylint: disable=no-name-in-module, too-many-nested-blocks, too-many-instance-attributes
 
+import sys
 import re
 import inspect
+import textwrap
+import traceback
 import copy
 from dataclasses import dataclass
 from functools import wraps
@@ -68,6 +71,7 @@ from .backend.hls import HLSModule
 from .backend.xls import XLSCCModule
 from .library import KERNEL2SCHEDULE
 from .library.systolic import check_systolic, prepare_systolic
+from .logging import print_error_message
 
 
 def getsourcefile(obj):
@@ -308,12 +312,20 @@ class Schedule:
         # Check for duplicate partitioning
         target_key = f"{target.func}:{target.name}"
         if target_key in self.partitioned_arrays:
-            for item in self.partitioned_arrays[target_key]:
-                if item[0] == Partition.Complete and item[1] == 0:
-                    return  # Already completely partitioned
-                raise AlloValueError(
-                    f"Cannot partition the same array twice: {target_key}"
-                )
+            for existing_type, existing_dim, _ in self.partitioned_arrays[target_key]:
+                # If already completely partitioned on all dims, nothing more to do
+                if existing_type == Partition.Complete and existing_dim == 0:
+                    return
+                # Cannot mix all-dim partition (dim=0) with per-dim partitions
+                if existing_dim == 0 or dim == 0:
+                    raise AlloValueError(
+                        f"Cannot mix all-dim partitioning (dim=0) with per-dimension partitions for array {target_key}"
+                    )
+                # Cannot partition the same specific dimension twice
+                if existing_dim == dim:
+                    raise AlloValueError(
+                        f"Cannot partition the same array on dimension {dim} twice: {target_key}"
+                    )
 
         # Collect all buffers that need partitioning via propagation
         buffers_to_partition = self._collect_partition_targets(target)
@@ -1282,7 +1294,15 @@ class Schedule:
                 use_memory=use_memory,
                 mode=mode,
             )
-        if target in {"vhls", "vivado_hls", "vitis_hls", "pynq", "tapa", "ihls"}:
+        if target in {
+            "vhls",
+            "vivado_hls",
+            "vitis_hls",
+            "pynq",
+            "tapa",
+            "ihls",
+            "catapult",
+        }:
             match target:
                 case "vitis_hls":
                     platform = "vitis_hls"
@@ -1292,6 +1312,8 @@ class Schedule:
                     platform = "intel_hls"
                 case "pynq":
                     platform = "pynq"
+                case "catapult":
+                    platform = "catapult"
                 case _:
                     platform = "vivado_hls"
             return HLSModule(
@@ -1345,7 +1367,20 @@ def customize(
         typing_rule_set=typing_rule_set,
         verbose=verbose,
     )
-    tree = TypeInferer()(ctx_type_inf, tree)
+    try:
+        tree = TypeInferer()(ctx_type_inf, tree)
+    # pylint: disable=broad-exception-caught
+    except Exception as e:
+        print(f"{traceback.format_exc()}")
+        # Use the current node being visited for accurate error location,
+        # falling back to tree.body[0] if not available
+        stmt = getattr(ctx_type_inf, "current_node", None)
+        if stmt is None:
+            if not tree.body:
+                raise RuntimeError(f"Type inference failed on empty module: {e}") from e
+            stmt = tree.body[0]
+        print_error_message(str(e), stmt, tree)
+        sys.exit(1)
     # Start building IR
     ctx = ASTContext(
         tree=tree,
@@ -1358,7 +1393,20 @@ def customize(
         enable_tensor=enable_tensor,
         verbose=verbose,
     )
-    module = ASTTransformer()(ctx, tree, file_name)
+    try:
+        module = ASTTransformer()(ctx, tree, file_name)
+    # pylint: disable=broad-exception-caught
+    except Exception as e:
+        print(f"{traceback.format_exc()}")
+        # Use the current node being visited for accurate error location,
+        # falling back to tree.body[0] if not available
+        stmt = getattr(ctx, "current_node", None)
+        if stmt is None:
+            if not tree.body:
+                raise RuntimeError(f"IR building failed on empty module: {e}") from e
+            stmt = tree.body[0]
+        print_error_message(str(e), stmt, tree)
+        sys.exit(1)
     func_instances = {
         orig_name: {
             dim: f"{orig_name}_{str(freeze_list(predicate_tag))}"

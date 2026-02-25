@@ -93,14 +93,16 @@ static SmallString<16> getTypeName(Type valType) {
     // Check if the base type is a shaped type (tensor/array) - stream of blocks
     if (auto baseShapedType =
             llvm::dyn_cast<ShapedType>(streamType.getBaseType())) {
-      // This is a stream of blocks: Stream[elementType[dims...], depth]
-      std::string blockTypeName =
-          std::string(getTypeName(baseShapedType.getElementType()).str());
+      // Stream of blocks using hls::vector: Stream[elementType[dims...], depth]
+      // Flatten all dimensions into a single vector size
+      int64_t vectorSize = 1;
       for (auto dim : baseShapedType.getShape()) {
-        blockTypeName += "[" + std::to_string(dim) + "]";
+        vectorSize *= dim;
       }
-      return SmallString<16>("hls::stream_of_blocks< " + blockTypeName + ", " +
-                             std::to_string(streamType.getDepth()) + " >");
+      std::string elementTypeName =
+          std::string(getTypeName(baseShapedType.getElementType()).str());
+      return SmallString<16>("hls::stream< hls::vector< " + elementTypeName +
+                             ", " + std::to_string(vectorSize) + " > >");
     } else {
       // Regular stream of scalars: Stream[elementType, depth]
       return SmallString<16>(
@@ -484,6 +486,9 @@ public:
   bool visitOp(arith::RemSIOp op) { return emitter.emitBinary(op, "%"), true; }
   bool visitOp(arith::DivUIOp op) { return emitter.emitBinary(op, "/"), true; }
   bool visitOp(arith::RemUIOp op) { return emitter.emitBinary(op, "%"), true; }
+  bool visitOp(arith::FloorDivSIOp op) {
+    return emitter.emitBinary(op, "/"), true;
+  }
   bool visitOp(arith::MaxSIOp op) {
     return emitter.emitMaxMin(op, "max"), true;
   }
@@ -1694,31 +1699,35 @@ void allo::hls::VhlsModuleEmitter::emitStreamConstruct(StreamConstructOp op) {
   if (auto streamType = llvm::dyn_cast<StreamType>(result.getType())) {
     if (auto baseShapedType =
             llvm::dyn_cast<ShapedType>(streamType.getBaseType())) {
-      // This is a stream of blocks: Stream[elementType[dims...], depth]
+      // Stream of blocks using hls::vector: Stream[elementType[dims...], depth]
       std::string varName = std::string(addName(result, false).str());
+
+      // Compute flattened vector size
+      int64_t vectorSize = 1;
+      for (auto dim : baseShapedType.getShape()) {
+        vectorSize *= dim;
+      }
 
       // Emit comment describing the block structure
       indent();
-      os << "// Stream of blocks: each block is "
+      os << "// Stream of vectors: each vector packs "
          << getTypeName(baseShapedType.getElementType()) << " array";
       for (auto dim : baseShapedType.getShape()) {
         os << "[" << dim << "]";
       }
-      os << "\n";
+      os << " into hls::vector<" << getTypeName(baseShapedType.getElementType())
+         << ", " << vectorSize << ">\n";
 
-      // Emit the block type typedef
+      // Emit the stream declaration with vector type
       indent();
-      os << "typedef " << getTypeName(baseShapedType.getElementType()) << " "
-         << varName << "_block_t";
-      for (auto dim : baseShapedType.getShape()) {
-        os << "[" << dim << "]";
-      }
-      os << ";\n";
+      os << "hls::stream< hls::vector< "
+         << getTypeName(baseShapedType.getElementType()) << ", " << vectorSize
+         << " > > " << varName << ";\n";
 
-      // Emit the stream_of_blocks declaration
+      // Emit depth pragma
       indent();
-      os << "hls::stream_of_blocks< " << varName << "_block_t, "
-         << streamType.getDepth() << " > " << varName << ";";
+      os << "#pragma HLS stream variable=" << varName
+         << " depth=" << streamType.getDepth();
       emitInfoAndNewLine(op);
       return;
     }
@@ -1763,6 +1772,12 @@ void allo::hls::VhlsModuleEmitter::emitStreamGet(StreamGetOp op) {
     std::string streamName = std::string(getName(stream).str());
     std::string resultName = std::string(addName(result, false).str());
 
+    // Compute flattened vector size
+    int64_t vectorSize = 1;
+    for (auto dim : baseShapedType.getShape()) {
+      vectorSize *= dim;
+    }
+
     // 1. Declare the local result array
     indent();
     os << getTypeName(baseShapedType.getElementType()) << " " << resultName;
@@ -1771,26 +1786,17 @@ void allo::hls::VhlsModuleEmitter::emitStreamGet(StreamGetOp op) {
     }
     os << ";\n";
 
-    // 2. Create a scope to manage lock lifetime
+    // 2. Create a scope for the vector read
     indent();
     os << "{\n";
     addIndent();
 
-    // 3. Define the Block Type (e.g., typedef int16_t block_t[4][4])
-    // The lock template MUST be the array type per HLS Style Guide
+    // 3. Read vector from stream
     indent();
-    os << "typedef " << getTypeName(baseShapedType.getElementType())
-       << " _block_t";
-    for (auto dim : baseShapedType.getShape()) {
-      os << "[" << dim << "]";
-    }
-    os << ";\n";
+    os << "hls::vector< " << getTypeName(baseShapedType.getElementType())
+       << ", " << vectorSize << " > _vec = " << streamName << ".read();\n";
 
-    // 4. Acquire the read lock
-    indent();
-    os << "hls::read_lock<_block_t> _read_block(" << streamName << ");\n";
-
-    // 5. Generate nested loops to copy data from the block to the local array
+    // 4. Generate nested loops to unpack vector elements into local array
     unsigned dimIdx = 0;
     for (auto dim : baseShapedType.getShape()) {
       indent();
@@ -1799,16 +1805,25 @@ void allo::hls::VhlsModuleEmitter::emitStreamGet(StreamGetOp op) {
       addIndent();
     }
 
+    // Compute linearized index for vector access
     indent();
     os << resultName;
     for (unsigned i = 0; i < baseShapedType.getRank(); ++i) {
       os << "[_iv" << i << "]";
     }
-    os << " = _read_block";
-    for (unsigned i = 0; i < baseShapedType.getRank(); ++i) {
-      os << "[_iv" << i << "]";
+    os << " = _vec[";
+    // Build linearized index expression
+    unsigned rank = baseShapedType.getRank();
+    for (unsigned i = 0; i < rank; ++i) {
+      if (i > 0)
+        os << " + ";
+      os << "_iv" << i;
+      // Multiply by stride (product of remaining dimensions)
+      for (unsigned j = i + 1; j < rank; ++j) {
+        os << " * " << baseShapedType.getDimSize(j);
+      }
     }
-    os << ";\n";
+    os << "];\n";
 
     // Close loops
     for (unsigned i = 0; i < baseShapedType.getRank(); ++i) {
@@ -1817,10 +1832,10 @@ void allo::hls::VhlsModuleEmitter::emitStreamGet(StreamGetOp op) {
       os << "}\n";
     }
 
-    // 6. Close scope (destructor releases block back to pool)
+    // Close scope
     reduceIndent();
     indent();
-    os << "} // read_lock released";
+    os << "}";
     emitInfoAndNewLine(op);
     return;
   }
@@ -1880,25 +1895,23 @@ void allo::hls::VhlsModuleEmitter::emitStreamPut(StreamPutOp op) {
     std::string streamName = std::string(getName(stream).str());
     std::string valueName = std::string(getName(value).str());
 
-    // 1. Create scope to manage lock lifetime
+    // Compute flattened vector size
+    int64_t vectorSize = 1;
+    for (auto dim : baseShapedType.getShape()) {
+      vectorSize *= dim;
+    }
+
+    // 1. Create scope for vector write
     indent();
     os << "{\n";
     addIndent();
 
-    // 2. Define the Block Type (matching the stream structure)
+    // 2. Declare vector to pack data into
     indent();
-    os << "typedef " << getTypeName(baseShapedType.getElementType())
-       << " _block_t";
-    for (auto dim : baseShapedType.getShape()) {
-      os << "[" << dim << "]";
-    }
-    os << ";\n";
+    os << "hls::vector< " << getTypeName(baseShapedType.getElementType())
+       << ", " << vectorSize << " > _vec;\n";
 
-    // 3. Acquire the write lock
-    indent();
-    os << "hls::write_lock<_block_t> _write_block(" << streamName << ");\n";
-
-    // 4. Generate nested loops to copy data from the value array into the block
+    // 3. Generate nested loops to pack array elements into vector
     unsigned dimIdx = 0;
     for (auto dim : baseShapedType.getShape()) {
       indent();
@@ -1907,12 +1920,20 @@ void allo::hls::VhlsModuleEmitter::emitStreamPut(StreamPutOp op) {
       addIndent();
     }
 
+    // Compute linearized index for vector access
     indent();
-    os << "_write_block";
-    for (unsigned i = 0; i < baseShapedType.getRank(); ++i) {
-      os << "[_iv" << i << "]";
+    os << "_vec[";
+    unsigned rank = baseShapedType.getRank();
+    for (unsigned i = 0; i < rank; ++i) {
+      if (i > 0)
+        os << " + ";
+      os << "_iv" << i;
+      // Multiply by stride (product of remaining dimensions)
+      for (unsigned j = i + 1; j < rank; ++j) {
+        os << " * " << baseShapedType.getDimSize(j);
+      }
     }
-    os << " = " << valueName;
+    os << "] = " << valueName;
     for (unsigned i = 0; i < baseShapedType.getRank(); ++i) {
       os << "[_iv" << i << "]";
     }
@@ -1925,10 +1946,14 @@ void allo::hls::VhlsModuleEmitter::emitStreamPut(StreamPutOp op) {
       os << "}\n";
     }
 
-    // 5. Close scope (destructor pushes block into the stream)
+    // 4. Write vector to stream
+    indent();
+    os << streamName << ".write(_vec);\n";
+
+    // Close scope
     reduceIndent();
     indent();
-    os << "} // write_lock released";
+    os << "}";
     emitInfoAndNewLine(op);
     return;
   }
@@ -3009,7 +3034,7 @@ void allo::hls::VhlsModuleEmitter::emitModule(ModuleOp module) {
 #include <ap_int.h>
 #include <hls_math.h>
 #include <hls_stream.h>
-#include <hls_streamofblocks.h>
+#include <hls_vector.h>
 #include <math.h>
 #include <stdint.h>
 using namespace std;

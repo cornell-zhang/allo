@@ -26,7 +26,10 @@ def print_error_message(error, stmt, tree):
         print(
             f"Warning: '{source_stmt}' not found in source lines, the location may be incorrect"
         )
-    line_number = stmt.lineno
+    # Calculate the correct line number based on target_idx and the tree's starting line
+    # tree.body[0].lineno gives the starting line of the first node in the tree
+    starting_line = tree.body[0].lineno if tree.body else 1
+    line_number = starting_line + target_idx
     start_offset = min(target_idx, 5)
     start_idx = max(0, target_idx - 5)
     code_lines = source_code.splitlines()[start_idx : target_idx + 5]

@@ -18,6 +18,10 @@ from allo.backend.aie import is_available
 )
 def test_pingpong_gemm(M, N, K, Pm, Pn, Pk, TyI, TyO):
     top, mapping_primitives = GEMM(M, N, K, Pm, Pn, Pk, TyI, TyO)
+    assert (TyI is int4 or TyI is int8) and TyO is int8, (
+        "This test only supports these data type combinations. "
+        "Please refer to examples/aie/gemm.py for gemm examples with other data types."
+    )
 
     if is_available():
         os.environ["ENABLE_AGGRESSIVE_PORT_UTILIZATION_PATCH"] = "1"

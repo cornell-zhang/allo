@@ -6,7 +6,7 @@ import tempfile
 import numpy as np
 import pytest
 import allo
-from allo.ir.types import bool, int8, int32, float32, index, ConstExpr
+from allo.ir.types import bool, int8, int32, uint32, float32, index, ConstExpr
 import allo.backend.hls as hls
 import io
 from contextlib import redirect_stdout
@@ -401,6 +401,33 @@ def test_rhs_binaryop():
     np.testing.assert_allclose(mod(), kernel())
 
 
+def test_index_shift():
+    def kernel(v: index) -> index[9]:
+        res: index[9] = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+        v1: int32 = 2
+        v2: uint32 = 2
+        v3: index = 2
+        # Shift rules
+        res[0] = v << v1
+        res[1] = v << v2
+        res[2] = v << v3
+        # In Allo, RShift is also supported for index
+        res[3] = v >> v1
+        res[4] = v >> v2
+        res[5] = v >> v3
+        # Bitwise rules
+        res[6] = v & v3
+        res[7] = v | v3
+        res[8] = v ^ v3
+        return res
+
+    s = allo.customize(kernel)
+    print(s.module)
+    mod = s.build()
+    np_v = 8
+    np.testing.assert_allclose(mod(np_v), kernel(np_v))
+
+
 def test_nested_func_def():
     def kernel(A: int32[10]) -> int32[10]:
         B: int32[10] = 0
@@ -690,7 +717,7 @@ def test_build_none_return():
     def kernel7(A: int32[32]) -> int32:
         pass
 
-    with pytest.raises(RuntimeError):
+    with pytest.raises(SystemExit):
         s7 = allo.customize(kernel7)
 
 

@@ -44,6 +44,8 @@ Allo is an Accelerator Design Language (ADL) and compiler that facilitates the c
    :maxdepth: 1
    :caption: Deep Dive
 
+   dive/frontend_syntax.rst
+   dive/dataflow.rst
    gallery/dive_01_data_types.rst
    gallery/dive_02_template.rst
    gallery/dive_03_composition.rst
@@ -59,6 +61,7 @@ Allo is an Accelerator Design Language (ADL) and compiler that facilitates the c
 
    backends/llvm.rst
    backends/vitis.rst
+   backends/catapult.rst
    backends/tapa.rst
    backends/xls.rst
    backends/simulator.rst

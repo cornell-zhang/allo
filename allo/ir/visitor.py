@@ -122,6 +122,8 @@ class ASTContext:
         # used for tensor mapping
         self.rank = 0
         self.mapping = None
+        # track the current AST node being visited for error reporting
+        self.current_node = None
 
     def copy(self):
         ctx = ASTContext(
@@ -146,6 +148,7 @@ class ASTContext:
         ctx.rank = self.rank
         ctx.mapping = self.mapping
         ctx.meta_fors_to_unroll = self.meta_fors_to_unroll
+        ctx.current_node = self.current_node
         if hasattr(self, "func_suffix"):
             ctx.func_suffix = self.func_suffix
         return ctx
@@ -250,6 +253,8 @@ class ASTVisitor:
     def __call__(self, ctx, node):
         if node is None:
             return None
+        # Track the current node being visited for error reporting
+        ctx.current_node = node
         method = getattr(type(self), "visit_" + node.__class__.__name__, None)
         if method is None:
             error_msg = f'Unsupported node "{node.__class__.__name__}"'

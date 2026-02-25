@@ -5,12 +5,9 @@
 
 import gc
 import ast
-import sys
 import copy
 import inspect
 import itertools
-import textwrap
-import traceback
 import numpy as np
 from .._mlir.ir import (
     OpView,
@@ -23,6 +20,7 @@ from .._mlir.ir import (
     ShapedType,
     IntegerType,
     F32Type,
+    F64Type,
     UnitAttr,
     IntegerAttr,
     StringAttr,
@@ -87,7 +85,6 @@ from ..utils import (
     construct_kernel_name,
     allo_to_numpy_dtype,
 )
-from ..logging import print_error_message
 
 
 class ASTBuilder(ASTVisitor):
@@ -96,6 +93,8 @@ class ASTBuilder(ASTVisitor):
             ctx.file_name = file_name
         if node is None:
             return None
+        # Track the current node being visited for error reporting
+        ctx.current_node = node
         method = getattr(self, "build_" + node.__class__.__name__, None)
         if method is None:
             error_msg = f'Unsupported node "{node.__class__.__name__}"'
@@ -1015,8 +1014,20 @@ class ASTTransformer(ASTBuilder):
         if val is not None:
             rhs = val
             conversion_enabled = idx is None
+        elif hasattr(value, "const_array_source"):
+            # Deferred constant array slicing - evaluate now with current pid context
+            np_array = value.const_array_source
+            slice_expr = compile(ast.Expression(value.slice), "", "eval")
+            # pylint: disable=eval-used
+            slice_val = eval(slice_expr, ctx.global_vars)
+            sliced_array = np_array[slice_val]
+            if not isinstance(sliced_array, np.ndarray):
+                sliced_array = np.array([sliced_array], dtype=np_array.dtype)
+            rhs = ASTTransformer.build_constant_tensor(
+                ctx, target, sliced_array, dtype=target.dtype, shape=target.shape
+            )
         elif hasattr(value, "np_values"):
-            # - np array -> constant tensor
+            # - np array -> constant tensor (non-sliced case)
             rhs = ASTTransformer.build_constant_tensor(
                 ctx, target, value.np_values, dtype=target.dtype, shape=target.shape
             )
@@ -2029,6 +2040,8 @@ class ASTTransformer(ASTBuilder):
                                     new_ctx.global_vars.update(
                                         {"df.p" + str(axis): val}
                                     )
+                                # Set the current rank for np_values_for_pid lookup
+                                new_ctx.rank = dim
                                 node.name = construct_kernel_name(orig_name, dim)
                                 # Append suffix from parent context to ensure uniqueness
                                 if hasattr(ctx, "func_suffix"):
@@ -3107,7 +3120,8 @@ class ASTTransformer(ASTBuilder):
                     if hasattr(arg, "result") and hasattr(arg.result, "type"):
                         arg_types.append(arg.result.type)
             if all(
-                isinstance(arg_type, (F32Type, IntegerType)) for arg_type in arg_types
+                isinstance(arg_type, (F32Type, F64Type, IntegerType))
+                for arg_type in arg_types
             ):
                 opcls = {
                     "exp": math_d.ExpOp,
@@ -3115,6 +3129,7 @@ class ASTTransformer(ASTBuilder):
                     "log2": math_d.Log2Op,
                     "log10": math_d.Log10Op,
                     "sqrt": math_d.SqrtOp,
+                    "sin": math_d.SinOp,
                     "cos": math_d.CosOp,
                     "tan": math_d.TanOp,
                     "tanh": math_d.TanhOp,
@@ -3740,11 +3755,5 @@ build_stmt = ASTTransformer()
 def build_stmts(ctx: ASTContext, stmts: list[ast.stmt]):
     results = []
     for stmt in stmts:
-        try:
-            results.append(build_stmt(ctx, stmt))
-        # pylint: disable=broad-exception-caught
-        except Exception as e:
-            print(f"{traceback.format_exc()}")
-            print_error_message(str(e), stmt, ctx.top_func_tree)
-            sys.exit(1)
+        results.append(build_stmt(ctx, stmt))
     return results

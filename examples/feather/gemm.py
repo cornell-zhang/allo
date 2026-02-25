@@ -200,9 +200,12 @@ def test_FEATHER_GEMM():
     if hls.is_available("vitis_hls"):
         print("Running Vitis Synthesis and On-Board Execution...")
         s = get_scheduled_feather(AW, AH, Ty)
+        # Use "hw" mode for full hardware synthesis when ALLO_FPGA_HW_MODE is set,
+        # otherwise default to "hw_emu" (hardware emulation) for faster iteration.
+        hls_mode = "hw" if os.environ.get("ALLO_FPGA_HW_MODE") else "hw_emu"
         csyn_mod = s.build(
             target="vitis_hls",
-            mode="hw_emu",
+            mode=hls_mode,
             project=f"feather_gemm_{M}_{N}_{K}_{AW}_{AH}_new.prj",
         )
         oActs_hls = np.zeros((N, 2 * M), dtype=np.int8)
