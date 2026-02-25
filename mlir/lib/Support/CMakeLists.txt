@@ -7,8 +7,6 @@ add_mlir_library(MLIRAlloSupport
   ${globbed}
 
   LINK_LIBS PUBLIC
-  SdyDialect          # Linked from Shardy
-  StablehloOps        # Linked from StableHLO
   MLIRIR
   MLIRParser
   MLIRPass
@@ -18,4 +16,11 @@ add_mlir_library(MLIRAlloSupport
   MLIRMemRefDialect
   MLIRAnalysis
   MLIRAffineAnalysis
+)
+
+if("$ENV{BUILD_DATAFLOW}" STREQUAL "True")
+  target_link_libraries(MLIRAlloSupport PUBLIC
+    SdyDialect          # Linked from Shardy
+    StablehloOps        # Linked from StableHLO
   )
+endif()

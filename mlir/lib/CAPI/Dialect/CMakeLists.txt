@@ -19,7 +19,12 @@ add_mlir_public_c_api_library(MLIRAlloCAPI
   MLIRAllo
   MLIRAlloPasses
   MLIRAlloConversion
-  StablehloRegister
-  SdyRegister
-  SdyTransformsPasses
+)
+
+if("$ENV{BUILD_DATAFLOW}" STREQUAL "True")
+  target_link_libraries(MLIRAlloCAPI PUBLIC
+    StablehloRegister
+    SdyRegister
+    SdyTransformsPasses
   )
+endif()

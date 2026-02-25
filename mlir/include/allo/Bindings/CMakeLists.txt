@@ -73,11 +73,16 @@ set(_source_components
   AlloMLIRPythonExtensions
   MLIRPythonSources
   MLIRPythonExtension.RegisterEverything
-  SdyPythonSources
-  SdyPythonExtensions
-  MpmdPythonSources
-  MpmdPythonExtensions
 )
+
+if("$ENV{BUILD_DATAFLOW}" STREQUAL "True")
+  list(APPEND _source_components
+    SdyPythonSources
+    SdyPythonExtensions
+    MpmdPythonSources
+    MpmdPythonExtensions
+  )
+endif()
 
 add_mlir_python_common_capi_library(AlloMLIRAggregateCAPI
   INSTALL_COMPONENT AlloMLIRPythonModules
