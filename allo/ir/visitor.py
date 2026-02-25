@@ -70,7 +70,7 @@ class ASTContext:
         self.global_vars = global_vars
         self.mlir_ctx = mlir_ctx
         self.file_name = None
-        register_dialect(mlir_ctx, dataflow=True)
+        register_dialect(mlir_ctx)
         # map from function name to function arguments
         self.func_args = {} if func_args is None else func_args
         self.func_id = None

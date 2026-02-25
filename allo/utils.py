@@ -20,7 +20,12 @@ from ._mlir.ir import (
 )
 from ._mlir.exceptions import DTypeWarning
 from ._mlir.runtime import to_numpy
-from ._mlir.dialects import allo as allo_d, sdy as sdy_d
+from ._mlir.dialects import allo as allo_d
+
+try:
+    from ._mlir.dialects import sdy as sdy_d
+except ImportError:
+    sdy_d = None
 from .ir.types import (
     AlloType,
     Int,
@@ -586,4 +591,9 @@ def allo_to_numpy_dtype(allo_type: AlloType) -> npt.DTypeLike:
 def register_dialect(ctx: Context, dataflow: bool = False):
     allo_d.register_dialect(ctx)
     if dataflow:
+        if sdy_d is None:
+            raise RuntimeError(
+                "Dataflow build is required to register the SDY dialect. "
+                "Please compile with BUILD_DATAFLOW=1."
+            )
         sdy_d.register_dialect(ctx)
