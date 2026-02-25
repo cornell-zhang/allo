@@ -149,6 +149,13 @@ def parse_ast(src, verbose=False):
     return tree
 
 
+def get_func_id_from_param_types(param_types):
+    for param_type in param_types:
+        if isinstance(param_type, str):
+            return param_type
+    return None
+
+
 def get_all_df_kernels(s):
     funcs = []
     for func in s.module.body.operations:
