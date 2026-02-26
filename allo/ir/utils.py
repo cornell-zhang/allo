@@ -28,9 +28,11 @@ from .types import AlloType, Int, UInt, Fixed, UFixed, Index, Float
 from .symbol_resolver import ASTResolver
 
 
-def _get_global_vars(
-    _func, skip={"get_global_vars", "customize", "build"}, stop={"<module>"}
-):
+def _get_global_vars(_func, skip=None, stop=None):
+    if skip is None:
+        skip = {"get_global_vars", "customize", "build"}
+    if stop is None:
+        stop = {"<module>"}
     if isinstance(_func, Callable):
         # Discussions: https://github.com/taichi-dev/taichi/issues/282
         global_vars = _func.__globals__.copy()
