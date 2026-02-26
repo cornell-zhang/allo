@@ -13,14 +13,20 @@ jobs:
   fpga_test:
     runs-on: [brg-zhang-xcel]
     container:
-      image: zzzdavid/allo-fpga:latest
+      image: chhzh123/allo:latest
       options: >-
-        -v /opt/xilinx:/opt/xilinx
+        -v /opt/xilinx/Vitis:/opt/xilinx/Vitis
+        -v /opt/xilinx/Vitis_HLS:/opt/xilinx/Vitis_HLS
+        -v /opt/xilinx/Vivado:/opt/xilinx/Vivado
+        -v /opt/xilinx/platforms:/opt/xilinx/platforms
     env:
       XILINXD_LICENSE_FILE: 2100@en-license-05.coecis.cornell.edu
       VITIS: /opt/xilinx/Vitis/2023.2
       HLS_INCLUDE: /opt/xilinx/Vitis_HLS/2023.2/include
       XDEVICE: /opt/xilinx/platforms/xilinx_u280_gen3x16_xdma_1_202211_1/xilinx_u280_gen3x16_xdma_1_202211_1.xpfm
+      XILINX_VITIS: /opt/xilinx/Vitis/2023.2
+      XILINX_VIVADO: /opt/xilinx/Vivado/2023.2
+      XILINX_HLS: /opt/xilinx/Vitis_HLS/2023.2
       LANG: en_US.UTF-8
       LC_ALL: en_US.UTF-8
     steps:
@@ -44,7 +50,7 @@ jobs:
       shell: bash
       run: |
         source activate allo
-        source /opt/xilinx/xrt/setup.sh
-        source $VITIS/settings64.sh
+        export LLVM_BUILD_DIR=/root/llvm-project/build
+        export PATH=/opt/xilinx/Vitis/2023.2/bin:/opt/xilinx/Vivado/2023.2/bin:/opt/xilinx/Vitis_HLS/2023.2/bin:$PATH
         cd examples/feather
-        ALLO_FPGA_HW_MODE=1 python gemm.py
+        python gemm.py
