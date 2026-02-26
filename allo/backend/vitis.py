@@ -1,6 +1,7 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import re
 import json
 import numpy as np
 
@@ -375,6 +376,11 @@ def codegen_host(top, module, num_output_args=0):
 
 
 def postprocess_hls_code(hls_code, top=None, pragma=True):
+    # Strip MLIR SSA-name prefix '%' from all identifiers (e.g. %alloc -> alloc).
+    # The VHLS emitter sometimes emits raw MLIR value names carrying the '%' sigil,
+    # which is illegal in C++. '%' followed by a word char is exclusively the MLIR
+    # convention; the C++ modulo operator is always followed by a non-word char.
+    hls_code = re.sub(r'%(\w)', r'\1', hls_code)
     out_str = ""
     func_decl = False
     has_endif = False
