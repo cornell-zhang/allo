@@ -41,7 +41,9 @@ bool applyLowerMemCopyOps(ModuleOp &mod) {
       MemRefType srcType = llvm::dyn_cast<MemRefType>(source.getType());
       MemRefType dstType = llvm::dyn_cast<MemRefType>(target.getType());
 
-      if (!srcType || !dstType) {return false;}
+      if (!srcType || !dstType) {
+        return false;
+      }
 
       auto srcShape = srcType.getShape();
       auto dstShape = dstType.getShape();
@@ -55,7 +57,9 @@ bool applyLowerMemCopyOps(ModuleOp &mod) {
       for (int64_t val : dstShape)
         dstSize *= val;
 
-      if (srcSize != dstSize) {return false;}
+      if (srcSize != dstSize) {
+        return false;
+      }
 
       OpBuilder rewriter(op);
       Location loc = op.getLoc();
@@ -69,8 +73,10 @@ bool applyLowerMemCopyOps(ModuleOp &mod) {
         affine::buildAffineLoopNest(
             rewriter, loc, lbs, ubs, steps,
             [&](OpBuilder &nestedBuilder, Location nestedLoc, ValueRange ivs) {
-              Value val = nestedBuilder.create<memref::LoadOp>(nestedLoc, source, ivs);
-              nestedBuilder.create<memref::StoreOp>(nestedLoc, val, target, ivs);
+              Value val =
+                  nestedBuilder.create<memref::LoadOp>(nestedLoc, source, ivs);
+              nestedBuilder.create<memref::StoreOp>(nestedLoc, val, target,
+                                                    ivs);
             });
       } else {
         // General case: flat loops with linear indices mapped from target shape
@@ -115,12 +121,14 @@ bool applyLowerMemCopyOps(ModuleOp &mod) {
               }
 
               // Load using flat linear index from flat source
-              Value val = nestedBuilder.create<memref::LoadOp>(nestedLoc, flatSrc, ValueRange{dstIdx});
+              Value val = nestedBuilder.create<memref::LoadOp>(
+                  nestedLoc, flatSrc, ValueRange{dstIdx});
               // Store using flat linear index into flat target
-              nestedBuilder.create<memref::StoreOp>(nestedLoc, val, flatDst, ValueRange{dstIdx});
+              nestedBuilder.create<memref::StoreOp>(nestedLoc, val, flatDst,
+                                                    ValueRange{dstIdx});
             });
       }
-      
+
       op->erase();
     }
   }

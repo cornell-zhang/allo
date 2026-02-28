@@ -261,7 +261,6 @@ static MlirOperation getNextUseInFunction(MlirValue value, MlirOperation curUse,
   return wrap(result);
 }
 
-
 //===----------------------------------------------------------------------===//
 // Allo Python module definition
 //===----------------------------------------------------------------------===//
