@@ -30,11 +30,6 @@
 #include "allo/Dialect/AlloDialect.h"
 #include "mlir/InitAllDialects.h"
 
-#ifdef BUILD_DATAFLOW
-#include "shardy/dialect/sdy/ir/register.h"
-#include "shardy/dialect/sdy/transforms/passes.h"
-#include "stablehlo/dialect/Register.h"
-#endif
 
 void alloMlirRegisterAllDialects(MlirContext context) {
   mlir::DialectRegistry registry;
@@ -43,10 +38,6 @@ void alloMlirRegisterAllDialects(MlirContext context) {
                   mlir::affine::AffineDialect, mlir::math::MathDialect,
                   mlir::memref::MemRefDialect, mlir::pdl::PDLDialect,
                   mlir::transform::TransformDialect>();
-#ifdef BUILD_DATAFLOW
-  mlir::stablehlo::registerAllDialects(registry);
-  mlir::sdy::registerAllDialects(registry);
-#endif
   unwrap(context)->appendDialectRegistry(registry);
   unwrap(context)->loadAllAvailableDialects();
 }
@@ -67,7 +58,4 @@ void alloMlirRegisterAllPasses() {
   mlir::allo::registerAlloPasses();
   mlir::allo::registerAlloConversionPasses();
 
-#ifdef BUILD_DATAFLOW
-  mlir::sdy::registerAllSdyPassesAndPipelines();
-#endif
 }

@@ -588,12 +588,5 @@ def allo_to_numpy_dtype(allo_type: AlloType) -> npt.DTypeLike:
     return dtype
 
 
-def register_dialect(ctx: Context, dataflow: bool = False):
+def register_dialect(ctx: Context):
     allo_d.register_dialect(ctx)
-    if dataflow:
-        if sdy_d is None:
-            raise RuntimeError(
-                "Dataflow build is required to register the SDY dialect. "
-                "Please compile with BUILD_DATAFLOW=1."
-            )
-        sdy_d.register_dialect(ctx)
