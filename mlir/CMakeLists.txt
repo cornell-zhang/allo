@@ -32,7 +32,6 @@ include_directories(${LLVM_INCLUDE_DIRS})
 include_directories(${MLIR_INCLUDE_DIRS})
 include_directories(${PROJECT_SOURCE_DIR}/include)
 include_directories(${PROJECT_BINARY_DIR}/include)
-
 add_definitions(${LLVM_DEFINITIONS})
 
 message(STATUS "Using Python binding")
@@ -41,4 +40,3 @@ mlir_configure_python_dev_packages()
 
 add_subdirectory(include)
 add_subdirectory(lib)
-

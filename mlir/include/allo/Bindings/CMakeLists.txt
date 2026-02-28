@@ -104,4 +104,4 @@ add_mlir_python_modules(AlloMLIRPythonModules
   DECLARED_SOURCES ${_source_components}
   COMMON_CAPI_LINK_LIBS
     AlloMLIRAggregateCAPI
-)
+  )

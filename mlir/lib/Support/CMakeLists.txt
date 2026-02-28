@@ -16,4 +16,4 @@ add_mlir_library(MLIRAlloSupport
   MLIRMemRefDialect
   MLIRAnalysis
   MLIRAffineAnalysis
-)
+  )

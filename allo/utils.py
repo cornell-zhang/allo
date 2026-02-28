@@ -21,11 +21,6 @@ from ._mlir.ir import (
 from ._mlir.exceptions import DTypeWarning
 from ._mlir.runtime import to_numpy
 from ._mlir.dialects import allo as allo_d
-
-try:
-    from ._mlir.dialects import sdy as sdy_d
-except ImportError:
-    sdy_d = None
 from .ir.types import (
     AlloType,
     Int,
