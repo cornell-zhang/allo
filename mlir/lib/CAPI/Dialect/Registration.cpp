@@ -30,7 +30,6 @@
 #include "allo/Dialect/AlloDialect.h"
 #include "mlir/InitAllDialects.h"
 
-
 void alloMlirRegisterAllDialects(MlirContext context) {
   mlir::DialectRegistry registry;
   registry.insert<mlir::allo::AlloDialect, mlir::func::FuncDialect,
@@ -57,5 +56,4 @@ void alloMlirRegisterAllPasses() {
 
   mlir::allo::registerAlloPasses();
   mlir::allo::registerAlloConversionPasses();
-
 }
