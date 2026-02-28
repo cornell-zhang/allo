@@ -109,6 +109,12 @@ static bool loopTransformation(MlirModule &mlir_mod) {
   return applyLoopTransformation(mod);
 }
 
+static bool unroll(MlirOperation &func) {
+  nb::gil_scoped_release release;
+  auto op = unwrap(func);
+  return applyUnroll(op);
+}
+
 //===----------------------------------------------------------------------===//
 // Emission APIs
 //===----------------------------------------------------------------------===//
@@ -190,6 +196,11 @@ static bool lowerTransformLayoutOps(MlirModule &mlir_mod) {
   return applyLowerTransformLayoutOps(mod);
 }
 
+static bool lowerMemCopyOps(MlirModule &mlir_mod) {
+  auto mod = unwrap(mlir_mod);
+  return applyLowerMemCopyOps(mod);
+}
+
 static bool legalizeCast(MlirModule &mlir_mod) {
   auto mod = unwrap(mlir_mod);
   return applyLegalizeCast(mod);
@@ -248,6 +259,15 @@ static MlirOperation getNextUseInFunction(MlirValue value, MlirOperation curUse,
                                           MlirOperation &func) {
   Operation *result = getNextUse(unwrap(value), unwrap(curUse), *unwrap(func));
   return wrap(result);
+}
+
+static void simplifyStreamAffineMap(MlirOperation op) {
+  mlir::Operation *operation = unwrap(op);
+  if (auto putOp = llvm::dyn_cast<GlobalStreamPutOp>(operation)) {
+    putOp.simplifyAffineMap();
+  } else if (auto getOp = llvm::dyn_cast<GlobalStreamGetOp>(operation)) {
+    getOp.simplifyAffineMap();
+  }
 }
 
 //===----------------------------------------------------------------------===//
@@ -331,6 +351,7 @@ NB_MODULE(_allo, m) {
 
   // Loop transform APIs.
   allo_m.def("loop_transformation", &loopTransformation);
+  allo_m.def("unroll", &unroll);
 
   // Codegen APIs.
   allo_m.def("emit_vhls", &emitVivadoHls, nb::arg("module"),
@@ -351,6 +372,7 @@ NB_MODULE(_allo, m) {
   allo_m.def("lower_composite_type", &lowerCompositeType);
   allo_m.def("lower_bit_ops", &lowerBitOps);
   allo_m.def("lower_transform_layout_ops", &lowerTransformLayoutOps);
+  allo_m.def("lower_memcopy_ops", &lowerMemCopyOps);
   allo_m.def("legalize_cast", &legalizeCast);
   allo_m.def("remove_stride_map", &removeStrideMap);
   allo_m.def("lower_print_ops", &lowerPrintOps);
@@ -366,4 +388,5 @@ NB_MODULE(_allo, m) {
   allo_m.def("get_first_use_in_function", &getFirstUseInFunction);
   allo_m.def("get_last_use_in_function", &getLastUseInFunction);
   allo_m.def("get_next_use_in_function", &getNextUseInFunction);
+  allo_m.def("simplify_stream_affine_map", &simplifyStreamAffineMap);
 }
