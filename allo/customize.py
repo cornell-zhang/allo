@@ -5,7 +5,6 @@
 import sys
 import re
 import inspect
-import textwrap
 import traceback
 import copy
 from dataclasses import dataclass
@@ -1350,15 +1349,8 @@ def customize(
             Defaults to `"default"`.
     """
     # Get Python AST
-    if isinstance(fn, str):
-        src, starting_line_no = fn, 1
-        file_name = None
-    else:
-        src, starting_line_no = inspect.getsourcelines(fn)
-        src = [textwrap.fill(line, tabsize=4, width=9999) for line in src]
-        src = textwrap.dedent("\n".join(src))
-        file_name = inspect.getfile(fn)
-    tree = parse_ast(src, starting_line_no=starting_line_no, verbose=verbose)
+    file_name = None if isinstance(fn, str) else inspect.getfile(fn)
+    tree = parse_ast(fn, verbose=verbose)
     if instantiate is None:
         instantiate = []
     if global_vars is None:

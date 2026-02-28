@@ -5,3 +5,8 @@
 [submodule "externals/past-python-bindings"]
 	path = externals/past-python-bindings
 	url = https://github.com/cornell-zhang/past-python-bindings.git
+
+[submodule "externals/mlir-python-extra"]
+	path = externals/mlir-python-extra
+	url = https://github.com/Fangtangtang/mlir-python-extra.git
+	branch = main

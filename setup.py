@@ -36,6 +36,25 @@ class CMakeBuild(build_ext):
         if not llvm_build_dir:
             raise RuntimeError("LLVM_BUILD_DIR environment variable is not set")
 
+        # Pull mlir-python-extra
+        try:
+            print("Pulling external submodule (mlir-python-extra)...")
+            subprocess.check_call(
+                [
+                    "git",
+                    "submodule",
+                    "update",
+                    "--init",
+                    "--recursive",
+                    "externals/mlir-python-extra",
+                ],
+                cwd=ext.sourcedir.replace("/mlir", ""),
+            )
+        except subprocess.CalledProcessError as e:
+            print(
+                f"Warning: Failed to update mlir-python-extra. Ensure you have network access and git installed.\n{e}"
+            )
+
         # Auto-detect nanobind cmake directory if not set
         nanobind_cmake_dir = os.environ.get("NANOBIND_CMAKE_DIR")
         if not nanobind_cmake_dir:

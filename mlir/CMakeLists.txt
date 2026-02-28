@@ -40,3 +40,16 @@ mlir_configure_python_dev_packages()
 
 add_subdirectory(include)
 add_subdirectory(lib)
+
+# Define the source and destination for mlir-python-extra
+set(MLIR_PYTHON_EXTRA_SRC "${CMAKE_SOURCE_DIR}/../externals/mlir-python-extra/mlir/extras")
+set(ALLO_PYTHON_BINDINGS_DIR "${CMAKE_BINARY_DIR}/tools/allo/_mlir")
+
+# Create a custom target to copy the files
+add_custom_target(CopyMlirPythonExtras ALL
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+    "${MLIR_PYTHON_EXTRA_SRC}"
+    "${ALLO_PYTHON_BINDINGS_DIR}/extras"
+    COMMENT "Copying mlir-python-extra to allo._mlir.extras"
+    DEPENDS ${MLIR_PYTHON_EXTRA_SRC}
+)

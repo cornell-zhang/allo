@@ -3718,6 +3718,27 @@ bool applyLoopTransformationOnSingleFunction(
   return true;
 }
 
+bool applyUnroll(Operation *func) {
+  bool changed = false;
+  SmallVector<AffineForOp> worklist;
+  func->walk([&](AffineForOp forOp) {
+    if (auto attr = forOp->getAttrOfType<StringAttr>("loop_type")) {
+      if (attr.getValue() == "unroll") {
+        worklist.push_back(forOp);
+      }
+    }
+  });
+
+  for (auto forOp : worklist) {
+    if (failed(loopUnrollFull(forOp))) {
+      forOp.emitError("failed to fully unroll the loop");
+      return false;
+    }
+    changed = true;
+  }
+  return changed;
+}
+
 bool applyLoopTransformation(ModuleOp &mod) {
   std::map<std::string, allo::CustomizationOp> customizationMap;
   for (auto c : mod.getOps<allo::CustomizationOp>()) {

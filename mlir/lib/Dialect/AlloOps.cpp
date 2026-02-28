@@ -67,6 +67,172 @@ LogicalResult CustomizationOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
+// StreamGlobalOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult StreamGlobalOp::verify() {
+  Type type = getElementType();
+  if (!llvm::isa<StreamType>(type)) {
+    return emitOpError("element type of global stream must be stream type");
+  }
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// GlobalStreamGetOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult GlobalStreamGetOp::verify() {
+  Operation *symbol =
+      SymbolTable::lookupNearestSymbolFrom(*this, getGlobalAttr());
+  auto global = llvm::dyn_cast_or_null<StreamGlobalOp>(symbol);
+  if (!global)
+    return emitOpError("global stream not found: ") << getGlobal();
+
+  auto type = global.getElementType();
+  auto streamType = llvm::cast<StreamType>(type);
+  if (getResult().getType() != streamType.getBaseType())
+    return emitOpError("result type mismatch");
+
+  AffineMap map = getMap();
+
+  if (map.getNumDims() + map.getNumSymbols() != getIndices().size())
+    return emitOpError("affine map dim & symbol count mismatch");
+
+  int64_t rank = global.getShape().size();
+  if (map.getNumResults() != rank)
+    return emitOpError("affine map result count mismatch: expected ")
+           << rank << ", got " << map.getNumResults();
+
+  for (Value idx : getIndices())
+    if (!idx.getType().isIndex())
+      return emitOpError("indices must be of index type");
+
+  return success();
+}
+
+void GlobalStreamGetOp::print(OpAsmPrinter &p) {
+  p << " @" << getGlobal() << '[';
+  if (AffineMapAttr mapAttr = (*this)->getAttrOfType<AffineMapAttr>("map")) {
+    p.printAffineMapOfSSAIds(mapAttr, getIndices());
+  }
+  p << ']';
+  p.printOptionalAttrDict((*this)->getAttrs(), {"map", "global"});
+  p << " : " << getResult().getType();
+}
+
+ParseResult GlobalStreamGetOp::parse(OpAsmParser &parser,
+                                     OperationState &result) {
+  auto &builder = parser.getBuilder();
+  auto indexTy = builder.getIndexType();
+
+  FlatSymbolRefAttr globalAttr;
+  if (parser.parseAttribute(globalAttr, "global", result.attributes))
+    return failure();
+
+  AffineMapAttr mapAttr;
+  SmallVector<OpAsmParser::UnresolvedOperand, 2> mapOperands;
+  if (parser.parseAffineMapOfSSAIds(mapOperands, mapAttr, "map",
+                                    result.attributes))
+    return failure();
+
+  if (parser.parseOptionalAttrDict(result.attributes))
+    return failure();
+
+  Type resultType;
+  if (parser.parseColonType(resultType))
+    return failure();
+
+  result.addTypes(resultType);
+
+  if (parser.resolveOperands(mapOperands, indexTy, result.operands))
+    return failure();
+
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// GlobalStreamPutOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult GlobalStreamPutOp::verify() {
+  Operation *symbol =
+      SymbolTable::lookupNearestSymbolFrom(*this, getGlobalAttr());
+  auto global = llvm::dyn_cast_or_null<StreamGlobalOp>(symbol);
+  if (!global)
+    return emitOpError("global stream not found: ") << getGlobal();
+
+  auto type = global.getElementType();
+  auto streamType = llvm::cast<StreamType>(type);
+  if (getData().getType() != streamType.getBaseType())
+    return emitOpError("data type mismatch");
+
+  AffineMap map = getMap();
+
+  if (map.getNumDims() + map.getNumSymbols() != getIndices().size())
+    return emitOpError("affine map dim & symbol count mismatch");
+
+  int64_t rank = global.getShape().size();
+  if (map.getNumResults() != rank)
+    return emitOpError("affine map result count mismatch: expected ")
+           << rank << ", got " << map.getNumResults();
+
+  for (Value idx : getIndices())
+    if (!idx.getType().isIndex())
+      return emitOpError("indices must be of index type");
+
+  return success();
+}
+
+void GlobalStreamPutOp::print(OpAsmPrinter &p) {
+  p << " " << getData();
+  p << ", @" << getGlobal() << '[';
+  if (AffineMapAttr mapAttr = (*this)->getAttrOfType<AffineMapAttr>("map")) {
+    p.printAffineMapOfSSAIds(mapAttr, getIndices());
+  }
+  p << ']';
+  p.printOptionalAttrDict((*this)->getAttrs(), {"map", "global"});
+  p << " : " << getData().getType();
+}
+
+ParseResult GlobalStreamPutOp::parse(OpAsmParser &parser,
+                                     OperationState &result) {
+  auto &builder = parser.getBuilder();
+  auto indexTy = builder.getIndexType();
+
+  OpAsmParser::UnresolvedOperand data;
+  if (parser.parseOperand(data))
+    return failure();
+
+  if (parser.parseComma()) // ,
+    return failure();
+
+  FlatSymbolRefAttr globalAttr;
+  if (parser.parseAttribute(globalAttr, "global", result.attributes))
+    return failure();
+
+  AffineMapAttr mapAttr;
+  SmallVector<OpAsmParser::UnresolvedOperand, 2> mapOperands;
+  if (parser.parseAffineMapOfSSAIds(mapOperands, mapAttr, "map",
+                                    result.attributes))
+    return failure();
+
+  if (parser.parseOptionalAttrDict(result.attributes))
+    return failure();
+
+  Type dataType;
+  if (parser.parseColonType(dataType))
+    return failure();
+
+  if (parser.resolveOperands(mapOperands, indexTy, result.operands))
+    return failure();
+  if (parser.resolveOperand(data, dataType, result.operands))
+    return failure();
+
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // General helpers for comparison ops
 //===----------------------------------------------------------------------===//
 
@@ -131,6 +297,72 @@ void mlir::allo::StructGetOp::build(OpBuilder &builder, OperationState &state,
   state.addAttribute("index", builder.getI64IntegerAttr(index));
   state.addTypes(resultType);
 }
+
+//===----------------------------------------------------------------------===//
+// GridMapOp
+//===----------------------------------------------------------------------===//
+namespace mlir {
+namespace allo {
+
+LogicalResult GridMapOp::verify() {
+  auto tensors = getTensors();
+  auto sharding = getSharding();
+  auto grid = getGrid();
+
+  if (tensors.size() != sharding.size())
+    return emitOpError() << "number of tensors (" << tensors.size()
+                         << ") and sharding lists (" << sharding.size()
+                         << ") must match";
+
+  if (!getBody().hasOneBlock())
+    return emitOpError() << "region must contain exactly one block";
+
+  Block &bodyBlock = getBody().front();
+  if (bodyBlock.getNumArguments() != tensors.size())
+    return emitOpError() << "number of block arguments ("
+                         << bodyBlock.getNumArguments() << ") and tensors ("
+                         << tensors.size() << ") must match";
+
+  for (auto [idx, tensor] : llvm::enumerate(tensors)) {
+    auto memrefType = llvm::cast<MemRefType>(tensor.getType());
+    auto shardingList = llvm::dyn_cast<ArrayAttr>(sharding[idx]);
+    if (!shardingList)
+      return emitOpError() << "sharding at index " << idx
+                           << " must be an ArrayAttr";
+    if (memrefType.getRank() != static_cast<int64_t>(shardingList.size()))
+      return emitOpError() << "memref rank (" << memrefType.getRank()
+                           << ") and sharding list size ("
+                           << shardingList.size() << ") must match for tensor "
+                           << idx;
+    auto shape = llvm::to_vector<4>(memrefType.getShape());
+    for (size_t k = 0; k < shardingList.size(); ++k) {
+      auto shardingIntAttr = llvm::dyn_cast<IntegerAttr>(shardingList[k]);
+      if (!shardingIntAttr)
+        return emitOpError() << "sharding at index " << idx << ", dimension "
+                             << k << " must be an IntegerAttr";
+      int64_t s = shardingIntAttr.getInt();
+      if (s >= static_cast<int64_t>(grid.size()))
+        return emitOpError() << "sharding axis " << s << " at index " << idx
+                             << " exceeds grid dimension size " << grid.size();
+      if (s >= 0) {
+        shape[k] = shape[k] / grid[s];
+      }
+    }
+    auto expectedArgType =
+        MemRefType::get(shape, memrefType.getElementType(),
+                        memrefType.getLayout(), memrefType.getMemorySpace());
+    if (bodyBlock.getArgument(idx).getType() != expectedArgType)
+      return emitOpError() << "block argument " << idx << " type "
+                           << bodyBlock.getArgument(idx).getType()
+                           << " does not match expected sharded type "
+                           << expectedArgType;
+  }
+
+  return success();
+}
+
+} // namespace allo
+} // namespace mlir
 
 //===----------------------------------------------------------------------===//
 // TableGen'd op method definitions
