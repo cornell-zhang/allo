@@ -514,12 +514,20 @@
         <span class="c1"># Check for duplicate partitioning</span>
         <span class="n">target_key</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">target</span><span class="o">.</span><span class="n">func</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">target</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span>
         <span class="k">if</span> <span class="n">target_key</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">partitioned_arrays</span><span class="p">:</span>
-            <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">partitioned_arrays</span><span class="p">[</span><span class="n">target_key</span><span class="p">]:</span>
-                <span class="k">if</span> <span class="n">item</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="n">Partition</span><span class="o">.</span><span class="n">Complete</span> <span class="ow">and</span> <span class="n">item</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-                    <span class="k">return</span>  <span class="c1"># Already completely partitioned</span>
-                <span class="k">raise</span> <span class="n">AlloValueError</span><span class="p">(</span>
-                    <span class="sa">f</span><span class="s2">&quot;Cannot partition the same array twice: </span><span class="si">{</span><span class="n">target_key</span><span class="si">}</span><span class="s2">&quot;</span>
-                <span class="p">)</span>
+            <span class="k">for</span> <span class="n">existing_type</span><span class="p">,</span> <span class="n">existing_dim</span><span class="p">,</span> <span class="n">_</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">partitioned_arrays</span><span class="p">[</span><span class="n">target_key</span><span class="p">]:</span>
+                <span class="c1"># If already completely partitioned on all dims, nothing more to do</span>
+                <span class="k">if</span> <span class="n">existing_type</span> <span class="o">==</span> <span class="n">Partition</span><span class="o">.</span><span class="n">Complete</span> <span class="ow">and</span> <span class="n">existing_dim</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                    <span class="k">return</span>
+                <span class="c1"># Cannot mix all-dim partition (dim=0) with per-dim partitions</span>
+                <span class="k">if</span> <span class="n">existing_dim</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">or</span> <span class="n">dim</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="n">AlloValueError</span><span class="p">(</span>
+                        <span class="sa">f</span><span class="s2">&quot;Cannot mix all-dim partitioning (dim=0) with per-dimension partitions for array </span><span class="si">{</span><span class="n">target_key</span><span class="si">}</span><span class="s2">&quot;</span>
+                    <span class="p">)</span>
+                <span class="c1"># Cannot partition the same specific dimension twice</span>
+                <span class="k">if</span> <span class="n">existing_dim</span> <span class="o">==</span> <span class="n">dim</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="n">AlloValueError</span><span class="p">(</span>
+                        <span class="sa">f</span><span class="s2">&quot;Cannot partition the same array on dimension </span><span class="si">{</span><span class="n">dim</span><span class="si">}</span><span class="s2"> twice: </span><span class="si">{</span><span class="n">target_key</span><span class="si">}</span><span class="s2">&quot;</span>
+                    <span class="p">)</span>
 
         <span class="c1"># Collect all buffers that need partitioning via propagation</span>
         <span class="n">buffers_to_partition</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_collect_partition_targets</span><span class="p">(</span><span class="n">target</span><span class="p">)</span>
