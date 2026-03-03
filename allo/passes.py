@@ -996,7 +996,7 @@ def reorder_funcs(module):
     [NOTE]: this is a patch for HLS backend to avoid forward reference errors in generated C++ code.
     This pass performs a topological sort on the call graph and moves FuncOps so that every function is defined before it is called.
     """
-    from collections import defaultdict, deque
+    from collections import defaultdict
 
     func_ops = {}  # name -> FuncOp
     call_graph = defaultdict(set)  # caller -> callees
