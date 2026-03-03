@@ -3125,34 +3125,44 @@ using namespace std;
     // validate nested functions
     // Find the top function - try attribute first, then use calling pattern
     func::FuncOp topFunc = nullptr;
-    llvm::SmallSet<StringRef, 4> calledFunctions;
+    llvm::StringMap<unsigned>
+        calleeMinCallerPos;                 // callee -> min caller position
+    llvm::StringMap<unsigned> funcPosition; // func -> position
 
-    // First, collect all called functions
+    unsigned pos = 0;
     for (auto &op : *module.getBody()) {
       if (auto func = dyn_cast<func::FuncOp>(op)) {
+        unsigned curPos = pos++;
+        funcPosition[func.getName()] = curPos;
         func.walk([&](func::CallOp callOp) {
-          calledFunctions.insert(callOp.getCallee());
+          auto it = calleeMinCallerPos.find(callOp.getCallee());
+          if (it == calleeMinCallerPos.end())
+            calleeMinCallerPos[callOp.getCallee()] = curPos;
+          else
+            it->second = std::min(it->second, curPos);
         });
       }
     }
-    // Find the top function and emit function declaration for non-top funcitons
+    // Find the top function and emit forward declarations.
     for (auto &op : *module.getBody()) {
       if (auto func = dyn_cast<func::FuncOp>(op)) {
         // Check if it has the "top" attribute (set by HLS backend)
         if (func->hasAttr("top")) {
           topFunc = func;
-          continue;
         }
         // If no function has been marked as top yet, the top function is the
         // one that is NOT called by any other function (i.e., it's the entry
         // point)
-        if (!topFunc && !calledFunctions.contains(func.getName()) &&
+        if (!topFunc && !calleeMinCallerPos.count(func.getName()) &&
             !func.getBlocks().empty()) {
           topFunc = func;
           func.getOperation()->setAttr("top", UnitAttr::get(func.getContext()));
-          continue;
         }
-        emitFunctionDeclaration(func);
+        // Emit forward declaration only if this function is forward-referenced
+        auto it = calleeMinCallerPos.find(func.getName());
+        if (it != calleeMinCallerPos.end() &&
+            funcPosition[func.getName()] > it->second)
+          emitFunctionDeclaration(func);
       }
     }
     if (state.linearize_pointers) {
