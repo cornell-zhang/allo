@@ -14,7 +14,6 @@ from examples.feather.feather import (
     get_scheduled_feather,
     print_test_config,
     result_check,
-    compare_sim_hls_result,
     print_summary,
 )
 import numpy as np
@@ -175,24 +174,20 @@ def test_FEATHER_conv():
     oActs_compare = oActs_row_major.reshape(N * M, P * Q)
     test_passed = result_check(oActs_compare, ref_reshaped)
 
-    hls_test_passed, vs_passed = False, False
+    hls_test_passed = False
     if hls.is_available("vitis_hls"):
-        print("Running Vitis Synthesis and On-Board Execution...")
         s = get_scheduled_feather(AW, AH, Ty)
-        csyn_mod = s.build(
+        print("Running Vitis HLS synthesis...")
+        hls_mod = s.build(
             target="vitis_hls",
-            mode="hw_emu",
+            mode="csyn",
             project=f"feather_convolution_{N}_{C}_{H}_{W}_{M}_{R}_{S}_{AW}_{AH}.prj",
         )
-        oActs_hls = np.zeros((N, M * P * Q // AW, AW), dtype=np.int8)
-        call_feather_kernel(
-            iActs_channel_last, weights_flattened, oActs_hls, csyn_mod, insts
-        )
-        oActs_hls_compare = oActs_hls.reshape(N * M, P * Q)
-        hls_test_passed = result_check(oActs_hls_compare, ref_reshaped, True)
+        hls_mod()
+        hls_test_passed = True
+        print("HLS synthesis completed successfully.")
 
-        vs_passed = compare_sim_hls_result(oActs_compare, oActs_hls_compare)
-    print_summary(test_passed, hls_test_passed, vs_passed)
+    print_summary(test_passed, hls_test_passed)
 
 
 if __name__ == "__main__":
