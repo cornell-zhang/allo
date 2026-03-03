@@ -987,3 +987,62 @@ def df_pipeline(module, initiation_interval=1, rewind=False):
                 for op_ in func.entry_block.operations:
                     if isinstance(op_, (scf_d.ForOp, affine_d.AffineForOp)):
                         pipe_loop_innermost(op_, ii, rewind)
+
+
+def reorder_funcs(module):
+    """
+    Reorder FuncOps in a module so that callees appear before callers.
+
+    [NOTE]: this is a patch for HLS backend to avoid forward reference errors in generated C++ code.
+    This pass performs a topological sort on the call graph and moves FuncOps so that every function is defined before it is called.
+    """
+    from collections import defaultdict, deque
+
+    func_ops = {}  # name -> FuncOp
+    call_graph = defaultdict(set)  # caller -> callees
+    op_order = []  # original order of FuncOp names
+
+    for op in module.body.operations:
+        if isinstance(op, func_d.FuncOp):
+            name = op.attributes["sym_name"].value
+            func_ops[name] = op
+            op_order.append(name)
+    # build call graph
+    for name, fop in func_ops.items():
+        if len(fop.body.blocks) == 0:
+            continue
+        worklist = list(fop.body.blocks)
+        while worklist:
+            block = worklist.pop()
+            for op in block.operations:
+                if isinstance(op, func_d.CallOp):
+                    callee = op.attributes["callee"].value
+                    call_graph[name].add(callee)
+                # Recurse into nested regions
+                for region in op.regions:
+                    for blk in region.blocks:
+                        worklist.append(blk)
+
+    # DFS post-order: visit callees before the caller.
+    visited = set()
+    sorted_names = []
+
+    def dfs(name):
+        if name in visited:
+            return
+        visited.add(name)
+        for callee in call_graph.get(name, []):
+            dfs(callee)
+        sorted_names.append(name)
+
+    for name in op_order:
+        dfs(name)
+
+    if sorted_names == op_order:
+        return
+    last_op = list(module.body.operations)[-1]
+    for name in reversed(sorted_names):
+        fop = func_ops[name]
+        if fop.operation != last_op.operation:
+            fop.operation.move_before(last_op)
+        last_op = fop
