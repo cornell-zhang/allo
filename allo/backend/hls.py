@@ -44,7 +44,6 @@ from ..passes import (
     _mlir_lower_pipeline,
     decompose_library_function,
     generate_input_output_buffers,
-    reorder_funcs,
 )
 from ..harness.makefile_gen.makegen import generate_makefile
 from ..ir.transform import find_func_in_module
@@ -238,8 +237,6 @@ class HLSModule:
                 ")"
             )
             pm.run(self.module.operation)
-        # Reorder FuncOps so callees come before callers to avoid forward reference errors.
-        reorder_funcs(self.module)
         buf = io.StringIO()
         success = True
         match platform:
