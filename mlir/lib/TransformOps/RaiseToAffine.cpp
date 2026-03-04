@@ -269,6 +269,9 @@ computeAffineMapAndArgs(AffineValueMapBuilder &builder, ValueRange indices) {
   return builder.compose();
 }
 
+// used for static assert
+template <class> inline constexpr bool dependent_false_v = false;
+
 template <typename OpTy>
 static void updateIndicesToAffineMapOrApply(RewriterBase &b,
                                             AffineValueMapBuilder &builder,
@@ -304,7 +307,8 @@ static void updateIndicesToAffineMapOrApply(RewriterBase &b,
   //   });
   // }
   else {
-    static_assert(0, "unsupported op type for updateIndicesToAffineApply");
+    static_assert(dependent_false_v<OpTy>,
+                  "unsupported op type for updateIndicesToAffineApply");
   }
 }
 
