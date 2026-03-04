@@ -71,7 +71,7 @@ bool affineExprUsesValue(AffineExpr expr, ValueRange mapOperands,
   return used;
 }
 
-int findMemRefAxisFromIV(affine::AffineStoreOp storeOp, Value iv) {
+int findMemRefAxisFromIVs(affine::AffineStoreOp storeOp, Value iv) {
   AffineMap map = storeOp.getAffineMap();
   auto operands = storeOp.getMapOperands();
   for (unsigned i = 0; i < map.getNumResults(); ++i) {

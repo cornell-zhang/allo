@@ -5,6 +5,7 @@
 
 #include "allo/InitAllDialects.h"
 #include "allo/InitAllExtensions.h"
+#include "allo/InitAllPasses.h"
 #include "mlir/Tools/mlir-opt/MlirOptMain.h"
 
 using namespace mlir;
@@ -13,6 +14,7 @@ int main(int argc, char **argv) {
   DialectRegistry registry;
   allo::registerAllDialects(registry);
   allo::registerAllExtensions(registry);
+  allo::registerAllPasses();
   return asMainReturnCode(
       MlirOptMain(argc, argv, "Allo optimization driver\n", registry));
 }

@@ -2030,7 +2030,7 @@ transform::ReuseAtOp::apply(transform::TransformRewriter &rewriter,
     rewriter.setInsertionPoint(storeOp);
     SmallVector<AffineExpr, 8> remappedIndices;
     AffineMap oldMap = storeOp.getAffineMap();
-    int axisResultIdx = findMemRefAxisFromIV(storeOp, axisIV);
+    int axisResultIdx = findMemRefAxisFromIVs(storeOp, axisIV);
     for (unsigned i = 0, e = oldMap.getNumResults(); i < e; ++i) {
       if (static_cast<int>(i) != axisResultIdx) {
         remappedIndices.push_back(oldMap.getResult(i));
