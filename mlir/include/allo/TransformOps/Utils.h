@@ -15,7 +15,7 @@
 namespace mlir::allo {
 bool affineExprUsesValue(AffineExpr expr, ValueRange mapOperands,
                          unsigned numDims, Value needle);
-int findMemRefAxisFromIV(affine::AffineStoreOp storeOp, Value iv);
+int findMemRefAxisFromIVs(affine::AffineStoreOp storeOp, Value iv);
 Value resolveMemRefValueRoot(Value value);
 // strip away index casts, extension/truncation ops,
 // which do not affect the value as an affine expression
