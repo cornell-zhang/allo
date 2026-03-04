@@ -22,6 +22,7 @@ def Allo_Dialect : Dialect {
         working inside of the LLVM source tree.
     }];
     let useDefaultTypePrinterParser = 1;
+    let useDefaultAttributePrinterParser = 1;
     let cppNamespace = "::mlir::allo";
 }
 

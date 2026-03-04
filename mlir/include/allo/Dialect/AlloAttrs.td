@@ -10,9 +10,9 @@ include "allo/Dialect/AlloDialect.td"
 include "mlir/IR/EnumAttr.td"
 
 // https://mlir.llvm.org/docs/OpDefinitions/#enum-attributes
-def CompletePartition: I32EnumAttrCase<"CompletePartition", 0>;
-def BlockPartition: I32EnumAttrCase<"BlockPartition", 1>;
-def CyclicPartition: I32EnumAttrCase<"CyclicPartition", 2>;
+def CompletePartition: I32EnumAttrCase<"CompletePartition", 0, "Complete">;
+def BlockPartition: I32EnumAttrCase<"BlockPartition", 1, "Block">;
+def CyclicPartition: I32EnumAttrCase<"CyclicPartition", 2, "Cyclic">;
 
 def PartitionKindEnum: I32EnumAttr<"PartitionKindEnum",
         "An example partition enum",
@@ -87,7 +87,7 @@ def PartitionAxis : Allo_Attr<"PartitionAxis"> {
     "int64_t":$factor,
     "int64_t":$dim);
   let assemblyFormat = [{
-    `(` $kind `,` `` $factor `,` `` $dim `)`
+    `(` $dim `,` `` $kind `,` `` $factor`)`
   }];
   let cppNamespace = "mlir::allo";
   let genVerifyDecl = 1;

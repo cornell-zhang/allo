@@ -1,0 +1,17 @@
+@LIT_SITE_CFG_IN_HEADER@
+
+config.llvm_tools_dir = lit_config.substitute("@LLVM_TOOLS_DIR@")
+config.mlir_tools_dir = lit_config.substitute("@MLIR_TOOLS_DIR@")
+config.mlir_obj_root = "@MLIR_BINARY_DIR@"
+config.mlir_obj_dir = "@MLIR_BINARY_DIR@"
+config.allo_obj_root = "@ALLO_BINARY_DIR@"
+config.allo_tools_dir = "@ALLO_BINARY_DIR@/bin"
+config.allo_libs_dir = "@ALLO_BINARY_DIR@/lib"
+config.llvm_shlib_ext = "@SHLIBEXT@"
+
+import lit.llvm
+
+lit.llvm.initialize(lit_config, config)
+
+# Let the main config do the real work.
+lit_config.load_config(config, "@ALLO_SOURCE_DIR@/tests/lit.cfg.py")
