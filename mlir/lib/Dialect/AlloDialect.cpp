@@ -121,3 +121,37 @@ LogicalResult ApplyOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 
   return success();
 }
+
+///===----------------------------------------------------------------------===//
+/// Partition Attributes Verification
+///===----------------------------------------------------------------------===//
+
+LogicalResult
+PartitionAxisAttr::verify(llvm::function_ref<InFlightDiagnostic()> emitError,
+                          PartitionKindEnum kind, int64_t factor,
+                          int64_t dims) {
+  if (kind == PartitionKindEnum::CompletePartition && factor != 0) {
+    return emitError() << "partition factor must be 0 for complete partition";
+  }
+  if (kind != PartitionKindEnum::CompletePartition && !(factor > 1)) {
+    return emitError() << "partition factor must be greater than 1 for "
+                          "non-complete partition";
+  }
+  if (dims <= 0) {
+    return emitError() << "number of dimensions must be greater than 0";
+  }
+  return success();
+}
+
+LogicalResult
+PartitionAttr::verify(llvm::function_ref<InFlightDiagnostic()> emitError,
+                      ArrayRef<PartitionAxisAttr> axes) {
+  DenseSet<int64_t> seen;
+  for (auto &axi : axes) {
+    seen.insert(axi.getDim());
+  }
+  if (seen.size() < axes.size()) {
+    return emitError() << "duplicate partition axis detected";
+  }
+  return success();
+}

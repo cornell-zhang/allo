@@ -80,5 +80,27 @@ def CmpFixedPredicateAttr : I64EnumAttr<
 //     return get($_ctxt);
 //   }];
 // }
+def PartitionAxis : Allo_Attr<"PartitionAxis"> {
+  let mnemonic = "part_axis";
+  let parameters = (ins
+    "allo::PartitionKindEnum":$kind,
+    "int64_t":$factor,
+    "int64_t":$dim);
+  let assemblyFormat = [{
+    `(` $kind `,` `` $factor `,` `` $dim `)`
+  }];
+  let cppNamespace = "mlir::allo";
+  let genVerifyDecl = 1;
+}
+
+def Partition : Allo_Attr<"Partition"> {
+  let mnemonic = "partition";
+  let parameters = (ins ArrayRefParameter<"allo::PartitionAxisAttr">:$partitions);
+  let assemblyFormat = [{
+    `<` `[` $partitions `]` `>`
+  }];
+  let cppNamespace = "mlir::allo";
+  let genVerifyDecl = 1;
+}
 
 #endif // ALLO_ATTRS
