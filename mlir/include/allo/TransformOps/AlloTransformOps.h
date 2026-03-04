@@ -8,13 +8,18 @@
 
 #include "allo/Dialect/AlloDialect.h"
 #include "allo/Dialect/AlloAttrs.h"
+#include "mlir/Dialect/Transform/IR/TransformDialect.h"
+#include "mlir/Dialect/Transform/IR/TransformTypes.h"
 #include "mlir/Dialect/Transform/Interfaces/TransformInterfaces.h"
+#include "mlir/Interfaces/SideEffectInterfaces.h"
 
 #define GET_OP_CLASSES
-#include "allo/Dialect/AlloTransformOps.h.inc"
+#include "allo/TransformOps/AlloTransformOps.h.inc"
 
 namespace mlir::allo {
 void registerTransformDialectExtension(DialectRegistry &registry);
+
+constexpr StringLiteral OpIdentifier = "sym_name";
 }
 
 #endif // ALLO_TRANSFORMOPS_H

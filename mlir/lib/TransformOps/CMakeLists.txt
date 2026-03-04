@@ -2,17 +2,20 @@
 # SPDX-License-Identifier: Apache-2.0
 
 add_mlir_library(MLIRAlloTransformOps
-        AlloTransformOps.cpp
+    DialectExtension.cpp
+    RaiseToAffine.cpp
+    LoopTransformations.cpp
+    Utils.cpp
 
-        DEPENDS
-        MLIRAlloIncGen
+    DEPENDS
+    MLIRAlloIncGen
 
-        LINK_LIBS PUBLIC
-        MLIRIR
-        MLIRAffineDialect
-        MLIRAffineUtils
-        MLIRFuncDialect
-        MLIRMemRefDialect
-        MLIRSCFDialect
-        MLIRTransformDialect
+    LINK_LIBS PUBLIC
+    MLIRIR
+    MLIRAffineDialect
+    MLIRAffineUtils
+    MLIRFuncDialect
+    MLIRMemRefDialect
+    MLIRSCFDialect
+    MLIRTransformDialect
 )
