@@ -1,5 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
+# pylint: disable=import-self
 
 from typing import TYPE_CHECKING, Any
 
@@ -50,7 +51,7 @@ else:
             raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
         liballo = _get_liballo_module()
         if name == "transform":
-            liballo._initialize_transform_bindings()
+            liballo._initialize_transform_bindings()  # pylint: disable=c-extension-no-member
         value = getattr(liballo, name)
         globals()[name] = value
         return value
