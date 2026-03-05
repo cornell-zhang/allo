@@ -44,6 +44,7 @@ from ..passes import (
     _mlir_lower_pipeline,
     decompose_library_function,
     generate_input_output_buffers,
+    analyze_arg_load_store,
 )
 from ..harness.makefile_gen.makegen import generate_makefile
 from ..ir.transform import find_func_in_module
@@ -196,12 +197,12 @@ class HLSModule:
         self.project = project
         self.platform = platform
         self.ext_libs = [] if ext_libs is None else ext_libs
-        self.num_output_args = 0  # Will be set from configs if provided
+        self.num_output_args = None  # Will be set from configs if provided
         if configs is not None:
             new_configs = DEFAULT_CONFIG.copy()
             new_configs.update(configs)
             configs = new_configs
-            self.num_output_args = configs.get("num_output_args", 0)
+            self.num_output_args = configs.get("num_output_args", None)
         else:
             configs = DEFAULT_CONFIG.copy()
         if self.mode is not None:
@@ -211,6 +212,16 @@ class HLSModule:
             self.module = Module.parse(str(mod), ctx)
             func = find_func_in_module(self.module, top_func_name)
             func.attributes["top"] = UnitAttr.get()
+            # fix: num_output_args
+            if self.num_output_args is None and len(func.type.results) == 0:
+                load_store_mapping = analyze_arg_load_store(self.module)
+                cnt = 0
+                for io_type in load_store_mapping[top_func_name]:
+                    if io_type in {"both", "out"}:
+                        cnt += 1
+                    elif io_type == "in" and cnt > 0:
+                        raise RuntimeError("Output arguments must appear at the end.")
+                self.num_output_args = cnt
 
             if platform in {"vitis_hls", "pynq"}:
                 assert func_args is not None, "Need to specify func_args"
