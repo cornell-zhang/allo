@@ -9,8 +9,8 @@ func.func @split_affine_loop(%arg0: memref<8xi32>) {
     %v = affine.load %arg0[%i] : memref<8xi32>
     affine.store %v, %arg0[%i] : memref<8xi32>
   } {sym_name = "aloop"}
-  // CHECK: "aloop.inner"
-  // CHECK: "aloop.outer"
+  // CHECK: "aloop::inner"
+  // CHECK: "aloop::outer"
   func.return
 }
 
@@ -39,8 +39,8 @@ func.func @split_scf_loop(%arg0: memref<8xi32>) {
     %v = memref.load %arg0[%i] : memref<8xi32>
     memref.store %v, %arg0[%i] : memref<8xi32>
   } {sym_name = "sloop"}
-  // CHECK: "sloop.inner"
-  // CHECK: "sloop.outer"
+  // CHECK: "sloop::inner"
+  // CHECK: "sloop::outer"
   func.return
 }
 

@@ -3,10 +3,10 @@
 // CHECK-LABEL: func.func @inner
 // CHECK: "inner"
 // CHECK-LABEL: func.func @outer
-// CHECK: call @inner{{.*}} "inner.call"
+// CHECK: call @inner{{.*}} "inner::call"
 // CHECK: "outer"
 // CHECK-LABEL: func.func @outline_loops
-// CHECK: call @outer{{.*}} "outer.call"
+// CHECK: call @outer{{.*}} "outer::call"
 func.func @outline_loops(%arg0: memref<4x4xf32>, %arg1: memref<4x4xf32>) {
   %c0 = arith.constant 0 : index
   %c1 = arith.constant 1 : index
@@ -37,7 +37,7 @@ module attributes {transform.with_named_sequence} {
 // CHECK-LABEL: func.func @scalar_load
 // CHECK: "scalar_load"
 // CHECK-LABEL: func.func @outline_no_region_op
-// CHECK: call @scalar_load{{.*}} "scalar_load.call"
+// CHECK: call @scalar_load{{.*}} "scalar_load::call"
 func.func @outline_no_region_op(%arg0: memref<4xi32>, %arg1: memref<4xi32>) {
   %c0 = arith.constant 0 : index
   %c1_i32 = arith.constant 1 : i32

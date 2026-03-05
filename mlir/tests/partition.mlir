@@ -17,7 +17,7 @@ module attributes {transform.with_named_sequence} {
       %root: !transform.op<"builtin.module">) {
     %view = transform.structured.match ops{["memref.subview"]} in %root
       : (!transform.op<"builtin.module">) -> !transform.op<"memref.subview">
-    %slice = transform.allo.match_value 0 of %view
+    %slice = transform.allo.match_value 0 of %view kind 0
       : !transform.op<"memref.subview"> -> !transform.any_value
     transform.allo.partition %slice with #partition
       : !transform.any_value
@@ -40,7 +40,7 @@ module attributes {transform.with_named_sequence} {
       %root: !transform.op<"builtin.module">) {
     %kernel = transform.structured.match ops{["func.func"]} attributes {sym_name = "partition_func_arg"} in %root
       : (!transform.op<"builtin.module">) -> !transform.op<"func.func">
-    %arg = transform.allo.match_value 0 of %kernel
+    %arg = transform.allo.match_value 0 of %kernel kind 0
       : !transform.op<"func.func"> -> !transform.any_value
     transform.allo.partition %arg with #partition
       : !transform.any_value
@@ -67,7 +67,7 @@ module attributes {transform.with_named_sequence} {
       %root: !transform.op<"builtin.module">) {
     %alloc = transform.structured.match ops{["memref.alloc"]} in %root
       : (!transform.op<"builtin.module">) -> !transform.op<"memref.alloc">
-    %buf = transform.allo.match_value 0 of %alloc
+    %buf = transform.allo.match_value 0 of %alloc kind 0
       : !transform.op<"memref.alloc"> -> !transform.any_value
     transform.allo.partition %buf with #block
       : !transform.any_value
@@ -92,7 +92,7 @@ module attributes {transform.with_named_sequence} {
       %root: !transform.op<"builtin.module">) {
     %alloc = transform.structured.match ops{["memref.alloc"]} attributes {sym_name = "local"} in %root
       : (!transform.op<"builtin.module">) -> !transform.op<"memref.alloc">
-    %local = transform.allo.match_value 0 of %alloc
+    %local = transform.allo.match_value 0 of %alloc kind 0
       : !transform.op<"memref.alloc"> -> !transform.any_value
     // expected-error @below {{existing allo.part attribute is not a partition attribute}}
     transform.allo.partition %local with #part
@@ -121,7 +121,7 @@ module attributes {transform.with_named_sequence} {
       %root: !transform.op<"builtin.module">) {
     %call = transform.structured.match ops{["func.call"]} attributes {sym_name = "callbuf"} in %root
       : (!transform.op<"builtin.module">) -> !transform.op<"func.call">
-    %v = transform.allo.match_value 0 of %call
+    %v = transform.allo.match_value 0 of %call kind 0
       : !transform.op<"func.call"> -> !transform.any_value
     // expected-error @below {{partition target root must resolve to memref.alloc, memref.alloca, memref.get_global, or function argument}}
     transform.allo.partition %v with #part

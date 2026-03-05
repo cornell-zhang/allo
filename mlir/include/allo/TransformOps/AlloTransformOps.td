@@ -85,9 +85,8 @@ def Allo_OutlineOp : Op<Transform_Dialect, "allo.outline",
   }];
   let builders = [
     OpBuilder<(ins "Value":$target, "StringRef":$kernel_name), [{
-      auto kernelType = $_builder.getType<transform::OperationType>("allo.kernel");
-      auto callType = $_builder.getType<transform::OperationType>("allo.call");
-      build($_builder, $_state, {kernelType, callType}, target, kernel_name);
+      auto anyType = transform::AnyOpType::get($_builder.getContext());
+      build($_builder, $_state, {anyType, anyType}, target, kernel_name);
     }]>
   ];
 }
@@ -111,20 +110,14 @@ def Allo_LoopReorderOp : Op<Transform_Dialect, "allo.reorder",
       - Legality is checked with affine loop interchange constraints.
 
     Output:
-      - No result handle; this op mutates payload IR in place.
+      - `$result` contains the reordered loops
   }];
-  let arguments = (ins TransformHandleTypeInterface:$loops, I64ArrayAttr:$permutation);
+  let arguments = (ins TransformHandleTypeInterface:$loops, DenseI32ArrayAttr:$permutation);
   let results = (outs);
   let assemblyFormat = [{
     $loops `with` $permutation attr-dict `:` type($loops)
   }];
   let hasVerifier = 1;
-  let builders = [
-    OpBuilder<(ins "Value":$loops, "ArrayRef<int64_t>":$permutation), [{
-      auto attr = $_builder.getI64ArrayAttr(permutation);
-      build($_builder, $_state, loops, attr);
-    }]>
-  ];
 }
 
 def Allo_LoopSplitOp : Op<Transform_Dialect, "allo.split",
@@ -142,7 +135,7 @@ def Allo_LoopSplitOp : Op<Transform_Dialect, "allo.split",
 
     Behavior:
       - Each payload loop is split independently (`TransformEachOpTrait`).
-      - Input `sym_name` is preserved with suffixes `.outer`/`.inner`.
+      - Input `sym_name` is preserved with suffixes `::outer`/`::inner`.
 
     Output:
       - `$outer` contains outer loops, one per input payload loop.
@@ -187,8 +180,8 @@ def Allo_LoopTileOp : Op<Transform_Dialect, "allo.tile",
 
     Behavior:
       - Uses perfect or imperfect tiling based on selected-loop contiguity.
-      - If input loops carry `sym_name`, outputs are annotated with `.tile` and
-        `.point` suffixes.
+      - If input loops carry `sym_name`, outputs are annotated with `::tile` and
+        `::point` suffixes.
 
     Output:
       - `$tile_loops` and `$point_loops` each contain one loop per selected
@@ -404,19 +397,22 @@ def Allo_MatchValueOp : Op<Transform_Dialect, "allo.match_value",
    ReportTrackingListenerFailuresOpTrait]> {
   let summary = "Match target values";
   let description = [{
-    Match target values by the name of their defining operation.
-    If the value is introduced as a block argument, match by the name of the parent
-    operation and the argument index
-    (e.g., `foo:0` for the first argument of an op named `foo`).
+    Match target values from a target operation.
 
-    The argument index will be ignored if the value has a defining operation.
+    - `$number` is the selected index.
+    - `$source_kind` controls which value space to index:
+      - `0` (`auto`): keep old behavior, prefer block arguments when present,
+        otherwise use operation results.
+      - `1` (`block_arg`): index only block arguments.
+      - `2` (`result`): index only operation results.
   }];
   let arguments = (ins
     TransformHandleTypeInterface:$target,
-    I64Attr:$number);
+    I64Attr:$number,
+    DefaultValuedAttr<I64Attr, "0">:$source_kind);
   let results = (outs TransformValueHandleTypeInterface:$result);
   let assemblyFormat = [{
-    $number `of` $target attr-dict `:` type($target) `->` type($result)
+    $number `of` $target `kind` $source_kind attr-dict `:` type($target) `->` type($result)
   }];
   let extraClassDeclaration = [{
     ::mlir::DiagnosedSilenceableFailure applyToOne(
@@ -428,7 +424,11 @@ def Allo_MatchValueOp : Op<Transform_Dialect, "allo.match_value",
   let builders = [
     OpBuilder<(ins "Value":$target, "int64_t":$number), [{
       auto anyType = transform::AnyValueType::get($_builder.getContext());
-      build($_builder, $_state, anyType, target, static_cast<uint64_t>(number));
+      build($_builder, $_state, anyType, target, static_cast<int64_t>(number), static_cast<int64_t>(0));
+    }]>,
+    OpBuilder<(ins "Value":$target, "int64_t":$number, "int64_t":$source_kind), [{
+      auto anyType = transform::AnyValueType::get($_builder.getContext());
+      build($_builder, $_state, anyType, target, static_cast<int64_t>(number), static_cast<int64_t>(source_kind));
     }]>
   ];
 }

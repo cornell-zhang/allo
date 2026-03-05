@@ -8,8 +8,8 @@ func.func @tile_affine_loop(%arg0: memref<8xi32>) {
     %v = affine.load %arg0[%i] : memref<8xi32>
     affine.store %v, %arg0[%i] : memref<8xi32>
   } {sym_name = "aloop"}
-  // CHECK: "aloop.point"
-  // CHECK: "aloop.tile"
+  // CHECK: "aloop::point"
+  // CHECK: "aloop::tile"
   func.return
 }
 
@@ -44,11 +44,11 @@ func.func @tile_affine_perfect_unsorted_handles(
       %v = affine.load %arg0[%i, %j] : memref<15x30xi32>
       affine.store %v, %arg0[%i, %j] : memref<15x30xi32>
     } {sym_name = "j_ap"}
-    // CHECK: "j_ap.point"
+    // CHECK: "j_ap::point"
   } {sym_name = "i_ap"}
-  // CHECK: "i_ap.point"
-  // CHECK: "j_ap.tile"
-  // CHECK: "i_ap.tile"
+  // CHECK: "i_ap::point"
+  // CHECK: "j_ap::tile"
+  // CHECK: "i_ap::tile"
   func.return
 }
 
