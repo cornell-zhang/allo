@@ -206,13 +206,15 @@ def codegen_host(top, module, num_output_args=0):
         """
     )
     # Determine which input indices are actually outputs
-    # When num_output_args > 0 and len(outputs) == 0, the last num_output_args inputs are outputs
     output_input_indices = set()
-    if len(outputs) == 0 and num_output_args > 0:
-        output_input_indices = set(range(len(inputs) - num_output_args, len(inputs)))
-    elif len(outputs) == 0 and num_output_args == 0:
-        # Legacy behavior: assume last input is output
-        output_input_indices = {len(inputs) - 1}
+    if len(outputs) == 0:
+        if num_output_args > 0:
+            output_input_indices = set(
+                range(len(inputs) - num_output_args, len(inputs))
+            )
+        else:
+            # Legacy behavior: assume last input is output
+            output_input_indices = {len(inputs) - 1}
 
     for i, (in_dtype, in_shape) in enumerate(inputs):
         if i in output_input_indices:

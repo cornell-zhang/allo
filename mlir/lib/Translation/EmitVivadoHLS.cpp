@@ -2719,91 +2719,11 @@ void allo::hls::VhlsModuleEmitter::emitFunctionDirectives(
   // }
 }
 
-void allo::hls::VhlsModuleEmitter::emitFunction(func::FuncOp func) {
-  if (func->hasAttr("bit"))
-    BIT_FLAG = true;
-
-  if (func.getBlocks().empty())
-    // This is a declaration.
-    return;
-
-  if (func.getBlocks().size() > 1)
-    emitError(func, "has more than one basic blocks.");
-
-  bool isTopFunction = func->hasAttr("top");
-  if (isTopFunction)
-    os << "/// This is top function.\n";
-
-  // Note: Top-level function arguments are tracked in emitModule() before any
-  // functions are emitted, so state.topLevelFunctionArgs is already populated
-
-  // Validate nested function calls if linearize_pointers is enabled
-  // If there are any top-level multi-dimensional arrays tracked, and this is a
-  // nested function, we need to check if any are used here
-  if (state.linearize_pointers && !isTopFunction &&
-      !state.topLevelFunctionArgs.empty()) {
-    // Check if this nested function has any multi-dimensional array arguments
-    // If it does AND we have top-level multi-dim arrays, it's potentially
-    // problematic
-    for (auto arg : func.getArguments()) {
-      if (auto shapedType = llvm::dyn_cast<ShapedType>(arg.getType())) {
-        if (shapedType.hasStaticShape() && shapedType.getRank() > 1) {
-          // This nested function has a multi-dimensional array parameter
-          // This could be a top-level array being passed down (error) or a
-          // local array (ok) Since we can't easily trace data flow at this
-          // point, we emit a conservative error The safest approach: if
-          // top-level has multi-dim arrays AND nested function has multi-dim
-          // parameters, that's an error (conservative)
-          emitError(func,
-                    "nested function cannot have multi-dimensional array "
-                    "arguments when "
-                    "wrap_io=False (flatten=True) and the top-level function "
-                    "has multi-dimensional arrays. "
-                    "Top-level multi-dimensional arrays are linearized to 1D "
-                    "pointers (e.g., float *v) "
-                    "which cannot be passed to nested functions expecting "
-                    "multi-dimensional arrays (e.g., float v[M][N]). "
-                    "Solution: Use only 1D arrays as arguments to nested "
-                    "functions, or enable wrap_io=True.");
-          return;
-        }
-      }
-    }
-  }
-
-  // Collect stateful globals used in this function
-  std::vector<memref::GlobalOp> statefulGlobals;
-  func.walk([&](memref::GetGlobalOp getGlobalOp) {
-    auto globalOp =
-        getGlobalOp->getParentOfType<ModuleOp>().lookupSymbol<memref::GlobalOp>(
-            getGlobalOp.getName());
-    if (globalOp) {
-      bool isStatic = globalOp->hasAttr("static");
-      if (!isStatic) {
-        // Check if symbol name contains "__stateful_" pattern (stateful
-        // variables)
-        std::string symName = globalOp.getSymName().str();
-        if (symName.find("__stateful_") != std::string::npos) {
-          isStatic = true;
-        }
-      }
-      if (isStatic) {
-        // Check if we've already added this global
-        bool found = false;
-        for (auto &g : statefulGlobals) {
-          if (g.getSymName() == globalOp.getSymName()) {
-            found = true;
-            break;
-          }
-        }
-        if (!found) {
-          statefulGlobals.push_back(globalOp);
-        }
-      }
-    }
-  });
-
-  // Emit function signature.
+/// Emit only the function signature: "void funcName(args...)"
+/// Returns the port list for use in directive emission.
+/// After this call, indentation is back to the original level.
+SmallVector<Value, 8>
+allo::hls::VhlsModuleEmitter::emitFunctionSignature(func::FuncOp func) {
   os << "void " << func.getName() << "(\n";
   addIndent();
 
@@ -2909,6 +2829,109 @@ void allo::hls::VhlsModuleEmitter::emitFunction(func::FuncOp func) {
     emitError(func, "doesn't have a return operation as terminator.");
 
   reduceIndent();
+  return portList;
+}
+
+/// Emit a forward declaration for a function: "void funcName(args...);\n"
+void allo::hls::VhlsModuleEmitter::emitFunctionDeclaration(func::FuncOp func) {
+  if (func.getBlocks().empty())
+    return;
+  // save state
+  auto savedNames = state.nameTable;
+  auto savedConflicts = state.nameConflictCnt;
+  emitFunctionSignature(func);
+  // restore state.
+  state.nameTable = savedNames;
+  state.nameConflictCnt = savedConflicts;
+  os << "\n);\n\n";
+}
+
+void allo::hls::VhlsModuleEmitter::emitFunction(func::FuncOp func) {
+  if (func->hasAttr("bit"))
+    BIT_FLAG = true;
+
+  if (func.getBlocks().empty())
+    // This is a declaration.
+    return;
+
+  if (func.getBlocks().size() > 1)
+    emitError(func, "has more than one basic blocks.");
+
+  bool isTopFunction = func->hasAttr("top");
+  if (isTopFunction)
+    os << "/// This is top function.\n";
+
+  // Note: Top-level function arguments are tracked in emitModule() before any
+  // functions are emitted, so state.topLevelFunctionArgs is already populated
+
+  // Validate nested function calls if linearize_pointers is enabled
+  // If there are any top-level multi-dimensional arrays tracked, and this is a
+  // nested function, we need to check if any are used here
+  if (state.linearize_pointers && !isTopFunction &&
+      !state.topLevelFunctionArgs.empty()) {
+    // Check if this nested function has any multi-dimensional array arguments
+    // If it does AND we have top-level multi-dim arrays, it's potentially
+    // problematic
+    for (auto arg : func.getArguments()) {
+      if (auto shapedType = llvm::dyn_cast<ShapedType>(arg.getType())) {
+        if (shapedType.hasStaticShape() && shapedType.getRank() > 1) {
+          // This nested function has a multi-dimensional array parameter
+          // This could be a top-level array being passed down (error) or a
+          // local array (ok) Since we can't easily trace data flow at this
+          // point, we emit a conservative error The safest approach: if
+          // top-level has multi-dim arrays AND nested function has multi-dim
+          // parameters, that's an error (conservative)
+          emitError(func,
+                    "nested function cannot have multi-dimensional array "
+                    "arguments when "
+                    "wrap_io=False (flatten=True) and the top-level function "
+                    "has multi-dimensional arrays. "
+                    "Top-level multi-dimensional arrays are linearized to 1D "
+                    "pointers (e.g., float *v) "
+                    "which cannot be passed to nested functions expecting "
+                    "multi-dimensional arrays (e.g., float v[M][N]). "
+                    "Solution: Use only 1D arrays as arguments to nested "
+                    "functions, or enable wrap_io=True.");
+          return;
+        }
+      }
+    }
+  }
+
+  // Collect stateful globals used in this function
+  std::vector<memref::GlobalOp> statefulGlobals;
+  func.walk([&](memref::GetGlobalOp getGlobalOp) {
+    auto globalOp =
+        getGlobalOp->getParentOfType<ModuleOp>().lookupSymbol<memref::GlobalOp>(
+            getGlobalOp.getName());
+    if (globalOp) {
+      bool isStatic = globalOp->hasAttr("static");
+      if (!isStatic) {
+        // Check if symbol name contains "__stateful_" pattern (stateful
+        // variables)
+        std::string symName = globalOp.getSymName().str();
+        if (symName.find("__stateful_") != std::string::npos) {
+          isStatic = true;
+        }
+      }
+      if (isStatic) {
+        // Check if we've already added this global
+        bool found = false;
+        for (auto &g : statefulGlobals) {
+          if (g.getSymName() == globalOp.getSymName()) {
+            found = true;
+            break;
+          }
+        }
+        if (!found) {
+          statefulGlobals.push_back(globalOp);
+        }
+      }
+    }
+  });
+
+  // Emit function signature.
+  auto portList = emitFunctionSignature(func);
   os << "\n) {";
   emitInfoAndNewLine(func);
 
@@ -3100,39 +3123,49 @@ using namespace std;
     // Second pass: identify top-level function and track its multi-dimensional
     // arrays This must be done before emitting any functions to properly
     // validate nested functions
+    // Find the top function - try attribute first, then use calling pattern
+    func::FuncOp topFunc = nullptr;
+    llvm::StringMap<unsigned>
+        calleeMinCallerPos;                 // callee -> min caller position
+    llvm::StringMap<unsigned> funcPosition; // func -> position
+
+    unsigned pos = 0;
+    for (auto &op : *module.getBody()) {
+      if (auto func = dyn_cast<func::FuncOp>(op)) {
+        unsigned curPos = pos++;
+        funcPosition[func.getName()] = curPos;
+        func.walk([&](func::CallOp callOp) {
+          auto it = calleeMinCallerPos.find(callOp.getCallee());
+          if (it == calleeMinCallerPos.end())
+            calleeMinCallerPos[callOp.getCallee()] = curPos;
+          else
+            it->second = std::min(it->second, curPos);
+        });
+      }
+    }
+    // Find the top function and emit forward declarations.
+    for (auto &op : *module.getBody()) {
+      if (auto func = dyn_cast<func::FuncOp>(op)) {
+        // Check if it has the "top" attribute (set by HLS backend)
+        if (func->hasAttr("top")) {
+          topFunc = func;
+        }
+        // If no function has been marked as top yet, the top function is the
+        // one that is NOT called by any other function (i.e., it's the entry
+        // point)
+        if (!topFunc && !calleeMinCallerPos.count(func.getName()) &&
+            !func.getBlocks().empty()) {
+          topFunc = func;
+          func.getOperation()->setAttr("top", UnitAttr::get(func.getContext()));
+        }
+        // Emit forward declaration only if this function is forward-referenced
+        auto it = calleeMinCallerPos.find(func.getName());
+        if (it != calleeMinCallerPos.end() &&
+            funcPosition[func.getName()] > it->second)
+          emitFunctionDeclaration(func);
+      }
+    }
     if (state.linearize_pointers) {
-      // Find the top function - try attribute first, then use calling pattern
-      func::FuncOp topFunc = nullptr;
-      llvm::SmallSet<StringRef, 4> calledFunctions;
-
-      // First, collect all called functions
-      for (auto &op : *module.getBody()) {
-        if (auto func = dyn_cast<func::FuncOp>(op)) {
-          func.walk([&](func::CallOp callOp) {
-            calledFunctions.insert(callOp.getCallee());
-          });
-        }
-      }
-
-      // Now find the top function
-      for (auto &op : *module.getBody()) {
-        if (auto func = dyn_cast<func::FuncOp>(op)) {
-          // Check if it has the "top" attribute (set by HLS backend)
-          if (func->hasAttr("top")) {
-            topFunc = func;
-            break;
-          }
-
-          // If no function has been marked as top yet, the top function is the
-          // one that is NOT called by any other function (i.e., it's the entry
-          // point)
-          if (!topFunc && !calledFunctions.contains(func.getName()) &&
-              !func.getBlocks().empty()) {
-            topFunc = func;
-          }
-        }
-      }
-
       if (topFunc) {
         // Found the top function - track its multi-dimensional array arguments
         for (auto arg : topFunc.getArguments()) {
@@ -3145,7 +3178,7 @@ using namespace std;
       }
     }
 
-    // Third pass: emit functions and non-stateful globals
+    // Third pass: emit function definitions and non-stateful globals
     for (auto &op : *module.getBody()) {
       if (auto func = dyn_cast<func::FuncOp>(op)) {
         emitFunction(func);
