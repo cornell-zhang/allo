@@ -171,6 +171,7 @@ static LogicalResult collectBoundExprs(AffineValueMapBuilder &builder,
 static FailureOr<affine::AffineValueMap>
 matchAffineBound(AffineValueMapBuilder &builder, Value root,
                  bool isLowerBound) {
+  builder.reset();
   if (failed(collectBoundExprs(builder, root, isLowerBound)))
     return failure();
   return builder.compose();

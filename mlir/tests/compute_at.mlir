@@ -20,8 +20,8 @@ func.func @compute_at_subset_and_consumer_reusable(
     %u = affine.load %dst[%j] : memref<16xi32>
     affine.store %u, %dst[%j] : memref<16xi32>
   } {sym_name = "cons_loop"}
-  // CHECK: "cons_loop.inner"
-  // CHECK-NEXT: "cons_loop.outer"
+  // CHECK: "cons_loop::inner"
+  // CHECK-NEXT: "cons_loop::outer"
   func.return
 }
 

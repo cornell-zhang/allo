@@ -88,6 +88,12 @@ transform::RenameOp::applyToOne(transform::TransformRewriter &rewriter,
 /// MatchValueOp implementation
 ///===----------------------------------------------------------------------===//
 namespace {
+enum class MatchValueSourceKind : int64_t {
+  Auto = 0,
+  BlockArgument = 1,
+  Result = 2,
+};
+
 SmallVector<BlockArgument> getBlockArguments(Operation *op) {
   SmallVector<BlockArgument> blockArgs;
   for (auto &region : op->getRegions()) {
@@ -106,10 +112,12 @@ transform::MatchValueOp::applyToOne(transform::TransformRewriter &rewriter,
                                     transform::ApplyToEachResultList &results,
                                     transform::TransformState &state) {
   int64_t number = getNumberAttr().getInt();
+  int64_t sourceKindValue = getSourceKindAttr().getInt();
+  auto sourceKind =
+      static_cast<MatchValueSourceKind>(static_cast<int64_t>(sourceKindValue));
 
   auto blockArgs = getBlockArguments(target);
-  if (blockArgs.empty()) {
-    // Case 1: no block argument, match the operation itself
+  auto tryPushResult = [&]() -> DiagnosedSilenceableFailure {
     if (number < 0 ||
         static_cast<uint64_t>(number) >= target->getNumResults()) {
       return emitSilenceableError()
@@ -117,14 +125,31 @@ transform::MatchValueOp::applyToOne(transform::TransformRewriter &rewriter,
     }
     results.push_back(target->getResult(number));
     return DiagnosedSilenceableFailure::success();
-  }
-  // Case 2: match the block argument
-  if (number < 0 || static_cast<uint64_t>(number) >= blockArgs.size()) {
+  };
+
+  auto tryPushBlockArg = [&]() -> DiagnosedSilenceableFailure {
+    if (number < 0 || static_cast<uint64_t>(number) >= blockArgs.size()) {
+      return emitSilenceableError()
+             << "block argument number out of bounds for the target operation";
+    }
+    results.push_back(blockArgs[number]);
+    return DiagnosedSilenceableFailure::success();
+  };
+
+  switch (sourceKind) {
+  case MatchValueSourceKind::Auto:
+    if (blockArgs.empty())
+      return tryPushResult();
+    return tryPushBlockArg();
+  case MatchValueSourceKind::BlockArgument:
+    return tryPushBlockArg();
+  case MatchValueSourceKind::Result:
+    return tryPushResult();
+  default:
     return emitSilenceableError()
-           << "block argument number out of bounds for the target operation";
+           << "invalid source_kind " << sourceKindValue
+           << " (expected 0:auto, 1:block_arg, 2:result)";
   }
-  results.push_back(blockArgs[number]);
-  return DiagnosedSilenceableFailure::success();
 }
 
 ///===----------------------------------------------------------------------===//

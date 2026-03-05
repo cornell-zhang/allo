@@ -14,7 +14,7 @@ func.func @flatten_affine_unsorted_handles(%arg0: memref<4x5x6xi32>) {
       } {sym_name = "k_f"}
     } {sym_name = "j_f"}
   } {sym_name = "i_f"}
-  // CHECK: "j_f.flat"
+  // CHECK: "j_f::flat"
   func.return
 }
 
@@ -50,7 +50,7 @@ func.func @flatten_affine_non_contiguous_selection(%arg0: memref<4x5x6xi32>) {
       } {sym_name = "k_nc"}
     } {sym_name = "j_nc"}
   } {sym_name = "i_nc"}
-  // CHECK: "k_nc.flat"
+  // CHECK: "k_nc::flat"
   func.return
 }
 

@@ -1,7 +1,7 @@
 // RUN: allo-opt %s -split-input-file -transform-interpreter -verify-diagnostics | FileCheck %s
 
 // CHECK-LABEL: func.func @reuse_at_basic
-// CHECK: memref.alloc() {sym_name = "in_buf.reuse"} : memref<3xi32>
+// CHECK: memref.alloc() {sym_name = "in_buf::reuse"} : memref<3xi32>
 // CHECK: affine.load %{{.*}}[0] : memref<3xi32>
 func.func @reuse_at_basic(%out: memref<8x6xi32>) {
   %in_buf = memref.alloc() {sym_name = "in_buf"} : memref<8x8xi32>
@@ -23,7 +23,7 @@ module attributes {transform.with_named_sequence} {
   transform.named_sequence @__transform_main(%root: !transform.op<"builtin.module">) {
     %alloc = transform.structured.match ops{["memref.alloc"]} in %root
       : (!transform.op<"builtin.module">) -> !transform.op<"memref.alloc">
-    %target = transform.allo.match_value 0 of %alloc
+    %target = transform.allo.match_value 0 of %alloc kind 2
       : !transform.op<"memref.alloc"> -> !transform.any_value
     %axis = transform.structured.match attributes {sym_name = "x"} in %root
       : (!transform.op<"builtin.module">) -> !transform.op<"affine.for">
@@ -36,7 +36,7 @@ module attributes {transform.with_named_sequence} {
 // -----
 
 // CHECK-LABEL: func.func @reuse_at_affine_apply_chain
-// CHECK: memref.alloc() {sym_name = "chain_buf.reuse"} : memref<3xi32>
+// CHECK: memref.alloc() {sym_name = "chain_buf::reuse"} : memref<3xi32>
 // CHECK: affine.load %{{.*}}[0] : memref<3xi32>
 func.func @reuse_at_affine_apply_chain(%out: memref<8x6xi32>) {
   %chain_buf = memref.alloc() {sym_name = "chain_buf"} : memref<8x10xi32>
@@ -59,7 +59,7 @@ module attributes {transform.with_named_sequence} {
   transform.named_sequence @__transform_main(%root: !transform.op<"builtin.module">) {
     %alloc = transform.structured.match ops{["memref.alloc"]} in %root
       : (!transform.op<"builtin.module">) -> !transform.op<"memref.alloc">
-    %target = transform.allo.match_value 0 of %alloc
+    %target = transform.allo.match_value 0 of %alloc kind 2
       : !transform.op<"memref.alloc"> -> !transform.any_value
     %axis = transform.structured.match attributes {sym_name = "x"} in %root
       : (!transform.op<"builtin.module">) -> !transform.op<"affine.for">
@@ -89,7 +89,7 @@ module attributes {transform.with_named_sequence} {
   transform.named_sequence @__transform_main(%root: !transform.op<"builtin.module">) {
     %alloc = transform.structured.match ops{["memref.alloc"]} in %root
       : (!transform.op<"builtin.module">) -> !transform.op<"memref.alloc">
-    %target = transform.allo.match_value 0 of %alloc
+    %target = transform.allo.match_value 0 of %alloc kind 2
       : !transform.op<"memref.alloc"> -> !transform.any_value
     %axis = transform.structured.match attributes {sym_name = "x"} in %root
       : (!transform.op<"builtin.module">) -> !transform.op<"affine.for">
@@ -124,7 +124,7 @@ module attributes {transform.with_named_sequence} {
   transform.named_sequence @__transform_main(%root: !transform.op<"builtin.module">) {
     %alloc = transform.structured.match ops{["memref.alloc"]} attributes {sym_name = "classify_buf"} in %root
       : (!transform.op<"builtin.module">) -> !transform.op<"memref.alloc">
-    %target = transform.allo.match_value 0 of %alloc
+    %target = transform.allo.match_value 0 of %alloc kind 2
       : !transform.op<"memref.alloc"> -> !transform.any_value
     %axis = transform.structured.match attributes {sym_name = "r"} in %root
       : (!transform.op<"builtin.module">) -> !transform.op<"affine.for">
@@ -134,4 +134,3 @@ module attributes {transform.with_named_sequence} {
     transform.yield
   }
 }
-

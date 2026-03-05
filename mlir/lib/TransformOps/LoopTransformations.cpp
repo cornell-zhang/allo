@@ -111,7 +111,7 @@ transform::OutlineOp::apply(transform::TransformRewriter &rewriter,
       call.setCalleeAttr(FlatSymbolRefAttr::get(*outlined));
     }
     call->setAttr(OpIdentifier,
-                  rewriter.getStringAttr(getKernelName() + ".call"));
+                  rewriter.getStringAttr(getKernelName() + "::call"));
     // `scf.execute_region` is only an outlining helper container. Inline it
     // back so the final IR directly contains `allo.call`.
     replaceOpWithRegion(rewriter, exec, exec.getRegion());
@@ -216,10 +216,7 @@ transform::LoopReorderOp::apply(transform::TransformRewriter &rewriter,
   }
 
   // Construct the permutation vector over selected loops.
-  SmallVector<unsigned, 4> permutation;
-  llvm::for_each(getPermutation(), [&](Attribute attr) {
-    permutation.push_back(cast<IntegerAttr>(attr).getInt());
-  });
+  auto permutation = getPermutation();
 
   // Map selected loops to their original positions in the full perfect band.
   SmallVector<unsigned, 4> selectedOrgIndices;
@@ -254,12 +251,9 @@ LogicalResult transform::LoopReorderOp::verify() {
   // we cannot know the number of loops at verification time
   // so we only check the validity of the permutation itself
   unsigned nPerm = getPermutation().size();
-  SmallVector<int64_t> permutation;
-  llvm::for_each(getPermutation(), [&](Attribute attr) {
-    permutation.push_back(cast<IntegerAttr>(attr).getInt());
-  });
+  auto permutation = getPermutation();
   for (unsigned i = 0; i < nPerm; ++i) {
-    if (permutation[i] < 0 || permutation[i] >= static_cast<int64_t>(nPerm)) {
+    if (permutation[i] < 0 || permutation[i] >= static_cast<int32_t>(nPerm)) {
       return emitOpError("permutation index out of bounds: ") << permutation[i];
     }
     for (unsigned j = i + 1; j < nPerm; ++j) {
@@ -377,8 +371,8 @@ transform::LoopSplitOp::applyToOne(transform::TransformRewriter &rewriter,
     // set sym_name
     if (symName) {
       auto symStr = symName.getValue();
-      inner->setAttr(OpIdentifier, rewriter.getStringAttr(symStr + ".inner"));
-      outer->setAttr(OpIdentifier, rewriter.getStringAttr(symStr + ".outer"));
+      inner->setAttr(OpIdentifier, rewriter.getStringAttr(symStr + "::inner"));
+      outer->setAttr(OpIdentifier, rewriter.getStringAttr(symStr + "::outer"));
     }
     // record results
     results.push_back(outer);
@@ -403,9 +397,9 @@ transform::LoopSplitOp::applyToOne(transform::TransformRewriter &rewriter,
     // set sym_name
     if (symName) {
       auto symStr = symName.getValue();
-      forOp->setAttr(OpIdentifier, rewriter.getStringAttr(symStr + ".outer"));
+      forOp->setAttr(OpIdentifier, rewriter.getStringAttr(symStr + "::outer"));
       loops.back()->setAttr(OpIdentifier,
-                            rewriter.getStringAttr(symStr + ".inner"));
+                            rewriter.getStringAttr(symStr + "::inner"));
     }
     // record results
     results.push_back(forOp);
@@ -507,8 +501,8 @@ static void annotateTiledLoopSymNames(RewriterBase &rewriter,
     if (!symName)
       continue;
     StringRef base = symName.getValue();
-    tileLoop->setAttr(OpIdentifier, rewriter.getStringAttr(base + ".tile"));
-    pointLoop->setAttr(OpIdentifier, rewriter.getStringAttr(base + ".point"));
+    tileLoop->setAttr(OpIdentifier, rewriter.getStringAttr(base + "::tile"));
+    pointLoop->setAttr(OpIdentifier, rewriter.getStringAttr(base + "::point"));
   }
 }
 
@@ -959,7 +953,7 @@ transform::LoopFlattenOp::apply(transform::TransformRewriter &rewriter,
   // set sym_name
   if (namePrefix) {
     flattenBand.front()->setAttr(
-        OpIdentifier, rewriter.getStringAttr(namePrefix.getValue() + ".flat"));
+        OpIdentifier, rewriter.getStringAttr(namePrefix.getValue() + "::flat"));
   }
   // record results
   results.set(cast<OpResult>(getResult()), {flattenBand.front()});
@@ -1986,7 +1980,7 @@ transform::ReuseAtOp::apply(transform::TransformRewriter &rewriter,
             targetDef->getAttrOfType<StringAttr>(OpIdentifier)) {
       reuseBuffer->setAttr(
           OpIdentifier, StringAttr::get(reuseBuffer->getContext(),
-                                        targetSymName.getValue() + ".reuse"));
+                                        targetSymName.getValue() + "::reuse"));
     }
   }
 
