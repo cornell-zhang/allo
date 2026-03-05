@@ -251,6 +251,8 @@ class HLSModule:
         buf = io.StringIO()
         success = True
         match platform:
+            # [NOTE]: If the HLS backend reports "<func_name> was not declared in this scope", it is likely caused by a forward reference.
+            #           MLIR allows calling functions before their definition, but C++ HLS kernels require a prior declaration.
             case "tapa":
                 success = allo_d.emit_thls(self.module, buf)
             case "intel_hls":
