@@ -7,9 +7,16 @@ import inspect as pyinspect
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import Any, Sequence
 
 from .bindings import ir, transform as tran_d, allo as allo_d
+
+
+# we do not export allo_d bindings to frontend
+class PartitionKind(Enum):
+    Complete = allo_d.Complete.value
+    Block = allo_d.Block.value
+    Cyclic = allo_d.Cyclic.value
 
 
 class HandleState(str, Enum):
@@ -665,7 +672,7 @@ class Schedule:  # pylint: disable=too-many-instance-attributes,too-many-public-
         :deduplicate: If True, deduplicate by instance id while preserving order.
         """
         if targets is None:
-            target_list: list[str | HandleProxy | None] = [None]
+            target_list: Sequence[str | HandleProxy | None] = [None]
         else:
             target_list = self._normalize_targets(targets, action)
         resolved = [
@@ -1454,7 +1461,7 @@ class Schedule:  # pylint: disable=too-many-instance-attributes,too-many-public-
         target: str | ValueProxy,
         *,
         dim: int = 0,
-        kind: allo_d.PartitionKind = allo_d.Complete,
+        kind: PartitionKind = PartitionKind.Complete,
         factor: int = 0,
     ):
         """Attach partition attribute to a concrete memref value.
@@ -1481,9 +1488,9 @@ class Schedule:  # pylint: disable=too-many-instance-attributes,too-many-public-
             )
         if dim < 0:
             raise ValueError(f"`partition` requires non-negative dim, got {dim}.")
-        if kind == allo_d.Complete and factor != 0:
+        if kind == PartitionKind.Complete and factor != 0:
             raise ValueError("Complete partition cannot have non-zero factor.")
-        if kind != allo_d.Complete and factor <= 0:
+        if kind != PartitionKind.Complete and factor <= 0:
             raise ValueError(
                 f"{kind} partition must have positive factor, got {factor}."
             )

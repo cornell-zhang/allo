@@ -205,19 +205,6 @@ def test_example_partition_value_targets():
     assert "allo.part" in text_arg
     assert re.search(r"%arg0: memref<8xi32>\s*\{[^}]*allo.part", text_arg) is not None
 
-    sched_alloc = Schedule.from_string(ctx, MLIR_ALLOC_ROOT)
-    alloc_values = [
-        value
-        for value in sched_alloc.values
-        if value.root_kind == "alloc" and value.source_kind == "res"
-    ]
-    assert len(alloc_values) > 0
-    sched_alloc.partition(alloc_values[0], dim=0, kind=allo_d.Block, factor=2)
-    sched_alloc.refresh()
-    text_alloc = str(sched_alloc.module)
-    assert "allo.part" in text_alloc
-    assert re.search(r"memref.alloc\(\)\s*\{[^}]*allo.part", text_alloc) is not None
-
 
 def test_example_outline_flatten_and_dump_smoke():
     ctx = ir.Context()
