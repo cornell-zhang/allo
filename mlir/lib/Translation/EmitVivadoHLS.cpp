@@ -2719,6 +2719,110 @@ void allo::hls::VhlsModuleEmitter::emitFunctionDirectives(
   // }
 }
 
+void allo::hls::VhlsModuleEmitter::emitFunctionSignature(func::FuncOp func) {
+  // Emit function signature.
+  os << "void " << func.getName() << "(\n";
+  addIndent();
+
+  // Emit input arguments.
+  unsigned argIdx = 0;
+  std::vector<std::string> input_args;
+  if (func->hasAttr("inputs")) {
+    std::string input_names =
+        llvm::dyn_cast<StringAttr>(func->getAttr("inputs")).getValue().str();
+    input_args = split_names(input_names);
+  }
+  std::string output_names;
+  if (func->hasAttr("outputs")) {
+    output_names =
+        llvm::dyn_cast<StringAttr>(func->getAttr("outputs")).getValue().str();
+    // suppose only one output
+    input_args.push_back(output_names);
+  }
+  std::string itypes = "";
+  if (func->hasAttr("itypes"))
+    itypes =
+        llvm::dyn_cast<StringAttr>(func->getAttr("itypes")).getValue().str();
+  else {
+    for (unsigned i = 0; i < func.getNumArguments(); ++i)
+      itypes += "x";
+  }
+  for (auto &arg : func.getArguments()) {
+    indent();
+    fixUnsignedType(arg, itypes[argIdx] == 'u');
+    if (llvm::isa<ShapedType>(arg.getType())) {
+      if (llvm::isa<StreamType>(
+              llvm::dyn_cast<ShapedType>(arg.getType()).getElementType())) {
+        auto shapedType = llvm::dyn_cast<ShapedType>(arg.getType());
+        os << getTypeName(arg) << " ";
+        os << addName(arg, false);
+        for (auto shape : shapedType.getShape())
+          os << "[" << shape << "]";
+      } else if (input_args.size() == 0) {
+        emitArrayDecl(arg, true);
+      } else {
+        emitArrayDecl(arg, true, input_args[argIdx]);
+      }
+    } else {
+      if (llvm::isa<StreamType>(arg.getType())) {
+        // need to pass by reference
+        os << getTypeName(arg) << "& ";
+        os << addName(arg, false);
+      } else if (input_args.size() == 0) {
+        emitValue(arg);
+      } else {
+        emitValue(arg, 0, false, input_args[argIdx]);
+      }
+    }
+
+    if (argIdx++ != func.getNumArguments() - 1)
+      os << ",\n";
+  }
+
+  // Emit results.
+  auto args = func.getArguments();
+  std::string otypes = "";
+  if (func->hasAttr("otypes"))
+    otypes =
+        llvm::dyn_cast<StringAttr>(func->getAttr("otypes")).getValue().str();
+  else {
+    for (unsigned i = 0; i < func.getNumArguments(); ++i)
+      otypes += "x";
+  }
+  if (auto funcReturn =
+          llvm::dyn_cast<func::ReturnOp>(func.front().getTerminator())) {
+    unsigned idx = 0;
+    for (auto result : funcReturn.getOperands()) {
+      if (std::find(args.begin(), args.end(), result) == args.end()) {
+        if (func.getArguments().size() > 0)
+          os << ",\n";
+        indent();
+
+        // TODO: a known bug, cannot return a value twice, e.g. return %0, %0
+        // : index, index. However, typically this should not happen.
+        fixUnsignedType(result, otypes[idx] == 'u');
+        if (llvm::isa<ShapedType>(result.getType())) {
+          if (output_names != "")
+            emitArrayDecl(result, true);
+          else
+            emitArrayDecl(result, true, output_names);
+        } else {
+          // In Vivado HLS, pointer indicates the value is an output.
+          if (output_names != "")
+            emitValue(result, /*rank=*/0, /*isPtr=*/true);
+          else
+            emitValue(result, /*rank=*/0, /*isPtr=*/true, output_names);
+        }
+      }
+      idx += 1;
+    }
+  } else
+    emitError(func, "doesn't have a return operation as terminator.");
+
+  reduceIndent();
+  os << "\n)";
+}
+
 void allo::hls::VhlsModuleEmitter::emitFunction(func::FuncOp func) {
   if (func->hasAttr("bit"))
     BIT_FLAG = true;
@@ -2803,113 +2907,8 @@ void allo::hls::VhlsModuleEmitter::emitFunction(func::FuncOp func) {
     }
   });
 
-  // Emit function signature.
-  os << "void " << func.getName() << "(\n";
-  addIndent();
-
-  // This vector is to record all ports of the function.
-  SmallVector<Value, 8> portList;
-
-  // Emit input arguments.
-  unsigned argIdx = 0;
-  std::vector<std::string> input_args;
-  if (func->hasAttr("inputs")) {
-    std::string input_names =
-        llvm::dyn_cast<StringAttr>(func->getAttr("inputs")).getValue().str();
-    input_args = split_names(input_names);
-  }
-  std::string output_names;
-  if (func->hasAttr("outputs")) {
-    output_names =
-        llvm::dyn_cast<StringAttr>(func->getAttr("outputs")).getValue().str();
-    // suppose only one output
-    input_args.push_back(output_names);
-  }
-  std::string itypes = "";
-  if (func->hasAttr("itypes"))
-    itypes =
-        llvm::dyn_cast<StringAttr>(func->getAttr("itypes")).getValue().str();
-  else {
-    for (unsigned i = 0; i < func.getNumArguments(); ++i)
-      itypes += "x";
-  }
-  for (auto &arg : func.getArguments()) {
-    indent();
-    fixUnsignedType(arg, itypes[argIdx] == 'u');
-    if (llvm::isa<ShapedType>(arg.getType())) {
-      if (llvm::isa<StreamType>(
-              llvm::dyn_cast<ShapedType>(arg.getType()).getElementType())) {
-        auto shapedType = llvm::dyn_cast<ShapedType>(arg.getType());
-        os << getTypeName(arg) << " ";
-        os << addName(arg, false);
-        for (auto shape : shapedType.getShape())
-          os << "[" << shape << "]";
-      } else if (input_args.size() == 0) {
-        emitArrayDecl(arg, true);
-      } else {
-        emitArrayDecl(arg, true, input_args[argIdx]);
-      }
-    } else {
-      if (llvm::isa<StreamType>(arg.getType())) {
-        // need to pass by reference
-        os << getTypeName(arg) << "& ";
-        os << addName(arg, false);
-      } else if (input_args.size() == 0) {
-        emitValue(arg);
-      } else {
-        emitValue(arg, 0, false, input_args[argIdx]);
-      }
-    }
-
-    portList.push_back(arg);
-    if (argIdx++ != func.getNumArguments() - 1)
-      os << ",\n";
-  }
-
-  // Emit results.
-  auto args = func.getArguments();
-  std::string otypes = "";
-  if (func->hasAttr("otypes"))
-    otypes =
-        llvm::dyn_cast<StringAttr>(func->getAttr("otypes")).getValue().str();
-  else {
-    for (unsigned i = 0; i < func.getNumArguments(); ++i)
-      otypes += "x";
-  }
-  if (auto funcReturn =
-          llvm::dyn_cast<func::ReturnOp>(func.front().getTerminator())) {
-    unsigned idx = 0;
-    for (auto result : funcReturn.getOperands()) {
-      if (std::find(args.begin(), args.end(), result) == args.end()) {
-        if (func.getArguments().size() > 0)
-          os << ",\n";
-        indent();
-
-        // TODO: a known bug, cannot return a value twice, e.g. return %0, %0
-        // : index, index. However, typically this should not happen.
-        fixUnsignedType(result, otypes[idx] == 'u');
-        if (llvm::isa<ShapedType>(result.getType())) {
-          if (output_names != "")
-            emitArrayDecl(result, true);
-          else
-            emitArrayDecl(result, true, output_names);
-        } else {
-          // In Vivado HLS, pointer indicates the value is an output.
-          if (output_names != "")
-            emitValue(result, /*rank=*/0, /*isPtr=*/true);
-          else
-            emitValue(result, /*rank=*/0, /*isPtr=*/true, output_names);
-        }
-
-        portList.push_back(result);
-      }
-      idx += 1;
-    }
-  } else
-    emitError(func, "doesn't have a return operation as terminator.");
-
-  reduceIndent();
-  os << "\n) {";
+  emitFunctionSignature(func);
+  os << " {";
   emitInfoAndNewLine(func);
 
   // Emit function body.
@@ -2980,6 +2979,20 @@ void allo::hls::VhlsModuleEmitter::emitFunction(func::FuncOp func) {
       }
       os << "};";
       emitInfoAndNewLine(globalOp.getOperation());
+    }
+  }
+
+  // This vector is to record all ports of the function.
+  SmallVector<Value, 8> portList;
+  for (auto &arg : func.getArguments())
+    portList.push_back(arg);
+  if (auto funcReturn =
+          llvm::dyn_cast<func::ReturnOp>(func.front().getTerminator())) {
+    auto args = func.getArguments();
+    for (auto result : funcReturn.getOperands()) {
+      if (std::find(args.begin(), args.end(), result) == args.end()) {
+        portList.push_back(result);
+      }
     }
   }
 
@@ -3145,7 +3158,22 @@ using namespace std;
       }
     }
 
-    // Third pass: emit functions and non-stateful globals
+    // Third pass: emit forward declarations for all functions
+    for (auto &op : *module.getBody()) {
+      if (auto func = dyn_cast<func::FuncOp>(op)) {
+        if (!func->hasAttr("top") && !func.getBlocks().empty()) {
+          emitFunctionSignature(func);
+          os << ";\n\n";
+        }
+      }
+    }
+
+    // Clear nameTable and nameConflictCnt to ensure that Pass 4 can re-emit
+    // function signatures with full types.
+    state.nameTable.clear();
+    state.nameConflictCnt.clear();
+
+    // Fourth pass: emit functions and non-stateful globals
     for (auto &op : *module.getBody()) {
       if (auto func = dyn_cast<func::FuncOp>(op)) {
         emitFunction(func);

@@ -85,6 +85,7 @@ protected:
   void emitLoopDirectives(Operation *op) override;
   void emitArrayDirectives(Value memref) override;
   void emitFunctionDirectives(func::FuncOp func, ArrayRef<Value> portList) override;
+  void emitFunctionSignature(func::FuncOp func);
   void emitFunction(func::FuncOp func) override;
   void emitHostFunction(func::FuncOp func) override;
 };
