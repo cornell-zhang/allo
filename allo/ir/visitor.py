@@ -120,6 +120,7 @@ class ASTContext:
         self.mapping = None
         # track the current AST node being visited for error reporting
         self.current_node = None
+        self.global_op_cache = {}
 
     def copy(self):
         ctx = ASTContext(
@@ -146,6 +147,7 @@ class ASTContext:
         ctx.current_node = self.current_node
         if hasattr(self, "func_suffix"):
             ctx.func_suffix = self.func_suffix
+        ctx.global_op_cache = self.global_op_cache
         return ctx
 
     def set_ip(self, ip):
