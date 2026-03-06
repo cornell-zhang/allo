@@ -99,20 +99,23 @@ def _process_function_streams(
     stream_construct_ops: dict[str, allo_d.StreamConstructOp] = {}
 
     # Collect PE calls and stream construct ops in this function
+    all_calls = []
+    recursive_collect_ops(func, func_d.CallOp, all_calls)
+    for op in all_calls:
+        callee_name = str(op.callee)[1:]
+        if not callee_name.startswith(("load_buf", "store_res")):
+            for mod_op in module.body.operations:
+                if isinstance(mod_op, func_d.FuncOp):
+                    if callee_name == str(mod_op.sym_name).strip('"'):
+                        pe_call_define_ops[op] = mod_op
+                        # Recursively process the callee function first
+                        _process_function_streams(
+                            module, mod_op, processed_funcs, all_pe_calls_by_func
+                        )
+                        break
+    
     for op in func_ops:
-        if isinstance(op, memref_d.AllocOp):
-            continue
-        if isinstance(op, func_d.CallOp):
-            callee_name = str(op.callee)[1:]
-            if not callee_name.startswith(("load_buf", "store_res")):
-                for mod_op in module.body.operations:
-                    if isinstance(mod_op, func_d.FuncOp):
-                        if callee_name == str(mod_op.sym_name).strip('"'):
-                            pe_call_define_ops[op] = mod_op
-                            # Recursively process the callee function first
-                            _process_function_streams(module, mod_op, processed_funcs, all_pe_calls_by_func)
-                            break
-        elif isinstance(op, allo_d.StreamConstructOp):
+        if isinstance(op, allo_d.StreamConstructOp):
             stream_name = str(op.attributes["name"]).strip('"')
             stream_construct_ops[stream_name] = op
 
@@ -194,12 +197,28 @@ def _process_function_streams(
         assert isinstance(call_op.operands_, OpOperandList)
         assert isinstance(func_def_op.arguments, BlockArgumentList)
         assert len(call_op.operands_) == len(func_def_op.arguments)
+        # 1. Update this call site and callee signature for all stream arguments
         for i in range(len(call_op.operands_)):
             arg_instance = call_op.operands_[i]
             for stream_name, stream_construct_op in stream_construct_ops.items():
                 if Value(stream_construct_op.result) == arg_instance:
                     arg_def = func_def_op.arguments[i]
+                    stream_memref = stream_struct_table[stream_name]
                     arg_stream_table[arg_def] = stream_name
+                    # Change argument definitions
+                    arg_def.set_type(stream_memref.type)
+                    old_func_type = func_def_op.type
+                    new_inputs = list(old_func_type.inputs)
+                    new_inputs[arg_def.arg_number] = stream_memref.type
+                    new_func_type = FunctionType.get(
+                        inputs=new_inputs,
+                        results=old_func_type.results,
+                        context=old_func_type.context,
+                    )
+                    func_def_op.attributes["function_type"] = TypeAttr.get(
+                        new_func_type, module.context
+                    )
+                    call_op.operands_[arg_def.arg_number] = stream_memref
         # Collect and replace `stream_get`s and `stream_put`s
         func_stream_ops = []
         recursive_collect_ops(
@@ -225,20 +244,6 @@ def _process_function_streams(
             stream_name = arg_stream_table[stream_arg]
             stream_type = stream_type_table[stream_name]
             stream_memref = stream_struct_table[stream_name]
-            # Change argument definitions
-            stream_arg.set_type(stream_memref.type)
-            old_func_type = func_def_op.type
-            new_inputs = old_func_type.inputs.copy()
-            new_inputs[stream_arg.arg_number] = stream_memref.type
-            new_func_type = FunctionType.get(
-                inputs=new_inputs,
-                results=old_func_type.results,
-                context=old_func_type.context,
-            )
-            func_def_op.attributes["function_type"] = TypeAttr.get(
-                new_func_type, module.context
-            )
-            call_op.operands_[stream_arg.arg_number] = stream_memref
             # FIFO access
             # Spin and wait for the FIFO to be not full
             assert isinstance(stream_memref.type, MemRefType)
@@ -805,6 +810,8 @@ def _inject_omp_parallel_sections(pe_call_define_ops):
 
 
 def build_dataflow_simulator(module: Module, top_func_name: str):
+    if os.environ.get("OMP_MAX_ACTIVE_LEVELS") is None:
+        os.environ["OMP_MAX_ACTIVE_LEVELS"] = "4"
     with module.context, Location.unknown():
         # Declare usleep for spinloop yielding
         found_usleep = False
