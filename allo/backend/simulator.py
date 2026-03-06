@@ -79,6 +79,7 @@ def _process_function_streams(
     module: Module,
     func: func_d.FuncOp,
     processed_funcs: set,
+    all_pe_calls_by_func: dict = None,
 ):
     """
     Process streams and PE calls within a single function.
@@ -109,7 +110,7 @@ def _process_function_streams(
                         if callee_name == str(mod_op.sym_name).strip('"'):
                             pe_call_define_ops[op] = mod_op
                             # Recursively process the callee function first
-                            _process_function_streams(module, mod_op, processed_funcs)
+                            _process_function_streams(module, mod_op, processed_funcs, all_pe_calls_by_func)
                             break
         elif isinstance(op, allo_d.StreamConstructOp):
             stream_name = str(op.attributes["name"]).strip('"')
@@ -765,12 +766,42 @@ def _process_function_streams(
     for op in stream_construct_ops.values():
         op.operation.erase()
 
+    # Accumulate PE calls keyed by function for recursive OMP injection
+    if all_pe_calls_by_func is not None and pe_call_define_ops:
+        all_pe_calls_by_func[func_name] = pe_call_define_ops
+
     return (
         stream_struct_table,
         stream_type_table,
         pe_call_define_ops,
         stream_construct_ops,
     )
+
+
+def _inject_omp_parallel_sections(pe_call_define_ops):
+    """Wrap a set of func.call ops in omp.parallel > omp.sections > omp.section blocks."""
+    assert len(pe_call_define_ops) > 0
+    omp_ip = InsertionPoint(beforeOperation=list(pe_call_define_ops.keys())[0])
+    omp_parallel_op = openmp_d.ParallelOp([], [], [], [], ip=omp_ip)
+    assert isinstance(omp_parallel_op.region, Region)
+    omp_parallel_block = Block.create_at_start(omp_parallel_op.region, [])
+
+    # Add `omp.sections`
+    ip_omp_parallel = InsertionPoint(omp_parallel_block)
+    omp_sections_op = openmp_d.SectionsOp([], [], [], [], ip=ip_omp_parallel)
+    omp_sections_block = Block.create_at_start(omp_sections_op.region, [])
+    openmp_d.TerminatorOp(ip=ip_omp_parallel)
+
+    # Add `omp.section`s for PE calls
+    ip_omp_sections = InsertionPoint(omp_sections_block)
+    for call_op in pe_call_define_ops:
+        assert isinstance(call_op, OpView)
+        omp_section_op = openmp_d.SectionOp(ip=ip_omp_sections)
+        omp_section_block = Block.create_at_start(omp_section_op.region, [])
+        ip_omp_section = InsertionPoint(omp_section_block)
+        omp_term_op = openmp_d.TerminatorOp(ip=ip_omp_section)
+        call_op.operation.move_before(omp_term_op.operation)
+    openmp_d.TerminatorOp(ip=ip_omp_sections)
 
 
 def build_dataflow_simulator(module: Module, top_func_name: str):
@@ -799,12 +830,13 @@ def build_dataflow_simulator(module: Module, top_func_name: str):
 
         # Process all functions with streams recursively, starting from top
         processed_funcs: set = set()
+        all_pe_calls_by_func: dict = {}
         func = find_func_in_module(module, top_func_name)
         assert isinstance(func.body, Region)
 
         # Recursively process the top function and all its callees
         _, _, pe_call_define_ops, _ = _process_function_streams(
-            module, func, processed_funcs
+            module, func, processed_funcs, all_pe_calls_by_func
         )
 
         # If no PE calls were found in top function, collect them again from the processed functions
@@ -819,30 +851,12 @@ def build_dataflow_simulator(module: Module, top_func_name: str):
                                 if callee_name == str(mod_op.sym_name).strip('"'):
                                     pe_call_define_ops[op] = mod_op
                                     break
+            all_pe_calls_by_func[top_func_name] = pe_call_define_ops
 
-        # Add the outmost `omp.parallel`
-        assert len(pe_call_define_ops) > 0
-        omp_ip = InsertionPoint(beforeOperation=list(pe_call_define_ops.keys())[0])
-        omp_parallel_op = openmp_d.ParallelOp([], [], [], [], ip=omp_ip)
-        assert isinstance(omp_parallel_op.region, Region)
-        omp_parallel_block = Block.create_at_start(omp_parallel_op.region, [])
-
-        # Add `omp.sections`
-        ip_omp_parallel = InsertionPoint(omp_parallel_block)
-        omp_sections_op = openmp_d.SectionsOp([], [], [], [], ip=ip_omp_parallel)
-        omp_sections_block = Block.create_at_start(omp_sections_op.region, [])
-        openmp_d.TerminatorOp(ip=ip_omp_parallel)
-
-        # Add `omp.section`s for PE calls
-        ip_omp_sections = InsertionPoint(omp_sections_block)
-        for call_op in pe_call_define_ops:
-            assert isinstance(call_op, OpView)
-            omp_section_op = openmp_d.SectionOp(ip=ip_omp_sections)
-            omp_section_block = Block.create_at_start(omp_section_op.region, [])
-            ip_omp_section = InsertionPoint(omp_section_block)
-            omp_term_op = openmp_d.TerminatorOp(ip=ip_omp_section)
-            call_op.operation.move_before(omp_term_op.operation)
-        openmp_d.TerminatorOp(ip=ip_omp_sections)
+        # Inject omp.parallel/sections into every function that has PE calls
+        for func_pe_calls in all_pe_calls_by_func.values():
+            if func_pe_calls:
+                _inject_omp_parallel_sections(func_pe_calls)
 
 
 # This pass is only meant to run on fully lowered MLIR code
