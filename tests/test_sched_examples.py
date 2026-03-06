@@ -9,7 +9,7 @@ import re
 import pytest
 
 from allo.bindings import ir, allo as allo_d
-from allo.sched import HandleState, Sched
+from allo.schedule import HandleState, Schedule
 
 
 MLIR_ONE_LOOP_SCF = """
@@ -84,7 +84,7 @@ def _iter_nodes(node):
         yield from _iter_nodes(child)
 
 
-def _valid_handles(sched: Sched, identifier: str):
+def _valid_handles(sched: Schedule, identifier: str):
     return [
         h
         for h in sched.handles
@@ -92,7 +92,7 @@ def _valid_handles(sched: Sched, identifier: str):
     ]
 
 
-def _valid_ids(sched: Sched):
+def _valid_ids(sched: Schedule):
     return {h.identifier for h in sched.handles if h.state == HandleState.VALID}
 
 
@@ -113,24 +113,24 @@ def test_example_proxy_tree_parse_and_completion():
 
 def test_example_sched_constructors(tmp_path: Path):
     ctx = ir.Context()
-    sched_from_string = Sched.from_string(ctx, MLIR_ONE_LOOP_SCF)
+    sched_from_string = Schedule.from_string(ctx, MLIR_ONE_LOOP_SCF)
     assert len(sched_from_string.handles) > 0
 
     ir_file = tmp_path / "example.mlir"
     ir_file.write_text(MLIR_ONE_LOOP_SCF, encoding="utf-8")
-    sched_from_file = Sched.from_file(ctx, str(ir_file))
+    sched_from_file = Schedule.from_file(ctx, str(ir_file))
     assert len(sched_from_file.handles) > 0
 
     ctx2 = ir.Context()
     ctx2.load_dialects()
     mod = ir.parse_from_string(ctx2, MLIR_ONE_LOOP_SCF)
-    sched_from_module = Sched.from_module(mod)
+    sched_from_module = Schedule.from_module(mod)
     assert len(sched_from_module.handles) > 0
 
 
 def test_example_select_query_and_active():
     ctx = ir.Context()
-    sched = Sched.from_string(ctx, MLIR_TWO_LOOPS_SCF)
+    sched = Schedule.from_string(ctx, MLIR_TWO_LOOPS_SCF)
 
     loops = sched.query(op_kind="scf.for")
     assert len(loops) == 2
@@ -149,7 +149,7 @@ def test_example_select_query_and_active():
 
 def test_example_split_then_pipeline_then_commit():
     ctx = ir.Context()
-    sched = Sched.from_string(ctx, MLIR_ONE_LOOP_SCF)
+    sched = Schedule.from_string(ctx, MLIR_ONE_LOOP_SCF)
 
     old_loop = _valid_handles(sched, "kernel.L0")[0]
     sched.split("kernel.L0", factor=2)
@@ -162,7 +162,7 @@ def test_example_split_then_pipeline_then_commit():
     assert inner.meta["pipeline_ii"] == 2
     assert sched.dirty
 
-    sched.commit()
+    sched.refresh()
     assert not sched.dirty
     assert len(_valid_handles(sched, "kernel.L0::outer")) == 0
     assert len(_valid_handles(sched, "kernel.L0::inner")) == 0
@@ -172,7 +172,7 @@ def test_example_split_then_pipeline_then_commit():
 
 def test_example_tile_multi_targets():
     ctx = ir.Context()
-    sched = Sched.from_string(ctx, MLIR_TWO_LOOPS_SCF)
+    sched = Schedule.from_string(ctx, MLIR_TWO_LOOPS_SCF)
 
     sched.tile(["kernel.L0", "kernel.L0.L0"], factors=[2, 2])
     valid_ids = _valid_ids(sched)
@@ -184,11 +184,11 @@ def test_example_tile_multi_targets():
 
 def test_example_reorder_on_affine_loops_keeps_identifier():
     ctx = ir.Context()
-    sched = Sched.from_string(ctx, MLIR_TWO_LOOPS_AFFINE)
+    sched = Schedule.from_string(ctx, MLIR_TWO_LOOPS_AFFINE)
 
     sched.reorder(["kernel.L0", "kernel.L0.L0"], [1, 0])
     assert sched.dirty
-    sched.commit()
+    sched.refresh()
     assert not sched.dirty
 
     valid_ids = _valid_ids(sched)
@@ -198,14 +198,14 @@ def test_example_reorder_on_affine_loops_keeps_identifier():
 
 def test_example_partition_value_targets():
     ctx = ir.Context()
-    sched_arg = Sched.from_string(ctx, MLIR_ONE_LOOP_SCF)
+    sched_arg = Schedule.from_string(ctx, MLIR_ONE_LOOP_SCF)
     sched_arg.partition("kernel:arg0", dim=0)
-    sched_arg.commit()
+    sched_arg.refresh()
     text_arg = str(sched_arg.module)
     assert "allo.part" in text_arg
     assert re.search(r"%arg0: memref<8xi32>\s*\{[^}]*allo.part", text_arg) is not None
 
-    sched_alloc = Sched.from_string(ctx, MLIR_ALLOC_ROOT)
+    sched_alloc = Schedule.from_string(ctx, MLIR_ALLOC_ROOT)
     alloc_values = [
         value
         for value in sched_alloc.values
@@ -213,7 +213,7 @@ def test_example_partition_value_targets():
     ]
     assert len(alloc_values) > 0
     sched_alloc.partition(alloc_values[0], dim=0, kind=allo_d.Block, factor=2)
-    sched_alloc.commit()
+    sched_alloc.refresh()
     text_alloc = str(sched_alloc.module)
     assert "allo.part" in text_alloc
     assert re.search(r"memref.alloc\(\)\s*\{[^}]*allo.part", text_alloc) is not None
@@ -221,7 +221,7 @@ def test_example_partition_value_targets():
 
 def test_example_outline_flatten_and_dump_smoke():
     ctx = ir.Context()
-    sched_outline = Sched.from_string(ctx, MLIR_ONE_LOOP_SCF)
+    sched_outline = Schedule.from_string(ctx, MLIR_ONE_LOOP_SCF)
     old_loop = _valid_handles(sched_outline, "kernel.L0")[0]
     sched_outline.outline("kernel.L0", func_name="outlined_kernel")
     assert old_loop.state == HandleState.CONSUMED
@@ -230,7 +230,7 @@ def test_example_outline_flatten_and_dump_smoke():
     assert sched_outline.active is not None
     assert sched_outline.active.instance_id == call[0].instance_id
 
-    sched_flatten = Sched.from_string(ctx, MLIR_TWO_LOOPS_AFFINE)
+    sched_flatten = Schedule.from_string(ctx, MLIR_TWO_LOOPS_AFFINE)
     sched_flatten.flatten(["kernel.L0", "kernel.L0.L0"])
     flat = _valid_handles(sched_flatten, "kernel.L0::flat")
     assert len(flat) == 1

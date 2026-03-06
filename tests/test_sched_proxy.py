@@ -8,7 +8,7 @@ import re
 import pytest
 
 from allo.bindings import ir, allo as allo_d, transform as tran_d
-from allo.sched import HandleState, Sched
+from allo.schedule import HandleState, Schedule
 
 
 MLIR_ONE_LOOP = """
@@ -115,7 +115,7 @@ def _iter_nodes(node):
         yield from _iter_nodes(child)
 
 
-def _find_valid_by_identifier(sched: Sched, identifier: str):
+def _find_valid_by_identifier(sched: Schedule, identifier: str):
     return [
         h
         for h in sched.handles
@@ -162,19 +162,19 @@ def test_parse_proxy_tree_exposes_value_metadata_core():
 
 def test_sched_constructors_from_string_and_module():
     ctx = ir.Context()
-    sched_from_string = Sched.from_string(ctx, MLIR_ONE_LOOP)
+    sched_from_string = Schedule.from_string(ctx, MLIR_ONE_LOOP)
     assert len(sched_from_string.handles) > 0
 
     ctx2 = ir.Context()
     ctx2.load_dialects()
     mod = ir.parse_from_string(ctx2, MLIR_ONE_LOOP)
-    sched_from_module = Sched.from_module(mod)
+    sched_from_module = Schedule.from_module(mod)
     assert len(sched_from_module.handles) > 0
 
 
 def test_split_pipeline_lifecycle_core():
     ctx = ir.Context()
-    sched = Sched.from_string(ctx, MLIR_ONE_LOOP)
+    sched = Schedule.from_string(ctx, MLIR_ONE_LOOP)
     sched.select("kernel.L0")
     original = sched.active
     assert original is not None
@@ -192,7 +192,7 @@ def test_split_pipeline_lifecycle_core():
 
 def test_stale_descendants_on_split_core():
     ctx = ir.Context()
-    sched = Sched.from_string(ctx, MLIR_TWO_LOOPS)
+    sched = Schedule.from_string(ctx, MLIR_TWO_LOOPS)
     nested = _find_valid_by_identifier(sched, "kernel.L0.L0")[0]
     sched.split("kernel.L0", factor=2)
     assert nested.state == HandleState.STALE
@@ -204,7 +204,7 @@ def test_refresh_from_module_does_not_rewrite_identifiers():
     mod = ir.parse_from_string(ctx, MLIR_ONE_LOOP_LEGACY_IDENTIFIER)
     ir.complete_op_identifiers(mod)
 
-    sched = Sched.from_module(mod)
+    sched = Schedule.from_module(mod)
     assert len(_find_valid_by_identifier(sched, "legacy.loop")) == 1
 
     sched.refresh_from_module()
@@ -238,9 +238,9 @@ def test_commit_always_rewrites_identifiers_once():
     mod = ir.parse_from_string(ctx, MLIR_ONE_LOOP_LEGACY_IDENTIFIER)
     ir.complete_op_identifiers(mod)
 
-    sched = Sched.from_module(mod)
+    sched = Schedule.from_module(mod)
     sched.pipeline("legacy.loop", ii=2)
-    sched.commit()
+    sched.refresh()
 
     assert len(_find_valid_by_identifier(sched, "legacy.loop")) == 0
     assert len(_find_valid_by_identifier(sched, "kernel.L0")) == 1
@@ -248,7 +248,7 @@ def test_commit_always_rewrites_identifiers_once():
 
 def test_reorder_updates_hierarchy_for_stale_propagation():
     ctx = ir.Context()
-    sched = Sched.from_string(ctx, MLIR_THREE_NESTED_LOOPS)
+    sched = Schedule.from_string(ctx, MLIR_THREE_NESTED_LOOPS)
 
     sched.to_affine("kernel.L0")
     sched.to_affine("kernel.L0.L0")
@@ -266,7 +266,7 @@ def test_reorder_updates_hierarchy_for_stale_propagation():
 
 def test_to_affine_keeps_descendants_valid():
     ctx = ir.Context()
-    sched = Sched.from_string(ctx, MLIR_TWO_LOOPS)
+    sched = Schedule.from_string(ctx, MLIR_TWO_LOOPS)
 
     sched.to_affine("kernel.L0")
     inner = _find_valid_by_identifier(sched, "kernel.L0.L0")[0]
@@ -278,10 +278,10 @@ def test_to_affine_keeps_descendants_valid():
 
 def test_partition_handles_block_argument_root():
     ctx = ir.Context()
-    sched = Sched.from_string(ctx, MLIR_ONE_LOOP)
+    sched = Schedule.from_string(ctx, MLIR_ONE_LOOP)
 
     sched.partition("kernel:arg0", dim=0)
-    sched.commit()
+    sched.refresh()
     text = str(sched.module)
     assert "allo.part" in text
     assert re.search(r"%arg0: memref<8xi32>\s*\{[^}]*allo.part", text) is not None
@@ -289,14 +289,14 @@ def test_partition_handles_block_argument_root():
 
 def test_partition_rejects_non_memref_value():
     ctx = ir.Context()
-    sched = Sched.from_string(ctx, MLIR_LOOP_RESULT_MEMREF)
+    sched = Schedule.from_string(ctx, MLIR_LOOP_RESULT_MEMREF)
     with pytest.raises(ValueError, match="not memref-typed"):
         sched.partition("kernel.L0:arg0", dim=0)
 
 
 def test_dump_methods_include_internal_state():
     ctx = ir.Context()
-    sched = Sched.from_string(ctx, MLIR_LOOP_RESULT_MEMREF)
+    sched = Schedule.from_string(ctx, MLIR_LOOP_RESULT_MEMREF)
     sched.select("kernel.L0")
     sched.pipeline(ii=2)
 
@@ -317,7 +317,7 @@ def test_dump_methods_include_internal_state():
 
 def test_dev_rebind_payloads_smoke():
     ctx = ir.Context()
-    sched = Sched.from_string(ctx, MLIR_AFFINE_TWO_LOOPS)
+    sched = Schedule.from_string(ctx, MLIR_AFFINE_TWO_LOOPS)
 
     resolved = sched.dev_resolve_targets(
         ["kernel.L0", "kernel.L0.L0"],
