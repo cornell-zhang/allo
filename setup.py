@@ -4,6 +4,7 @@
 import os
 import sys
 import subprocess
+from pathlib import Path
 from setuptools import setup, Extension
 from setuptools.command.build_ext import build_ext
 from setuptools import find_packages
@@ -48,7 +49,7 @@ class CMakeBuild(build_ext):
                     "--recursive",
                     "externals/mlir-python-extra",
                 ],
-                cwd=ext.sourcedir.replace("/mlir", ""),
+                cwd=Path(ext.sourcedir).parent,
             )
         except subprocess.CalledProcessError as e:
             print(
