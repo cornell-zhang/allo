@@ -2727,7 +2727,7 @@ allo::hls::VhlsModuleEmitter::emitFunctionSignature(func::FuncOp func) {
   os << "void " << func.getName() << "(\n";
   addIndent();
 
-  // This vector is to record all ports of the function.
+  // This vector records all ports of the function (args + return operands).
   SmallVector<Value, 8> portList;
 
   // Emit input arguments.
@@ -2754,6 +2754,7 @@ allo::hls::VhlsModuleEmitter::emitFunctionSignature(func::FuncOp func) {
       itypes += "x";
   }
   for (auto &arg : func.getArguments()) {
+    portList.push_back(arg);
     indent();
     fixUnsignedType(arg, itypes[argIdx] == 'u');
     if (llvm::isa<ShapedType>(arg.getType())) {
@@ -2781,7 +2782,6 @@ allo::hls::VhlsModuleEmitter::emitFunctionSignature(func::FuncOp func) {
       }
     }
 
-    portList.push_back(arg);
     if (argIdx++ != func.getNumArguments() - 1)
       os << ",\n";
   }
@@ -2801,6 +2801,7 @@ allo::hls::VhlsModuleEmitter::emitFunctionSignature(func::FuncOp func) {
     unsigned idx = 0;
     for (auto result : funcReturn.getOperands()) {
       if (std::find(args.begin(), args.end(), result) == args.end()) {
+        portList.push_back(result);
         if (func.getArguments().size() > 0)
           os << ",\n";
         indent();
@@ -2820,8 +2821,6 @@ allo::hls::VhlsModuleEmitter::emitFunctionSignature(func::FuncOp func) {
           else
             emitValue(result, /*rank=*/0, /*isPtr=*/true, output_names);
         }
-
-        portList.push_back(result);
       }
       idx += 1;
     }
@@ -3178,7 +3177,22 @@ using namespace std;
       }
     }
 
-    // Third pass: emit function definitions and non-stateful globals
+    // Third pass: emit forward declarations for all functions
+    for (auto &op : *module.getBody()) {
+      if (auto func = dyn_cast<func::FuncOp>(op)) {
+        if (!func->hasAttr("top") && !func.getBlocks().empty()) {
+          emitFunctionSignature(func);
+          os << "\n);\n\n";
+        }
+      }
+    }
+
+    // Clear nameTable and nameConflictCnt to ensure that Pass 4 can re-emit
+    // function signatures with full types.
+    state.nameTable.clear();
+    state.nameConflictCnt.clear();
+
+    // Fourth pass: emit functions and non-stateful globals
     for (auto &op : *module.getBody()) {
       if (auto func = dyn_cast<func::FuncOp>(op)) {
         emitFunction(func);
