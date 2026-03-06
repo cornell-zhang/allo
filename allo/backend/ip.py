@@ -6,7 +6,6 @@ import sys
 import re
 import importlib
 import subprocess
-import traceback
 import time
 
 
@@ -99,10 +98,14 @@ def parse_cpp_function(code, target_function):
 class IPModule:
     def __init__(self, top, impl, include_paths=None, link_hls=True):
         self.top = top
-        self.abs_path = os.path.dirname(traceback.extract_stack()[-2].filename)
+        self.impl = os.path.abspath(os.path.expanduser(impl))
+        if not os.path.exists(self.impl):
+            raise FileNotFoundError(
+                f"Path does not exist: {self.impl}. Consider using an absolute path."
+            )
+        self.abs_path = os.path.dirname(self.impl)
         self.temp_path = os.path.join(self.abs_path, "_tmp")
         os.makedirs(self.temp_path, exist_ok=True)
-        self.impl = os.path.join(self.abs_path, impl)
         if include_paths is None:
             include_paths = []
         self.include_paths = include_paths + [self.abs_path]

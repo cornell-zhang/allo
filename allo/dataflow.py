@@ -616,6 +616,7 @@ def build(
     trace_size: int = 4096,
     device_type: Union[str, None] = None,
 ):
+    project = os.path.abspath(os.path.expanduser(project))
     assert not profile or target == "aie", "Profiling is only supported for AIE target"
     assert (
         trace is None or target == "aie"

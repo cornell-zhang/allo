@@ -2719,8 +2719,12 @@ void allo::hls::VhlsModuleEmitter::emitFunctionDirectives(
   // }
 }
 
-void allo::hls::VhlsModuleEmitter::emitFunctionSignature(func::FuncOp func) {
-  // Emit function signature.
+/// Emit only the function signature: "void funcName(args...)"
+/// Returns the port list for use in directive emission.
+/// After this call, indentation is back to the original level.
+SmallVector<Value, 8>
+allo::hls::VhlsModuleEmitter::emitFunctionSignature(func::FuncOp func) {
+  SmallVector<Value, 8> portList;
   os << "void " << func.getName() << "(\n";
   addIndent();
 
@@ -2748,6 +2752,7 @@ void allo::hls::VhlsModuleEmitter::emitFunctionSignature(func::FuncOp func) {
       itypes += "x";
   }
   for (auto &arg : func.getArguments()) {
+    portList.push_back(arg);
     indent();
     fixUnsignedType(arg, itypes[argIdx] == 'u');
     if (llvm::isa<ShapedType>(arg.getType())) {
@@ -2794,6 +2799,7 @@ void allo::hls::VhlsModuleEmitter::emitFunctionSignature(func::FuncOp func) {
     unsigned idx = 0;
     for (auto result : funcReturn.getOperands()) {
       if (std::find(args.begin(), args.end(), result) == args.end()) {
+        portList.push_back(result);
         if (func.getArguments().size() > 0)
           os << ",\n";
         indent();
@@ -2820,7 +2826,21 @@ void allo::hls::VhlsModuleEmitter::emitFunctionSignature(func::FuncOp func) {
     emitError(func, "doesn't have a return operation as terminator.");
 
   reduceIndent();
-  os << "\n)";
+  return portList;
+}
+
+/// Emit a forward declaration for a function: "void funcName(args...);\n"
+void allo::hls::VhlsModuleEmitter::emitFunctionDeclaration(func::FuncOp func) {
+  if (func.getBlocks().empty())
+    return;
+  // save state
+  auto savedNames = state.nameTable;
+  auto savedConflicts = state.nameConflictCnt;
+  emitFunctionSignature(func);
+  // restore state.
+  state.nameTable = savedNames;
+  state.nameConflictCnt = savedConflicts;
+  os << "\n);\n\n";
 }
 
 void allo::hls::VhlsModuleEmitter::emitFunction(func::FuncOp func) {
@@ -2907,8 +2927,9 @@ void allo::hls::VhlsModuleEmitter::emitFunction(func::FuncOp func) {
     }
   });
 
-  emitFunctionSignature(func);
-  os << " {";
+  // Emit function signature.
+  auto portList = emitFunctionSignature(func);
+  os << "\n) {";
   emitInfoAndNewLine(func);
 
   // Emit function body.
@@ -2979,20 +3000,6 @@ void allo::hls::VhlsModuleEmitter::emitFunction(func::FuncOp func) {
       }
       os << "};";
       emitInfoAndNewLine(globalOp.getOperation());
-    }
-  }
-
-  // This vector is to record all ports of the function.
-  SmallVector<Value, 8> portList;
-  for (auto &arg : func.getArguments())
-    portList.push_back(arg);
-  if (auto funcReturn =
-          llvm::dyn_cast<func::ReturnOp>(func.front().getTerminator())) {
-    auto args = func.getArguments();
-    for (auto result : funcReturn.getOperands()) {
-      if (std::find(args.begin(), args.end(), result) == args.end()) {
-        portList.push_back(result);
-      }
     }
   }
 
@@ -3113,39 +3120,49 @@ using namespace std;
     // Second pass: identify top-level function and track its multi-dimensional
     // arrays This must be done before emitting any functions to properly
     // validate nested functions
+    // Find the top function - try attribute first, then use calling pattern
+    func::FuncOp topFunc = nullptr;
+    llvm::StringMap<unsigned>
+        calleeMinCallerPos;                 // callee -> min caller position
+    llvm::StringMap<unsigned> funcPosition; // func -> position
+
+    unsigned pos = 0;
+    for (auto &op : *module.getBody()) {
+      if (auto func = dyn_cast<func::FuncOp>(op)) {
+        unsigned curPos = pos++;
+        funcPosition[func.getName()] = curPos;
+        func.walk([&](func::CallOp callOp) {
+          auto it = calleeMinCallerPos.find(callOp.getCallee());
+          if (it == calleeMinCallerPos.end())
+            calleeMinCallerPos[callOp.getCallee()] = curPos;
+          else
+            it->second = std::min(it->second, curPos);
+        });
+      }
+    }
+    // Find the top function and emit forward declarations.
+    for (auto &op : *module.getBody()) {
+      if (auto func = dyn_cast<func::FuncOp>(op)) {
+        // Check if it has the "top" attribute (set by HLS backend)
+        if (func->hasAttr("top")) {
+          topFunc = func;
+        }
+        // If no function has been marked as top yet, the top function is the
+        // one that is NOT called by any other function (i.e., it's the entry
+        // point)
+        if (!topFunc && !calleeMinCallerPos.count(func.getName()) &&
+            !func.getBlocks().empty()) {
+          topFunc = func;
+          func.getOperation()->setAttr("top", UnitAttr::get(func.getContext()));
+        }
+        // Emit forward declaration only if this function is forward-referenced
+        auto it = calleeMinCallerPos.find(func.getName());
+        if (it != calleeMinCallerPos.end() &&
+            funcPosition[func.getName()] > it->second)
+          emitFunctionDeclaration(func);
+      }
+    }
     if (state.linearize_pointers) {
-      // Find the top function - try attribute first, then use calling pattern
-      func::FuncOp topFunc = nullptr;
-      llvm::SmallSet<StringRef, 4> calledFunctions;
-
-      // First, collect all called functions
-      for (auto &op : *module.getBody()) {
-        if (auto func = dyn_cast<func::FuncOp>(op)) {
-          func.walk([&](func::CallOp callOp) {
-            calledFunctions.insert(callOp.getCallee());
-          });
-        }
-      }
-
-      // Now find the top function
-      for (auto &op : *module.getBody()) {
-        if (auto func = dyn_cast<func::FuncOp>(op)) {
-          // Check if it has the "top" attribute (set by HLS backend)
-          if (func->hasAttr("top")) {
-            topFunc = func;
-            break;
-          }
-
-          // If no function has been marked as top yet, the top function is the
-          // one that is NOT called by any other function (i.e., it's the entry
-          // point)
-          if (!topFunc && !calledFunctions.contains(func.getName()) &&
-              !func.getBlocks().empty()) {
-            topFunc = func;
-          }
-        }
-      }
-
       if (topFunc) {
         // Found the top function - track its multi-dimensional array arguments
         for (auto arg : topFunc.getArguments()) {
@@ -3158,22 +3175,12 @@ using namespace std;
       }
     }
 
-    // Third pass: emit forward declarations for all functions
-    for (auto &op : *module.getBody()) {
-      if (auto func = dyn_cast<func::FuncOp>(op)) {
-        if (!func->hasAttr("top") && !func.getBlocks().empty()) {
-          emitFunctionSignature(func);
-          os << ";\n\n";
-        }
-      }
-    }
-
-    // Clear nameTable and nameConflictCnt to ensure that Pass 4 can re-emit
+    // Clear nameTable and nameConflictCnt to ensure that the definition pass can re-emit
     // function signatures with full types.
     state.nameTable.clear();
     state.nameConflictCnt.clear();
 
-    // Fourth pass: emit functions and non-stateful globals
+    // Third pass: emit function definitions and non-stateful globals
     for (auto &op : *module.getBody()) {
       if (auto func = dyn_cast<func::FuncOp>(op)) {
         emitFunction(func);

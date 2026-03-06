@@ -108,6 +108,7 @@ protected:
   virtual void emitFunctionDirectives(func::FuncOp func, ArrayRef<Value> portList) {}
 
   virtual void emitFunction(func::FuncOp func) {}
+  virtual void emitFunctionDeclaration(func::FuncOp func) {}
 
   virtual void emitFunction(func::FuncOp func, bool isAccessor) {
     (void)isAccessor;
