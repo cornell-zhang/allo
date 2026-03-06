@@ -345,7 +345,24 @@ LogicalResult GridMapOp::verify() {
         return emitOpError() << "sharding axis " << s << " at index " << idx
                              << " exceeds grid dimension size " << grid.size();
       if (s >= 0) {
-        shape[k] = shape[k] / grid[s];
+        auto gridIntAttr = llvm::dyn_cast<IntegerAttr>(grid[s]);
+        if (!gridIntAttr)
+          return emitOpError()
+                 << "grid entry at axis " << s
+                 << " must be an IntegerAttr when used for sharding";
+        int64_t gridVal = gridIntAttr.getInt();
+        if (gridVal <= 0)
+          return emitOpError()
+                 << "grid value " << gridVal << " at axis " << s
+                 << " must be positive for tensor " << idx << ", dimension "
+                 << k;
+        if (shape[k] % gridVal != 0)
+          return emitOpError()
+                 << "dimension size " << shape[k] << " of tensor " << idx
+                 << ", dimension " << k
+                 << " must be evenly divisible by grid value " << gridVal
+                 << " at axis " << s;
+        shape[k] = shape[k] / gridVal;
       }
     }
     auto expectedArgType =
