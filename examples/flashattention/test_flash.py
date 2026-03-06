@@ -5,7 +5,6 @@ import argparse
 import tempfile
 import pytest
 import numpy as np
-import scipy.special
 import allo.backend.hls as hls
 
 from flash_Atten import get_scheduled_flash_attention
@@ -35,7 +34,9 @@ def run_test_with_params(BATCH_SIZE, CONTEXT_LENGTH, HIDDEN_SIZE, NUM_HEADS, BLO
 
     scores = np.matmul(Q_np, K_np.transpose((0, 1, 3, 2)))
     scores = scores * (1.0 / D_SQRT)
-    attn_weights = scipy.special.softmax(scores, axis=-1)
+    max_scores = np.max(scores, axis=-1, keepdims=True)
+    exp_scores = np.exp(scores - max_scores)
+    attn_weights = exp_scores / np.sum(exp_scores, axis=-1, keepdims=True)
 
     out_np = np.matmul(attn_weights, V_np)
     B_golden = out_np.transpose((0, 2, 1, 3)).flatten()
