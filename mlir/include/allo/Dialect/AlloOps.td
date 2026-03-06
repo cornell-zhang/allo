@@ -1167,8 +1167,8 @@ def GridMapOp : Allo_Op<"grid_map",
 
   let assemblyFormat = [{
     `(` $tensors `)`
-    `sharding````=```$sharding
-    `grid````=```$grid
+    `sharding` `=` $sharding
+    `grid` `=` $grid
     $body
     attr-dict
     `:` type($tensors)
