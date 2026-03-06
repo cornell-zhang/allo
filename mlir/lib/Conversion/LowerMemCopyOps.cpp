@@ -57,7 +57,7 @@ bool applyLowerMemCopyOps(ModuleOp &mod) {
       for (int64_t val : dstShape)
         dstSize *= val;
 
-      if (srcSize != dstSize) {
+      if (srcSize <= 0 || dstSize <= 0 || srcSize != dstSize) {
         return false;
       }
 

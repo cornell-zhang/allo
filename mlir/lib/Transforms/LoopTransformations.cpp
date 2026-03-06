@@ -3719,24 +3719,15 @@ bool applyLoopTransformationOnSingleFunction(
 }
 
 bool applyUnroll(Operation *func) {
-  bool changed = false;
-  SmallVector<AffineForOp> worklist;
-  func->walk([&](AffineForOp forOp) {
-    if (auto attr = forOp->getAttrOfType<StringAttr>("loop_type")) {
-      if (attr.getValue() == "unroll") {
-        worklist.push_back(forOp);
+  func->walk<WalkOrder::PostOrder>([&](AffineForOp forOp) {
+    auto attr = forOp->getAttrOfType<StringAttr>("loop_type");
+    if (attr && attr.getValue() == "unroll") {
+      if (failed(loopUnrollFull(forOp))) {
+        forOp.emitError("failed to fully unroll the loop");
       }
     }
   });
-
-  for (auto forOp : worklist) {
-    if (failed(loopUnrollFull(forOp))) {
-      forOp.emitError("failed to fully unroll the loop");
-      return false;
-    }
-    changed = true;
-  }
-  return changed;
+  return true;
 }
 
 bool applyLoopTransformation(ModuleOp &mod) {
