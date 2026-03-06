@@ -4,10 +4,10 @@
 from __future__ import annotations
 
 import inspect as pyinspect
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Sequence
+from typing import Any
 
 from .bindings import ir, transform as tran_d, allo as allo_d
 
