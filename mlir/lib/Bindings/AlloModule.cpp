@@ -109,10 +109,10 @@ static bool loopTransformation(MlirModule &mlir_mod) {
   return applyLoopTransformation(mod);
 }
 
-static bool unroll(MlirOperation &func) {
+static bool unrollMetaFor(MlirOperation &func) {
   nb::gil_scoped_release release;
   auto op = unwrap(func);
-  return applyUnroll(op);
+  return applyUnrollMetaFor(op);
 }
 
 //===----------------------------------------------------------------------===//
@@ -342,7 +342,6 @@ NB_MODULE(_allo, m) {
 
   // Loop transform APIs.
   allo_m.def("loop_transformation", &loopTransformation);
-  allo_m.def("unroll", &unroll);
 
   // Codegen APIs.
   allo_m.def("emit_vhls", &emitVivadoHls, nb::arg("module"),
@@ -374,6 +373,7 @@ NB_MODULE(_allo, m) {
   allo_m.def("unify_kernels", &UnifyKernels);
 
   allo_m.def("copy_on_write_on_function", &copyOnWriteOnFunction);
+  allo_m.def("unroll_meta_for", &unrollMetaFor);
 
   // Utility APIs
   allo_m.def("get_first_use_in_function", &getFirstUseInFunction);
