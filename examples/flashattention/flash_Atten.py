@@ -165,7 +165,7 @@ def get_scheduled_flash_attention(
     s3.pipeline("n")
     s3.unroll("k")
     s3.unroll("l")
-    s3.unroll("h")
+    s3.unroll("g")
     s3.unroll("m")
 
     s = allo.customize(compute_engine)
