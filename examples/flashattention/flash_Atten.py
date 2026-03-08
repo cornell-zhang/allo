@@ -12,7 +12,6 @@ def get_scheduled_flash_attention(
     NUM_HEADS: int,
     BLOCK_T: int = 4,
 ):
-
     HEAD_DIM = HIDDEN_SIZE // NUM_HEADS
     D_SQRT = float(HEAD_DIM**0.5)
     THREE_H = 3 * HIDDEN_SIZE
@@ -99,11 +98,11 @@ def get_scheduled_flash_attention(
             for z in range(BLOCK_T):
                 p_val[z] = allo.exp(S_tile[m, z] - row_max_val)
 
-            for h in range(HEAD_DIM):
+            for g in range(HEAD_DIM):
                 pv_sum: float32 = 0.0
                 for l in range(BLOCK_T):
-                    pv_sum = pv_sum + p_val[l] * V_tile[l, h]
-                O_tile[m, h] = O_tile[m, h] * alpha + pv_sum * beta
+                    pv_sum = pv_sum + p_val[l] * V_tile[l, g]
+                O_tile[m, g] = O_tile[m, g] * alpha + pv_sum * beta
 
             m_vec[m] = m_new
             l_vec[m] = l_new

@@ -3,14 +3,17 @@
 
 import argparse
 import tempfile
-import pytest
 import numpy as np
 import allo.backend.hls as hls
 
-from flash_Atten import get_scheduled_flash_attention
+from examples.flashattention.flash_Atten import get_scheduled_flash_attention
 
 
 def run_test_with_params(BATCH_SIZE, CONTEXT_LENGTH, HIDDEN_SIZE, NUM_HEADS, BLOCK_T):
+
+    assert HIDDEN_SIZE % NUM_HEADS == 0, f"HIDDEN_SIZE ({HIDDEN_SIZE}) must be exactly divisible by NUM_HEADS ({NUM_HEADS})"
+    assert CONTEXT_LENGTH % BLOCK_T == 0, f"CONTEXT_LENGTH ({CONTEXT_LENGTH}) must be exactly divisible by BLOCK_T ({BLOCK_T})"
+
     print("=" * 60)
     print(
         f"Testing FlashAttention: BATCH={BATCH_SIZE}, SEQ_LEN={CONTEXT_LENGTH}, "
