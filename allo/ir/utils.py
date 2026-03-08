@@ -29,6 +29,17 @@ from .symbol_resolver import ASTResolver
 
 
 def _get_global_vars(_func, skip=None, stop=None):
+    """
+    Collect global variables from the call stack of a Python function.
+
+    Args:
+        _func: The function to start collecting from.
+        skip: Set of frame names to skip over when walking the call stack.
+              Frames whose co_name is in `skip` are ignored (no variables collected), and the walk continues to the next outer frame.
+              This is mainly used to skip compiler internal functions when collecting global variables used in source code.
+        stop: Set of frame names that act as boundaries for the stack walk.
+              When a frame whose co_name is in `stop` is reached, its variables are collected and then the walk terminates.
+    """
     if skip is None:
         skip = {"get_global_vars", "customize", "build"}
     if stop is None:

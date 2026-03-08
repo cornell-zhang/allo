@@ -1155,7 +1155,7 @@ def GridMapOp : Allo_Op<"grid_map",
   let description = [{
     The grid_map operation distributes a computation over a logical grid.
     It takes a list of memrefs with static shape (`tensors`) as input arguments.
-    It shuns isolation from above and contains a single block whose arguments are the sharded memrefs.
+    It contains a single block whose arguments are the sharded memrefs. The operations in the block can access variables in parent regions.
   }];
 
   let arguments = (ins
