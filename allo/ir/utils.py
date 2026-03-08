@@ -28,12 +28,11 @@ from .types import AlloType, Int, UInt, Fixed, UFixed, Index, Float
 from .symbol_resolver import ASTResolver
 
 
-def _get_global_vars(_func, skip=None, stop=None):
+def _get_global_vars(_func, skip: set[str] = None, stop: set[str] = None):
     """
     Collect global variables from the call stack of a Python function.
 
     Args:
-        _func: The function to start collecting from.
         skip: Set of frame names to skip over when walking the call stack.
               Frames whose co_name is in `skip` are ignored (no variables collected), and the walk continues to the next outer frame.
               This is mainly used to skip compiler internal functions when collecting global variables used in source code.
