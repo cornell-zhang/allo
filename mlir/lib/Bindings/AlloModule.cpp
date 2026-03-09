@@ -109,10 +109,10 @@ static bool loopTransformation(MlirModule &mlir_mod) {
   return applyLoopTransformation(mod);
 }
 
-static bool unrollMetaFor(MlirOperation &func) {
+static bool unrollLoop(MlirOperation &loop, int64_t factor = 0) {
   nb::gil_scoped_release release;
-  auto op = unwrap(func);
-  return applyUnrollMetaFor(op);
+  auto op = unwrap(loop);
+  return applyUnroll(op, factor);
 }
 
 //===----------------------------------------------------------------------===//
@@ -373,7 +373,8 @@ NB_MODULE(_allo, m) {
   allo_m.def("unify_kernels", &UnifyKernels);
 
   allo_m.def("copy_on_write_on_function", &copyOnWriteOnFunction);
-  allo_m.def("unroll_meta_for", &unrollMetaFor);
+  allo_m.def("unroll_loop", &unrollLoop, nb::arg("loop"),
+             nb::arg("factor") = 0);
 
   // Utility APIs
   allo_m.def("get_first_use_in_function", &getFirstUseInFunction);

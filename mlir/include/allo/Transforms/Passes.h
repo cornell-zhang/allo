@@ -32,7 +32,7 @@ bool applyDataPlacement(ModuleOp &module);
 bool applyCopyOnWrite(ModuleOp &module);
 void applyCopyOnWriteOnFunction(Operation &func);
 ModuleOp applyUnifyKernels(ModuleOp &module1, ModuleOp &module2, int loop_num);
-bool applyUnrollMetaFor(Operation *func);
+bool applyUnroll(Operation *op, int64_t factor);
 
 /// Registers all Allo transformation passes
 void registerAlloPasses();
