@@ -2619,6 +2619,126 @@ class ASTTransformer(ASTBuilder):
                     if isinstance(node.func.value.dtype.dtype, UInt):
                         get_op.attributes["unsigned"] = UnitAttr.get()
                     return get_op
+                if node.func.attr == "try_put":
+                    stmts = build_stmts(ctx, node.args)
+                    assert len(stmts) == 1, "Stream can only have one argument"
+                    new_name, symbolic_slice, iterator_infos = (
+                        ASTTransformer.get_stream_name(ctx, node.func.value)
+                    )
+                    stream = ctx.get_symbol(new_name).clone(
+                        ip=ctx.get_stream_construct_ip()
+                    )
+                    if symbolic_slice is not None:
+                        stream.attributes["symbolic_slice"] = StringAttr.get(
+                            symbolic_slice
+                        )
+                        stream.attributes["iterators"] = DictAttr.get(iterator_infos)
+                    indices = (
+                        node.func.value.slice.value
+                        if isinstance(node.func.value.slice, ast.Index)
+                        else node.func.value.slice
+                    )
+                    indices = (
+                        indices.elts if isinstance(indices, ast.Tuple) else [indices]
+                    )
+                    indices = [ASTResolver.resolve_constant(x, ctx) for x in indices]
+                    put_op = allo_d.StreamTryPutOp(
+                        IntegerType.get_signless(1),
+                        stream.result,
+                        indices,
+                        ASTTransformer.get_mlir_op_result(ctx, stmts[0]),
+                        ip=ctx.get_ip(),
+                    )
+                    if isinstance(node.func.value.dtype, UInt):
+                        put_op.attributes["unsigned"] = UnitAttr.get()
+                    return put_op
+                if node.func.attr == "try_get":
+                    new_name, symbolic_slice, iterator_infos = (
+                        ASTTransformer.get_stream_name(ctx, node.func.value)
+                    )
+                    stream = ctx.get_symbol(new_name).clone(
+                        ip=ctx.get_stream_construct_ip()
+                    )
+                    if symbolic_slice is not None:
+                        stream.attributes["symbolic_slice"] = StringAttr.get(
+                            symbolic_slice
+                        )
+                        stream.attributes["iterators"] = DictAttr.get(iterator_infos)
+                    indices = (
+                        node.func.value.slice.value
+                        if isinstance(node.func.value.slice, ast.Index)
+                        else node.func.value.slice
+                    )
+                    indices = (
+                        indices.elts if isinstance(indices, ast.Tuple) else [indices]
+                    )
+                    indices = [ASTResolver.resolve_constant(x, ctx) for x in indices]
+                    get_op = allo_d.StreamTryGetOp(
+                        node.func.value.dtype.build(),
+                        IntegerType.get_signless(1),
+                        stream.result,
+                        indices,
+                        ip=ctx.get_ip(),
+                    )
+                    if isinstance(node.func.value.dtype.dtype, UInt):
+                        get_op.attributes["unsigned"] = UnitAttr.get()
+                    return get_op
+                if node.func.attr == "empty":
+                    new_name, symbolic_slice, iterator_infos = (
+                        ASTTransformer.get_stream_name(ctx, node.func.value)
+                    )
+                    stream = ctx.get_symbol(new_name).clone(
+                        ip=ctx.get_stream_construct_ip()
+                    )
+                    if symbolic_slice is not None:
+                        stream.attributes["symbolic_slice"] = StringAttr.get(
+                            symbolic_slice
+                        )
+                        stream.attributes["iterators"] = DictAttr.get(iterator_infos)
+                    indices = (
+                        node.func.value.slice.value
+                        if isinstance(node.func.value.slice, ast.Index)
+                        else node.func.value.slice
+                    )
+                    indices = (
+                        indices.elts if isinstance(indices, ast.Tuple) else [indices]
+                    )
+                    indices = [ASTResolver.resolve_constant(x, ctx) for x in indices]
+                    empty_op = allo_d.StreamEmptyOp(
+                        IntegerType.get_signless(1),
+                        stream.result,
+                        indices,
+                        ip=ctx.get_ip(),
+                    )
+                    return empty_op
+                if node.func.attr == "full":
+                    new_name, symbolic_slice, iterator_infos = (
+                        ASTTransformer.get_stream_name(ctx, node.func.value)
+                    )
+                    stream = ctx.get_symbol(new_name).clone(
+                        ip=ctx.get_stream_construct_ip()
+                    )
+                    if symbolic_slice is not None:
+                        stream.attributes["symbolic_slice"] = StringAttr.get(
+                            symbolic_slice
+                        )
+                        stream.attributes["iterators"] = DictAttr.get(iterator_infos)
+                    indices = (
+                        node.func.value.slice.value
+                        if isinstance(node.func.value.slice, ast.Index)
+                        else node.func.value.slice
+                    )
+                    indices = (
+                        indices.elts if isinstance(indices, ast.Tuple) else [indices]
+                    )
+                    indices = [ASTResolver.resolve_constant(x, ctx) for x in indices]
+                    full_op = allo_d.StreamFullOp(
+                        IntegerType.get_signless(1),
+                        stream.result,
+                        indices,
+                        ip=ctx.get_ip(),
+                    )
+                    return full_op
                 if node.func.attr == "bitcast":
                     val = build_stmt(ctx, node.func.value)
                     op = arith_d.BitcastOp(

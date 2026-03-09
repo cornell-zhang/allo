@@ -222,11 +222,28 @@ def _process_function_streams(
         # Collect and replace `stream_get`s and `stream_put`s
         func_stream_ops = []
         recursive_collect_ops(
-            func_def_op, (allo_d.StreamGetOp, allo_d.StreamPutOp), func_stream_ops
+            func_def_op,
+            (
+                allo_d.StreamGetOp,
+                allo_d.StreamPutOp,
+                allo_d.StreamTryGetOp,
+                allo_d.StreamTryPutOp,
+                allo_d.StreamEmptyOp,
+                allo_d.StreamFullOp,
+            ),
+            func_stream_ops,
         )
         for stream_access_op in func_stream_ops:
             assert isinstance(
-                stream_access_op, (allo_d.StreamGetOp, allo_d.StreamPutOp)
+                stream_access_op,
+                (
+                    allo_d.StreamGetOp,
+                    allo_d.StreamPutOp,
+                    allo_d.StreamTryGetOp,
+                    allo_d.StreamTryPutOp,
+                    allo_d.StreamEmptyOp,
+                    allo_d.StreamFullOp,
+                ),
             )
             replace_ip = InsertionPoint(beforeOperation=stream_access_op)
             # Have to leverage weak typing here
@@ -273,10 +290,300 @@ def _process_function_streams(
             const_fifo_depth = arith_d.ConstantOp(
                 int_type, stream_type.get_dim_size(0), ip=replace_ip
             )
-            if isinstance(stream_access_op, allo_d.StreamPutOp):
+            if isinstance(stream_access_op, allo_d.StreamEmptyOp):
+                # Flush before reading pointers to ensure we see the latest updates
+                openmp_d.FlushOp([], ip=replace_ip)
+                head_val = memref_d.LoadOp(memref=head_ptr, indices=[], ip=replace_ip)
+                tail_val = memref_d.LoadOp(memref=tail_ptr, indices=[], ip=replace_ip)
+                cmp_op = arith_d.CmpIOp(0, lhs=head_val, rhs=tail_val, ip=replace_ip)
+                stream_access_op.results[0].replace_all_uses_with(cmp_op.result)
+                stream_access_op.operation.erase()
+                continue
+            if isinstance(stream_access_op, allo_d.StreamFullOp):
+                # Flush before reading pointers to ensure we see the latest updates
+                openmp_d.FlushOp([], ip=replace_ip)
+                tail_val = memref_d.LoadOp(memref=tail_ptr, indices=[], ip=replace_ip)
+                tail_inc = arith_d.AddIOp(
+                    lhs=tail_val.result, rhs=const_one.result, ip=replace_ip
+                )
+                tail_next = arith_d.RemUIOp(
+                    lhs=tail_inc.result, rhs=const_fifo_depth.result, ip=replace_ip
+                )
+                head_val = memref_d.LoadOp(memref=head_ptr, indices=[], ip=replace_ip)
+                cmp_op = arith_d.CmpIOp(
+                    0, lhs=tail_next.result, rhs=head_val.result, ip=replace_ip
+                )
+                stream_access_op.results[0].replace_all_uses_with(cmp_op.result)
+                stream_access_op.operation.erase()
+                continue
+            if isinstance(stream_access_op, allo_d.StreamTryPutOp):
+                # Flush before reading pointers to ensure we see the latest updates
+                openmp_d.FlushOp([], ip=replace_ip)
                 tail_val_op = memref_d.LoadOp(
                     memref=tail_ptr, indices=[], ip=replace_ip
                 )
+                head_val_op = memref_d.LoadOp(
+                    memref=head_ptr, indices=[], ip=replace_ip
+                )
+                tail_inc_op = arith_d.AddIOp(
+                    lhs=tail_val_op.result, rhs=const_one.result, ip=replace_ip
+                )
+                tail_next_op = arith_d.RemUIOp(
+                    lhs=tail_inc_op.result,
+                    rhs=const_fifo_depth.result,
+                    ip=replace_ip,
+                )
+                head_val_op = memref_d.LoadOp(memref=head_ptr, indices=[], ip=replace_ip)
+                is_full = arith_d.CmpIOp(
+                    0, lhs=head_val_op.result, rhs=tail_next_op.result, ip=replace_ip
+                )
+                is_not_full = arith_d.CmpIOp(
+                    1, lhs=head_val_op.result, rhs=tail_next_op.result, ip=replace_ip
+                )
+                if_op = scf_d.IfOp(
+                    is_not_full.result,
+                    [IntegerType.get_signless(1, module.context)],
+                    has_else=True,
+                    ip=replace_ip,
+                )
+                # Then block (Not Full)
+                then_ip = InsertionPoint(if_op.then_block)
+                # Perform the same logic as StreamPutOp but inside the if block
+                data = stream_access_op.data
+                tail_index_op = index_d.CastUOp(
+                    output=IndexType.get(module.context),
+                    input=tail_val_op,
+                    ip=then_ip,
+                )
+                if isinstance(data.type, MemRefType):
+                    element_type = data.type.element_type
+                    rank = data.type.rank
+                    for_ip = then_ip
+                    for_induction_vars = []
+                    for_ips = []
+                    for i in range(rank):
+                        dim_size = data.type.get_dim_size(i)
+                        for_loop_op = affine_d.AffineForOp(0, dim_size, ip=for_ip)
+                        for_induction_vars.append(for_loop_op.induction_variable)
+                        for_ip = InsertionPoint(for_loop_op.body)
+                        for_ips.append(for_ip)
+                    element_dim_map = AffineMap.get(
+                        dim_count=rank,
+                        symbol_count=0,
+                        exprs=[AffineExpr.get_dim(i) for i in range(rank)],
+                        context=module.context,
+                    )
+                    element_load_op = affine_d.AffineLoadOp(
+                        result=element_type,
+                        memref=data,
+                        indices=for_induction_vars,
+                        map=AffineMapAttr.get(element_dim_map),
+                        ip=for_ip,
+                    )
+                    memref_d.StoreOp(
+                        value=element_load_op,
+                        memref=fifo_ptr,
+                        indices=[tail_index_op] + for_induction_vars,
+                        ip=for_ip,
+                    )
+                    for ip in for_ips:
+                        affine_d.AffineYieldOp([], ip=ip)
+                else:
+                    fifo_element_type = stream_type.element_type
+                    store_value = data
+                    if data.type != fifo_element_type:
+                        if (
+                            isinstance(data.type, (IntegerType, IndexType))
+                            and isinstance(fifo_element_type, (IntegerType, IndexType))
+                        ):
+                            if isinstance(data.type, IndexType):
+                                store_value = index_d.CastSOp(
+                                    fifo_element_type, data, ip=then_ip
+                                )
+                            elif isinstance(fifo_element_type, IndexType):
+                                store_value = index_d.CastSOp(
+                                    IndexType.get(module.context), data, ip=then_ip
+                                )
+                            elif data.type.width > fifo_element_type.width:
+                                store_value = arith_d.TruncIOp(
+                                    fifo_element_type, data, ip=then_ip
+                                )
+                            elif data.type.width < fifo_element_type.width:
+                                if data.type.is_signed:
+                                    store_value = arith_d.ExtSIOp(
+                                        fifo_element_type, data, ip=then_ip
+                                    )
+                                else:
+                                    store_value = arith_d.ExtUIOp(
+                                        fifo_element_type, data, ip=then_ip
+                                    )
+                    memref_d.StoreOp(
+                        value=store_value,
+                        memref=fifo_ptr,
+                        indices=[tail_index_op],
+                        ip=then_ip,
+                    )
+                # Atomic update of tail
+                critical_op = openmp_d.CriticalOp(ip=then_ip)
+                critical_ip = InsertionPoint(Block.create_at_start(critical_op.region))
+                memref_d.StoreOp(tail_next_op, tail_ptr, [], ip=critical_ip)
+                openmp_d.TerminatorOp(ip=critical_ip)
+                openmp_d.FlushOp([], ip=then_ip)
+                true_val = arith_d.ConstantOp(
+                    IntegerType.get_signless(1, module.context), 1, ip=then_ip
+                )
+                scf_d.YieldOp(results_=[true_val.result], ip=then_ip)
+                # Else block (Full)
+                else_ip = InsertionPoint(if_op.else_block)
+                false_val = arith_d.ConstantOp(
+                    IntegerType.get_signless(1, module.context), 0, ip=else_ip
+                )
+                scf_d.YieldOp(results_=[false_val.result], ip=else_ip)
+                stream_access_op.results[0].replace_all_uses_with(if_op.results[0])
+                stream_access_op.operation.erase()
+                continue
+            if isinstance(stream_access_op, allo_d.StreamTryGetOp):
+                # Flush before reading pointers to ensure we see the latest updates
+                openmp_d.FlushOp([], ip=replace_ip)
+                head_val_op = memref_d.LoadOp(memref=head_ptr, indices=[], ip=replace_ip)
+                tail_val_op = memref_d.LoadOp(memref=tail_ptr, indices=[], ip=replace_ip)
+                is_empty = arith_d.CmpIOp(
+                    0, lhs=head_val_op.result, rhs=tail_val_op.result, ip=replace_ip
+                )
+                is_not_empty = arith_d.CmpIOp(
+                    1, lhs=head_val_op.result, rhs=tail_val_op.result, ip=replace_ip
+                )
+                orig_got_val = stream_access_op.results[0]
+                expected_type = orig_got_val.type
+                if_op = scf_d.IfOp(
+                    is_not_empty.result,
+                    [expected_type, IntegerType.get_signless(1, module.context)],
+                    has_else=True,
+                    ip=replace_ip,
+                )
+                # Then block (Not Empty)
+                then_ip = InsertionPoint(if_op.then_block)
+                head_index_op = index_d.CastUOp(
+                    output=IndexType.get(module.context),
+                    input=head_val_op,
+                    ip=then_ip,
+                )
+                # Atomic read head_ptr for next
+                head_inc_op = arith_d.AddIOp(
+                    lhs=head_val_op.result, rhs=const_one.result, ip=then_ip
+                )
+                head_next_op = arith_d.RemUIOp(
+                    lhs=head_inc_op.result,
+                    rhs=const_fifo_depth.result,
+                    ip=then_ip,
+                )
+                if isinstance(expected_type, MemRefType):
+                    element_type = expected_type.element_type
+                    rank = expected_type.rank
+                    element_alloc_op = memref_d.AllocOp(
+                        memref=expected_type,
+                        dynamicSizes=[],
+                        symbolOperands=[],
+                        ip=then_ip,
+                    )
+                    for_ip = then_ip
+                    for_induction_vars = []
+                    for_ips = []
+                    for i in range(rank):
+                        for_loop_op = affine_d.AffineForOp(
+                            0, expected_type.get_dim_size(i), ip=for_ip
+                        )
+                        for_induction_vars.append(for_loop_op.induction_variable)
+                        for_ip = InsertionPoint(for_loop_op.body)
+                        for_ips.append(for_ip)
+                    element_dim_map = AffineMap.get(
+                        dim_count=rank,
+                        symbol_count=0,
+                        exprs=[AffineExpr.get_dim(i) for i in range(rank)],
+                        context=module.context,
+                    )
+                    element_load_op = memref_d.LoadOp(
+                        memref=fifo_ptr,
+                        indices=[head_index_op] + for_induction_vars,
+                        ip=for_ip,
+                    )
+                    affine_d.AffineStoreOp(
+                        value=element_load_op,
+                        memref=element_alloc_op,
+                        indices=for_induction_vars,
+                        map=AffineMapAttr.get(element_dim_map),
+                        ip=for_ip,
+                    )
+                    for ip in for_ips:
+                        affine_d.AffineYieldOp([], ip=ip)
+                    data_val = element_alloc_op.result
+                else:
+                    new_get_op = memref_d.LoadOp(
+                        memref=fifo_ptr, indices=[head_index_op], ip=then_ip
+                    )
+                    loaded_value = new_get_op.result
+                    if loaded_value.type != expected_type:
+                        if isinstance(loaded_value.type, IntegerType) and isinstance(
+                            expected_type, IntegerType
+                        ):
+                            if loaded_value.type.width < expected_type.width:
+                                if loaded_value.type.is_signed:
+                                    loaded_value = arith_d.ExtSIOp(
+                                        expected_type, loaded_value, ip=then_ip
+                                    )
+                                else:
+                                    loaded_value = arith_d.ExtUIOp(
+                                        expected_type, loaded_value, ip=then_ip
+                                    )
+                            elif loaded_value.type.width > expected_type.width:
+                                loaded_value = arith_d.TruncIOp(
+                                    expected_type, loaded_value, ip=then_ip
+                                )
+                    data_val = loaded_value
+                # Atomic update of head
+                critical_op = openmp_d.CriticalOp(ip=then_ip)
+                critical_ip = InsertionPoint(Block.create_at_start(critical_op.region))
+                memref_d.StoreOp(head_next_op, head_ptr, [], ip=critical_ip)
+                openmp_d.TerminatorOp(ip=critical_ip)
+                openmp_d.FlushOp([], ip=then_ip)
+                true_val = arith_d.ConstantOp(
+                    IntegerType.get_signless(1, module.context), 1, ip=then_ip
+                )
+                scf_d.YieldOp(results_=[data_val, true_val.result], ip=then_ip)
+                # Else block (Empty)
+                else_ip = InsertionPoint(if_op.else_block)
+                if isinstance(expected_type, MemRefType):
+                    dummy_data = memref_d.AllocOp(
+                        memref=expected_type,
+                        dynamicSizes=[],
+                        symbolOperands=[],
+                        ip=else_ip,
+                    )
+                    dummy_data_val = dummy_data.result
+                elif isinstance(expected_type, IntegerType):
+                    dummy_data_val = arith_d.ConstantOp(
+                        expected_type, 0, ip=else_ip
+                    ).result
+                elif isinstance(expected_type, FloatType):
+                    dummy_data_val = arith_d.ConstantOp(
+                        expected_type, 0.0, ip=else_ip
+                    ).result
+                else:
+                    raise NotImplementedError(f"Unsupported stream type for dummy data: {expected_type}")
+                false_val = arith_d.ConstantOp(
+                    IntegerType.get_signless(1, module.context), 0, ip=else_ip
+                )
+                scf_d.YieldOp(results_=[dummy_data_val, false_val.result], ip=else_ip)
+                stream_access_op.results[0].replace_all_uses_with(if_op.results[0])
+                stream_access_op.results[1].replace_all_uses_with(if_op.results[1])
+                stream_access_op.operation.erase()
+                continue
+            if isinstance(stream_access_op, allo_d.StreamPutOp):
+                openmp_d.FlushOp([], ip=replace_ip)
+                tail_val_op = memref_d.LoadOp(
+                    memref=tail_ptr, indices=[], ip=replace_ip
+                )
+
                 tail_inc_op = arith_d.AddIOp(
                     lhs=tail_val_op.result, rhs=const_one.result, ip=replace_ip
                 )
@@ -402,6 +709,7 @@ def _process_function_streams(
                 critical_ip = InsertionPoint(Block.create_at_start(critical_op.region))
                 memref_d.StoreOp(tail_next_op, tail_ptr, [], ip=critical_ip)
                 openmp_d.TerminatorOp(ip=critical_ip)
+                openmp_d.FlushOp([], ip=replace_ip)
             else:
                 assert isinstance(stream_access_op, allo_d.StreamGetOp)
                 tail_val_op = memref_d.LoadOp(memref=tail_ptr, indices=[], ip=before_ip)
@@ -499,7 +807,16 @@ def _process_function_streams(
     # (streams defined locally and used locally via stream_get/put, not passed to callees)
     local_stream_ops = []
     recursive_collect_ops(
-        func, (allo_d.StreamGetOp, allo_d.StreamPutOp), local_stream_ops
+        func,
+        (
+            allo_d.StreamGetOp,
+            allo_d.StreamPutOp,
+            allo_d.StreamTryGetOp,
+            allo_d.StreamTryPutOp,
+            allo_d.StreamEmptyOp,
+            allo_d.StreamFullOp,
+        ),
+        local_stream_ops,
     )
 
     for stream_access_op in local_stream_ops:
@@ -548,7 +865,274 @@ def _process_function_streams(
         const_fifo_depth = arith_d.ConstantOp(
             int_type, stream_type.get_dim_size(0), ip=replace_ip
         )
+        if isinstance(stream_access_op, allo_d.StreamEmptyOp):
+            openmp_d.FlushOp([], ip=replace_ip)
+            head_val = memref_d.LoadOp(memref=head_ptr, indices=[], ip=replace_ip)
+            tail_val = memref_d.LoadOp(memref=tail_ptr, indices=[], ip=replace_ip)
+            cmp_op = arith_d.CmpIOp(0, lhs=head_val, rhs=tail_val, ip=replace_ip)
+            stream_access_op.results[0].replace_all_uses_with(cmp_op.result)
+            stream_access_op.operation.erase()
+            continue
+        if isinstance(stream_access_op, allo_d.StreamFullOp):
+            openmp_d.FlushOp([], ip=replace_ip)
+            tail_val = memref_d.LoadOp(memref=tail_ptr, indices=[], ip=replace_ip)
+            tail_inc = arith_d.AddIOp(
+                lhs=tail_val.result, rhs=const_one.result, ip=replace_ip
+            )
+            tail_next = arith_d.RemUIOp(
+                lhs=tail_inc.result, rhs=const_fifo_depth.result, ip=replace_ip
+            )
+            head_val = memref_d.LoadOp(memref=head_ptr, indices=[], ip=replace_ip)
+            cmp_op = arith_d.CmpIOp(
+                0, lhs=tail_next.result, rhs=head_val.result, ip=replace_ip
+            )
+            stream_access_op.results[0].replace_all_uses_with(cmp_op.result)
+            stream_access_op.operation.erase()
+            continue
+        if isinstance(stream_access_op, allo_d.StreamTryPutOp):
+            openmp_d.FlushOp([], ip=replace_ip)
+            tail_val_op = memref_d.LoadOp(memref=tail_ptr, indices=[], ip=replace_ip)
+            tail_inc_op = arith_d.AddIOp(
+                lhs=tail_val_op.result, rhs=const_one.result, ip=replace_ip
+            )
+            tail_next_op = arith_d.RemUIOp(
+                lhs=tail_inc_op.result, rhs=const_fifo_depth.result, ip=replace_ip
+            )
+            head_val_op = memref_d.LoadOp(memref=head_ptr, indices=[], ip=replace_ip)
+            is_full = arith_d.CmpIOp(
+                0, lhs=head_val_op.result, rhs=tail_next_op.result, ip=replace_ip
+            )
+            is_not_full = arith_d.CmpIOp(
+                1, lhs=head_val_op.result, rhs=tail_next_op.result, ip=replace_ip
+            )
+            if_op = scf_d.IfOp(
+                is_not_full.result,
+                [IntegerType.get_signless(1, module.context)],
+                has_else=True,
+                ip=replace_ip,
+            )
+            # Then block (Not Full)
+            then_ip = InsertionPoint(if_op.then_block)
+            data = stream_access_op.data
+            tail_index_op = index_d.CastUOp(
+                output=IndexType.get(module.context), input=tail_val_op, ip=then_ip
+            )
+            if isinstance(data.type, MemRefType):
+                element_type = data.type.element_type
+                rank = data.type.rank
+                for_ip = then_ip
+                for_induction_vars = []
+                for_ips = []
+                for i in range(rank):
+                    dim_size = data.type.get_dim_size(i)
+                    for_loop_op = affine_d.AffineForOp(0, dim_size, ip=for_ip)
+                    for_induction_vars.append(for_loop_op.induction_variable)
+                    for_ip = InsertionPoint(for_loop_op.body)
+                    for_ips.append(for_ip)
+                element_dim_map = AffineMap.get(
+                    dim_count=rank,
+                    symbol_count=0,
+                    exprs=[AffineExpr.get_dim(i) for i in range(rank)],
+                    context=module.context,
+                )
+                element_load_op = affine_d.AffineLoadOp(
+                    result=element_type,
+                    memref=data,
+                    indices=for_induction_vars,
+                    map=AffineMapAttr.get(element_dim_map),
+                    ip=for_ip,
+                )
+                memref_d.StoreOp(
+                    value=element_load_op,
+                    memref=fifo_ptr,
+                    indices=[tail_index_op] + for_induction_vars,
+                    ip=for_ip,
+                )
+                for ip in for_ips:
+                    affine_d.AffineYieldOp([], ip=ip)
+            else:
+                fifo_element_type = stream_type.element_type
+                store_value = data
+                if data.type != fifo_element_type:
+                    if (
+                        isinstance(data.type, (IntegerType, IndexType))
+                        and isinstance(fifo_element_type, (IntegerType, IndexType))
+                    ):
+                        if isinstance(data.type, IndexType):
+                            store_value = index_d.CastSOp(
+                                fifo_element_type, data, ip=then_ip
+                            )
+                        elif isinstance(fifo_element_type, IndexType):
+                            store_value = index_d.CastSOp(
+                                IndexType.get(module.context), data, ip=then_ip
+                            )
+                        elif data.type.width > fifo_element_type.width:
+                            store_value = arith_d.TruncIOp(
+                                fifo_element_type, data, ip=then_ip
+                            )
+                        elif data.type.width < fifo_element_type.width:
+                            if data.type.is_signed:
+                                store_value = arith_d.ExtSIOp(
+                                    fifo_element_type, data, ip=then_ip
+                                )
+                            else:
+                                store_value = arith_d.ExtUIOp(
+                                    fifo_element_type, data, ip=then_ip
+                                )
+                memref_d.StoreOp(
+                    value=store_value,
+                    memref=fifo_ptr,
+                    indices=[tail_index_op],
+                    ip=then_ip,
+                )
+            critical_op = openmp_d.CriticalOp(ip=then_ip)
+            critical_ip = InsertionPoint(Block.create_at_start(critical_op.region))
+            memref_d.StoreOp(tail_next_op, tail_ptr, [], ip=critical_ip)
+            openmp_d.TerminatorOp(ip=critical_ip)
+            openmp_d.FlushOp([], ip=then_ip)
+            true_val = arith_d.ConstantOp(
+                IntegerType.get_signless(1, module.context), 1, ip=then_ip
+            )
+            scf_d.YieldOp(results_=[true_val.result], ip=then_ip)
+            # Else block (Full)
+            else_ip = InsertionPoint(if_op.else_block)
+            false_val = arith_d.ConstantOp(
+                IntegerType.get_signless(1, module.context), 0, ip=else_ip
+            )
+            scf_d.YieldOp(results_=[false_val.result], ip=else_ip)
+            stream_access_op.results[0].replace_all_uses_with(if_op.results[0])
+            stream_access_op.operation.erase()
+            continue
+        if isinstance(stream_access_op, allo_d.StreamTryGetOp):
+            openmp_d.FlushOp([], ip=replace_ip)
+            head_val_op = memref_d.LoadOp(memref=head_ptr, indices=[], ip=replace_ip)
+            tail_val_op = memref_d.LoadOp(memref=tail_ptr, indices=[], ip=replace_ip)
+            is_empty = arith_d.CmpIOp(
+                0, lhs=head_val_op.result, rhs=tail_val_op.result, ip=replace_ip
+            )
+            is_not_empty = arith_d.CmpIOp(
+                1, lhs=head_val_op.result, rhs=tail_val_op.result, ip=replace_ip
+            )
+            orig_got_val = stream_access_op.results[0]
+            expected_type = orig_got_val.type
+            if_op = scf_d.IfOp(
+                is_not_empty.result,
+                [expected_type, IntegerType.get_signless(1, module.context)],
+                has_else=True,
+                ip=replace_ip,
+            )
+            # Then block (Not Empty)
+            then_ip = InsertionPoint(if_op.then_block)
+            head_index_op = index_d.CastUOp(
+                output=IndexType.get(module.context), input=head_val_op, ip=then_ip
+            )
+            head_inc_op = arith_d.AddIOp(
+                lhs=head_val_op.result, rhs=const_one.result, ip=then_ip
+            )
+            head_next_op = arith_d.RemUIOp(
+                lhs=head_inc_op.result, rhs=const_fifo_depth.result, ip=then_ip
+            )
+            if isinstance(expected_type, MemRefType):
+                element_alloc_op = memref_d.AllocOp(
+                    memref=expected_type,
+                    dynamicSizes=[],
+                    symbolOperands=[],
+                    ip=then_ip,
+                )
+                rank = expected_type.rank
+                for_ip = then_ip
+                for_induction_vars = []
+                for_ips = []
+                for i in range(rank):
+                    for_loop_op = affine_d.AffineForOp(
+                        0, expected_type.get_dim_size(i), ip=for_ip
+                    )
+                    for_induction_vars.append(for_loop_op.induction_variable)
+                    for_ip = InsertionPoint(for_loop_op.body)
+                    for_ips.append(for_ip)
+                element_dim_map = AffineMap.get(
+                    dim_count=rank,
+                    symbol_count=0,
+                    exprs=[AffineExpr.get_dim(i) for i in range(rank)],
+                    context=module.context,
+                )
+                element_load_op = memref_d.LoadOp(
+                    memref=fifo_ptr,
+                    indices=[head_index_op] + for_induction_vars,
+                    ip=for_ip,
+                )
+                affine_d.AffineStoreOp(
+                    value=element_load_op,
+                    memref=element_alloc_op,
+                    indices=for_induction_vars,
+                    map=AffineMapAttr.get(element_dim_map),
+                    ip=for_ip,
+                )
+                for ip in for_ips:
+                    affine_d.AffineYieldOp([], ip=ip)
+                data_val = element_alloc_op.result
+            else:
+                new_get_op = memref_d.LoadOp(
+                    memref=fifo_ptr, indices=[head_index_op], ip=then_ip
+                )
+                loaded_value = new_get_op.result
+                if loaded_value.type != expected_type:
+                    if isinstance(loaded_value.type, IntegerType) and isinstance(
+                        expected_type, IntegerType
+                    ):
+                        if loaded_value.type.width < expected_type.width:
+                            if loaded_value.type.is_signed:
+                                loaded_value = arith_d.ExtSIOp(
+                                    expected_type, loaded_value, ip=then_ip
+                                )
+                            else:
+                                loaded_value = arith_d.ExtUIOp(
+                                    expected_type, loaded_value, ip=then_ip
+                                )
+                        elif loaded_value.type.width > expected_type.width:
+                            loaded_value = arith_d.TruncIOp(
+                                expected_type, loaded_value, ip=then_ip
+                            )
+                data_val = loaded_value
+            critical_op = openmp_d.CriticalOp(ip=then_ip)
+            critical_ip = InsertionPoint(Block.create_at_start(critical_op.region))
+            memref_d.StoreOp(head_next_op, head_ptr, [], ip=critical_ip)
+            openmp_d.TerminatorOp(ip=critical_ip)
+            openmp_d.FlushOp([], ip=then_ip)
+            true_val = arith_d.ConstantOp(
+                IntegerType.get_signless(1, module.context), 1, ip=then_ip
+            )
+            scf_d.YieldOp(results_=[data_val, true_val.result], ip=then_ip)
+            # Else block (Empty)
+            else_ip = InsertionPoint(if_op.else_block)
+            if isinstance(expected_type, MemRefType):
+                dummy_data = memref_d.AllocOp(
+                    memref=expected_type,
+                    dynamicSizes=[],
+                    symbolOperands=[],
+                    ip=else_ip,
+                )
+                dummy_data_val = dummy_data.result
+            elif isinstance(expected_type, IntegerType):
+                dummy_data_val = arith_d.ConstantOp(expected_type, 0, ip=else_ip).result
+            elif isinstance(expected_type, FloatType):
+                dummy_data_val = arith_d.ConstantOp(
+                    expected_type, 0.0, ip=else_ip
+                ).result
+            else:
+                raise NotImplementedError(
+                    f"Unsupported stream type for dummy data: {expected_type}"
+                )
+            false_val = arith_d.ConstantOp(
+                IntegerType.get_signless(1, module.context), 0, ip=else_ip
+            )
+            scf_d.YieldOp(results_=[dummy_data_val, false_val.result], ip=else_ip)
+            stream_access_op.results[0].replace_all_uses_with(if_op.results[0])
+            stream_access_op.results[1].replace_all_uses_with(if_op.results[1])
+            stream_access_op.operation.erase()
+            continue
         if isinstance(stream_access_op, allo_d.StreamPutOp):
+            openmp_d.FlushOp([], ip=replace_ip)
             tail_val_op = memref_d.LoadOp(memref=tail_ptr, indices=[], ip=replace_ip)
             tail_inc_op = arith_d.AddIOp(
                 lhs=tail_val_op.result, rhs=const_one.result, ip=replace_ip
@@ -654,6 +1238,7 @@ def _process_function_streams(
             critical_ip = InsertionPoint(Block.create_at_start(critical_op.region))
             memref_d.StoreOp(tail_next_op, tail_ptr, [], ip=critical_ip)
             openmp_d.TerminatorOp(ip=critical_ip)
+            openmp_d.FlushOp([], ip=replace_ip)
         else:
             assert isinstance(stream_access_op, allo_d.StreamGetOp)
             head_val_op = memref_d.LoadOp(memref=head_ptr, indices=[], ip=replace_ip)

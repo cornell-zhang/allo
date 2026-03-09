@@ -340,6 +340,24 @@ class Stream(AlloType):
         suffix = "]" if self.stateful else ""
         return f"{prefix}Stream({self.dtype}[{shape}]){suffix}"
 
+    def put(self, data):
+        pass
+
+    def get(self):
+        pass
+
+    def try_put(self, data):
+        pass
+
+    def try_get(self):
+        pass
+
+    def empty(self):
+        pass
+
+    def full(self):
+        pass
+
 
 def allo_type_from_mlir_type(mlir_type):
     """

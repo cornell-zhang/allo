@@ -640,6 +640,18 @@ public:
   }
   bool visitOp(allo::StreamGetOp op) { return emitter.emitStreamGet(op), true; }
   bool visitOp(allo::StreamPutOp op) { return emitter.emitStreamPut(op), true; }
+  bool visitOp(allo::StreamTryGetOp op) {
+    return emitter.emitStreamTryGet(op), true;
+  }
+  bool visitOp(allo::StreamTryPutOp op) {
+    return emitter.emitStreamTryPut(op), true;
+  }
+  bool visitOp(allo::StreamEmptyOp op) {
+    return emitter.emitStreamEmpty(op), true;
+  }
+  bool visitOp(allo::StreamFullOp op) {
+    return emitter.emitStreamFull(op), true;
+  }
 
 private:
   allo::hls::VhlsModuleEmitter &emitter;
@@ -1994,6 +2006,93 @@ void allo::hls::VhlsModuleEmitter::emitStreamPut(StreamPutOp op) {
       os << "}\n";
     }
   }
+  emitInfoAndNewLine(op);
+}
+
+void allo::hls::VhlsModuleEmitter::emitStreamTryGet(StreamTryGetOp op) {
+  Value result = op.getResult(0);
+  Value success = op.getResult(1);
+  fixUnsignedType(result, op->hasAttr("unsigned"));
+  auto stream = op->getOperand(0);
+
+  // Declare the result data variable (emitValue emits type + name on first use)
+  indent();
+  emitValue(result);
+  os << ";\n";
+
+  // Declare the success variable and call read_nb
+  indent();
+  emitValue(success);
+  os << " = ";
+  emitValue(stream, 0, false);
+  // Only apply array subscript for shaped (array) stream types; direct stream
+  // references (hls::stream<T>&) do not support the [] operator.
+  if (llvm::isa<ShapedType>(stream.getType())) {
+    auto denseArrayAttr = op->getAttrOfType<DenseI64ArrayAttr>("indices");
+    if (denseArrayAttr)
+      for (int64_t v : denseArrayAttr.asArrayRef())
+        os << "[" << v << "]";
+  }
+  os << ".read_nb(";
+  emitValue(result);
+  os << ");\n";
+  emitInfoAndNewLine(op);
+}
+
+void allo::hls::VhlsModuleEmitter::emitStreamTryPut(StreamTryPutOp op) {
+  Value success = op.getResult();
+  auto stream = op->getOperand(0);
+  auto value = op->getOperand(1);
+
+  indent();
+  emitValue(success);
+  os << " = ";
+  emitValue(stream, 0, false);
+  if (llvm::isa<ShapedType>(stream.getType())) {
+    auto denseArrayAttr = op->getAttrOfType<DenseI64ArrayAttr>("indices");
+    if (denseArrayAttr)
+      for (int64_t v : denseArrayAttr.asArrayRef())
+        os << "[" << v << "]";
+  }
+  os << ".write_nb(";
+  emitValue(value);
+  os << ");\n";
+  emitInfoAndNewLine(op);
+}
+
+void allo::hls::VhlsModuleEmitter::emitStreamEmpty(StreamEmptyOp op) {
+  Value result = op.getResult();
+  auto stream = op->getOperand(0);
+
+  indent();
+  emitValue(result);
+  os << " = ";
+  emitValue(stream, 0, false);
+  if (llvm::isa<ShapedType>(stream.getType())) {
+    auto denseArrayAttr = op->getAttrOfType<DenseI64ArrayAttr>("indices");
+    if (denseArrayAttr)
+      for (int64_t v : denseArrayAttr.asArrayRef())
+        os << "[" << v << "]";
+  }
+  os << ".empty();\n";
+  emitInfoAndNewLine(op);
+}
+
+void allo::hls::VhlsModuleEmitter::emitStreamFull(StreamFullOp op) {
+  Value result = op.getResult();
+  auto stream = op->getOperand(0);
+
+  indent();
+  emitValue(result);
+  os << " = ";
+  emitValue(stream, 0, false);
+  if (llvm::isa<ShapedType>(stream.getType())) {
+    auto denseArrayAttr = op->getAttrOfType<DenseI64ArrayAttr>("indices");
+    if (denseArrayAttr)
+      for (int64_t v : denseArrayAttr.asArrayRef())
+        os << "[" << v << "]";
+  }
+  os << ".full();\n";
   emitInfoAndNewLine(op);
 }
 

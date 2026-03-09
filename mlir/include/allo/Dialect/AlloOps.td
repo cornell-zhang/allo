@@ -1048,6 +1048,42 @@ def StreamPutOp : Allo_Op<"stream_put"> {
   }];
 }
 
+def StreamTryGetOp : Allo_Op<"stream_try_get"> {
+  let summary = "Try to get an object from a stream non-blockingly";
+  let arguments = (ins StreamLike:$stream, DenseI64ArrayAttr:$indices);
+  let results = (outs AnyType:$data, BoolLike:$success);
+  let assemblyFormat = [{
+      `(` $stream `,` $indices`)` attr-dict `:` qualified(type($stream)) `->` type($data) `,` type($success)
+  }];
+}
+
+def StreamTryPutOp : Allo_Op<"stream_try_put"> {
+  let summary = "Try to put an object into a stream non-blockingly";
+  let arguments = (ins StreamLike:$stream, DenseI64ArrayAttr:$indices, AnyType:$data);
+  let results = (outs BoolLike:$success);
+  let assemblyFormat = [{
+      `(` $stream `,` $indices `,` $data `)` attr-dict `:` qualified(type($stream)) `contains` type($data) `->` type($success)
+  }];
+}
+
+def StreamFullOp : Allo_Op<"stream_full"> {
+  let summary = "Check if a stream is full";
+  let arguments = (ins StreamLike:$stream, DenseI64ArrayAttr:$indices);
+  let results = (outs BoolLike:$res);
+  let assemblyFormat = [{
+      `(` $stream `,` $indices`)` attr-dict `:` qualified(type($stream)) `->` type($res)
+  }];
+}
+
+def StreamEmptyOp : Allo_Op<"stream_empty"> {
+  let summary = "Check if a stream is empty";
+  let arguments = (ins StreamLike:$stream, DenseI64ArrayAttr:$indices);
+  let results = (outs BoolLike:$res);
+  let assemblyFormat = [{
+      `(` $stream `,` $indices`)` attr-dict `:` qualified(type($stream)) `->` type($res)
+  }];
+}
+
 //===----------------------------------------------------------------------===//
 // Layout operations
 //===----------------------------------------------------------------------===//

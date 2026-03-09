@@ -37,6 +37,7 @@ from .tapa import (
 from .catapult import (
     codegen_tcl as codegen_tcl_catapult,
     codegen_host as codegen_host_catapult,
+    parse_catapult_report,
 )
 from .ip import IPModule
 from .report import parse_xml
@@ -364,6 +365,7 @@ class HLSModule:
                 assert self.mode in {
                     "csim",
                     "csyn",
+                    "ppa",
                 }, "Invalid mode for catapult"
 
                 if self.mode == "csim":
@@ -862,15 +864,15 @@ class HLSModule:
                     out_arg[:] = result
                 return
 
-            if self.mode == "csyn":
+            if self.mode in {"csyn", "ppa"}:
                 catapult_cmd = "catapult"
                 if "MGC_HOME" in os.environ:
                     catapult_cmd = os.path.join(os.environ["MGC_HOME"], "bin/catapult")
 
                 cmd = f"cd {self.project}; {catapult_cmd} -shell -f run.tcl"
-                assert len(args) == 0, "csyn mode does not need to pass in arguments"
+                assert len(args) == 0, f"{self.mode} mode does not need to pass in arguments"
                 print(
-                    f"[{time.strftime('%H:%M:%S', time.gmtime())}] Begin synthesizing project with Catapult HLS ..."
+                    f"[{time.strftime('%H:%M:%S', time.gmtime())}] Begin synthesizing project with Catapult HLS ({self.mode} mode)..."
                 )
                 if shell:
                     process = subprocess.Popen(cmd, shell=True)
@@ -879,13 +881,24 @@ class HLSModule:
                 process.wait()
                 if process.returncode != 0:
                     raise RuntimeError(
-                        "Failed to synthesize the design with Catapult HLS"
+                        f"Failed to synthesize the design with Catapult HLS in {self.mode} mode"
                     )
                 print(
                     f"[{time.strftime('%H:%M:%S', time.gmtime())}] Catapult HLS synthesis completed successfully"
                 )
+
+                if self.mode == "ppa":
+                    print(
+                        f"[{time.strftime('%H:%M:%S', time.gmtime())}] Extracting PPA metrics..."
+                    )
+                    stats = parse_catapult_report(self.project, self.top_func_name)
+                    print("| Metric              | Value                |")
+                    print("|---------------------|----------------------|")
+                    for k, v in stats.items():
+                        print(f"| {k:<20} | {v:<20} |")
+                    return stats
                 return
             raise RuntimeError(
-                f"Catapult backend currently only supports 'csyn' and 'csim' mode, got '{self.mode}'"
+                f"Catapult backend currently only supports 'csyn', 'csim', and 'ppa' mode, got '{self.mode}'"
             )
         raise RuntimeError("Not implemented")

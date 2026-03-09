@@ -82,7 +82,9 @@ public:
             allo::SubFixedOp, allo::MulFixedOp, allo::DivFixedOp,
             allo::CmpFixedOp, allo::ShLFixedOp, allo::ShRFixedOp,
             allo::MinFixedOp, allo::MaxFixedOp, allo::PrintOp,
-            allo::StreamConstructOp, allo::StreamGetOp, allo::StreamPutOp>(
+            allo::StreamConstructOp, allo::StreamGetOp, allo::StreamPutOp,
+            allo::StreamTryGetOp, allo::StreamTryPutOp, allo::StreamEmptyOp,
+            allo::StreamFullOp>(
             [&](auto opNode) -> ResultType {
               return thisCast->visitOp(opNode, args...);
             })
@@ -258,6 +260,10 @@ public:
   HANDLE(allo::StreamConstructOp);
   HANDLE(allo::StreamGetOp);
   HANDLE(allo::StreamPutOp);
+  HANDLE(allo::StreamTryGetOp);
+  HANDLE(allo::StreamTryPutOp);
+  HANDLE(allo::StreamEmptyOp);
+  HANDLE(allo::StreamFullOp);
 
 #undef HANDLE
 };

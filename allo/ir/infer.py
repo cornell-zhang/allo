@@ -1075,6 +1075,70 @@ class TypeInferer(ASTVisitor):
                     # stream type itself
                     node.func.value.shape = tuple()
                     node.func.value.dtype = val.dtype
+                elif node.func.attr == "try_put":
+                    new_args = visit_stmts(ctx, node.args)
+                    vid = (
+                        node.func.value.id
+                        if isinstance(node.func.value, ast.Name)
+                        else node.func.value.value.id
+                    )
+                    if isinstance(node.func.value, ast.Subscript):
+                        _, loops_to_unroll = get_symbolic_expr(
+                            copy.deepcopy(node.func.value.slice),
+                            ctx.symbolic,
+                            ctx.global_vars,
+                            ctx.get_alive_var_names(),
+                        )
+                        if os.getenv("FORCE_UNROLL_INDEX") == "1":
+                            ctx.meta_fors_to_unroll.update(loops_to_unroll)
+                    val = ctx.get_symbol(vid)
+                    # try_put returns a boolean representing success
+                    node.shape = tuple()
+                    node.dtype = uint1
+                    node.func.value.shape = tuple()
+                    node.func.value.dtype = val.dtype
+                elif node.func.attr == "try_get":
+                    vid = (
+                        node.func.value.id
+                        if isinstance(node.func.value, ast.Name)
+                        else node.func.value.value.id
+                    )
+                    if isinstance(node.func.value, ast.Subscript):
+                        _, loops_to_unroll = get_symbolic_expr(
+                            copy.deepcopy(node.func.value.slice),
+                            ctx.symbolic,
+                            ctx.global_vars,
+                            ctx.get_alive_var_names(),
+                        )
+                        if os.getenv("FORCE_UNROLL_INDEX") == "1":
+                            ctx.meta_fors_to_unroll.update(loops_to_unroll)
+                    val = ctx.get_symbol(vid)
+                    # try_get returns a tuple of (data, success_bool)
+                    node.shape = (val.dtype.shape, tuple())
+                    node.dtype = (val.dtype.dtype, uint1)
+                    node.func.value.shape = tuple()
+                    node.func.value.dtype = val.dtype
+                elif node.func.attr in {"empty", "full"}:
+                    vid = (
+                        node.func.value.id
+                        if isinstance(node.func.value, ast.Name)
+                        else node.func.value.value.id
+                    )
+                    if isinstance(node.func.value, ast.Subscript):
+                        _, loops_to_unroll = get_symbolic_expr(
+                            copy.deepcopy(node.func.value.slice),
+                            ctx.symbolic,
+                            ctx.global_vars,
+                            ctx.get_alive_var_names(),
+                        )
+                        if os.getenv("FORCE_UNROLL_INDEX") == "1":
+                            ctx.meta_fors_to_unroll.update(loops_to_unroll)
+                    val = ctx.get_symbol(vid)
+                    # empty/full returns a boolean
+                    node.shape = tuple()
+                    node.dtype = uint1
+                    node.func.value.shape = tuple()
+                    node.func.value.dtype = val.dtype
                 elif node.func.attr == "bitcast":
                     visit_stmt(ctx, node.func.value)
                     # single-element operation

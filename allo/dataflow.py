@@ -109,12 +109,22 @@ def move_stream_to_interface(
                 stream_signed += "u" if "unsigned" in op.attributes else "_"
                 for use in op.result.uses:
                     # get use's parent operation
-                    if isinstance(use.owner, allo_d.StreamGetOp):
+                    if isinstance(
+                        use.owner, (allo_d.StreamGetOp, allo_d.StreamTryGetOp)
+                    ):
                         direction = "in"
-                    elif isinstance(use.owner, allo_d.StreamPutOp):
+                    elif isinstance(
+                        use.owner, (allo_d.StreamPutOp, allo_d.StreamTryPutOp)
+                    ):
                         direction = "out"
+                    elif isinstance(
+                        use.owner, (allo_d.StreamEmptyOp, allo_d.StreamFullOp)
+                    ):
+                        # These don't strictly define direction, but we need to choose one
+                        # to avoid the error. Default to 'in' for empty (consumer) and 'out' for full (producer)
+                        direction = "in" if isinstance(use.owner, allo_d.StreamEmptyOp) else "out"
                     else:
-                        raise ValueError("Stream is not used correctly.")
+                        raise ValueError(f"Stream is not used correctly: {use.owner}")
                 if with_stream_type and stream_name not in stream_types_dict:
                     stream_types_dict[stream_name] = op.result.type
                 stream_info[func_name].append((stream_name, direction))
@@ -298,12 +308,20 @@ def move_stream_to_interface(
                 stream_types.append(op.result.type)
                 stream_signed += "u" if "unsigned" in op.attributes else "_"
                 for use in op.result.uses:
-                    if isinstance(use.owner, allo_d.StreamGetOp):
+                    if isinstance(
+                        use.owner, (allo_d.StreamGetOp, allo_d.StreamTryGetOp)
+                    ):
                         direction = "in"
-                    elif isinstance(use.owner, allo_d.StreamPutOp):
+                    elif isinstance(
+                        use.owner, (allo_d.StreamPutOp, allo_d.StreamTryPutOp)
+                    ):
                         direction = "out"
+                    elif isinstance(
+                        use.owner, (allo_d.StreamEmptyOp, allo_d.StreamFullOp)
+                    ):
+                        direction = "in" if isinstance(use.owner, allo_d.StreamEmptyOp) else "out"
                     else:
-                        raise ValueError("Stream is not used correctly.")
+                        raise ValueError(f"Stream is not used correctly: {use.owner}")
                 stream_name = op.attributes["name"].value
                 if with_stream_type and stream_name not in stream_types_dict:
                     stream_types_dict[stream_name] = op.result.type

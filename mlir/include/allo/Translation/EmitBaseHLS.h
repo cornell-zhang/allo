@@ -82,6 +82,10 @@ public:
   virtual void emitStreamConstruct(allo::StreamConstructOp op) {}
   virtual void emitStreamGet(allo::StreamGetOp op) {}
   virtual void emitStreamPut(allo::StreamPutOp op) {}
+  virtual void emitStreamTryGet(allo::StreamTryGetOp op) {}
+  virtual void emitStreamTryPut(allo::StreamTryPutOp op) {}
+  virtual void emitStreamEmpty(allo::StreamEmptyOp op) {}
+  virtual void emitStreamFull(allo::StreamFullOp op) {}
 
   /// Top-level MLIR module emitter.
   virtual void emitModule(ModuleOp module) {}

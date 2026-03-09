@@ -160,11 +160,13 @@ def codegen_host(top, module):
     return out_str
 
 
+
 def codegen_tcl(top, configs):
     """Generate TCL script for Catapult HLS synthesis"""
-    frequency = configs["frequency"]
+    frequency = configs.get("frequency", 100)
     clock_period = 1000 / frequency
     mode = configs.get("mode", "csyn")
+    device = configs.get("device", "nangate-45nm_beh")
 
     out_str = """# Project root directory
 set sfd [file dir [info script]]
@@ -193,7 +195,17 @@ directive set -CLOCKS {{clk {{-CLOCK_PERIOD {clock_period:.1f}}}}}
 # Set output language
 solution options set /Output/OutputVerilog true
 solution options set /Output/OutputVHDL false
+"""
 
+    # Library selection based on device
+    if "45nm" in device or "nangate" in device:
+        out_str += "solution library add nangate-45nm_beh\n"
+    elif "sky130" in device:
+        out_str += "solution library add sky130\n"
+    else:
+        out_str += f"solution library add {device}\n"
+
+    out_str += """
 # Flow
 go analyze
 go compile
@@ -206,9 +218,8 @@ solution app execution
 """
 
     # Continue synthesis if not just csim
-    if mode == "csyn":
+    if mode in {"csyn", "ppa"}:
         out_str += """
-solution library add nangate-45nm_beh
 solution library add ccs_sample_mem
 go assembly
 go extract
@@ -216,3 +227,55 @@ go extract
 
     out_str += "\nexit\n"
     return out_str
+
+
+def parse_catapult_report(project_path, top):
+    """Parse Catapult HLS synthesis report.
+
+    Parameters
+    ----------
+    project_path : str
+        Path to the project directory
+    top : str
+        Top-level function name
+
+    Returns
+    -------
+    dict
+        Parsed metrics (Area, Latency, etc.)
+    """
+    import os
+    import re
+
+    report_path = os.path.join(project_path, "Catapult", f"{top}.v1", "cycle.rpt")
+    if not os.path.exists(report_path):
+        # Try another common location if the first one doesn't exist
+        report_path = os.path.join(project_path, f"{top}.rpt")
+
+    res = {
+        "Latency (cycles)": "N/A",
+        "Area": "N/A",
+        "Power": "N/A",
+    }
+
+    if not os.path.exists(report_path):
+        return res
+
+    with open(report_path, "r") as f:
+        content = f.read()
+        # Simple regex to extract common metrics from Catapult cycle.rpt
+        # These patterns might need refinement based on exact Catapult version output
+        latency_match = re.search(r"Max Latency\s+:\s+(\d+)", content)
+        if latency_match:
+            res["Latency (cycles)"] = latency_match.group(1)
+
+        # Area is often in a separate area.rpt or summary
+        area_path = os.path.join(project_path, "Catapult", f"{top}.v1", "area.rpt")
+        if os.path.exists(area_path):
+            with open(area_path, "r") as af:
+                area_content = af.read()
+                area_match = re.search(r"Total Area\s+:\s+([\d\.]+)", area_content)
+                if area_match:
+                    res["Area"] = area_match.group(1)
+
+    return res
