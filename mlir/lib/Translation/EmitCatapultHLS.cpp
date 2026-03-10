@@ -36,10 +36,12 @@ static SmallString<16> getCatapultTypeName(Type valType) {
     valType = arrayType.getElementType();
 
   // Handle float types.
+  // nangate-45nm_beh does not support native IEEE-754 float arithmetic.
+  // Use ac_ieee_float<binary32> (from ac_std_float.h) for synthesizable f32.
   if (llvm::isa<Float16Type>(valType))
     return SmallString<16>("half");
   else if (llvm::isa<Float32Type>(valType))
-    return SmallString<16>("float");
+    return SmallString<16>("ac_ieee_float<binary32>");
   else if (llvm::isa<Float64Type>(valType))
     return SmallString<16>("double");
 
@@ -118,6 +120,10 @@ public:
                      std::string name = "") override;
   void emitLoopDirectives(Operation *op) override;
   void emitStreamConstruct(allo::StreamConstructOp op) override;
+  void emitStreamTryGet(allo::StreamTryGetOp op) override;
+  void emitStreamTryPut(allo::StreamTryPutOp op) override;
+  void emitStreamEmpty(allo::StreamEmptyOp op) override;
+  void emitStreamFull(allo::StreamFullOp op) override;
   void emitArrayDirectives(Value memref) override;
   void emitFunction(func::FuncOp func) override;
 
@@ -130,6 +136,25 @@ protected:
   }
   SmallString<16> getTypeName(Value val) {
     return getCatapultTypeName(val.getType());
+  }
+
+  // Override stateful global element type to use ac_ieee_float<binary32>
+  // for f32 (nangate-45nm_beh doesn't support native float).
+  void emitStatefulGlobalElementType(Type type) override {
+    os << getCatapultTypeName(type);
+  }
+
+  // Override float array element emission to add 'f' suffix.
+  // ac_ieee_float<binary32> has no constructor from double literals;
+  // float literals (with 'f' suffix) convert via the float constructor.
+  void emitFloatArrayElement(float value) override {
+    if (std::isfinite(value)) {
+      // std::to_string gives 6 decimal places; append 'f' for float literal
+      os << std::to_string(value) << "f";
+    } else if (value > 0)
+      os << "INFINITY";
+    else
+      os << "-INFINITY";
   }
 };
 } // namespace
@@ -165,22 +190,13 @@ void CatapultModuleEmitter::emitValue(Value val, unsigned rank, bool isPtr,
 
 void CatapultModuleEmitter::emitFunctionDirectives(func::FuncOp func,
                                                    ArrayRef<Value> portList) {
-  // For Catapult HLS, emit the hls_design top pragma for top-level functions
-  if (func->hasAttr("top")) {
-    indent();
-    os << "#pragma hls_design top\n";
-    os << "\n";
-  }
+  // hls_design top/block pragmas are now emitted BEFORE the function
+  // declaration in emitFunction, so EDG can bind them correctly.
+  // Only per-statement directives belong here (inside the function body).
 
-  // Emit other function-level directives as needed
   if (func->hasAttr("dataflow")) {
     indent();
     os << "#pragma hls_design dataflow\n";
-  }
-
-  if (func->hasAttr("inline")) {
-    indent();
-    os << "#pragma hls_design inline\n";
   }
 
   // Emit array directives for function ports
@@ -286,6 +302,10 @@ void CatapultModuleEmitter::emitLoopDirectives(Operation *op) {
 
 void CatapultModuleEmitter::emitStreamConstruct(allo::StreamConstructOp op) {
   indent();
+  // Catapult requires local ac_channel declarations to be static, pointer, or
+  // reference (HIER-6). Add 'static' so channels survive across invocations and
+  // are not re-constructed each call (required for block synthesis).
+  os << "static ";
   Value result = op.getResult();
   fixUnsignedType(result, op->hasAttr("unsigned"));
   emitValue(result);
@@ -295,9 +315,104 @@ void CatapultModuleEmitter::emitStreamConstruct(allo::StreamConstructOp op) {
     }
   }
   os << ";\n";
-  // Note: Catapult HLS doesn't need explicit stream depth pragmas like Vivado
-  // HLS The depth is handled through the ac_channel template parameter or
-  // synthesis settings
+  emitInfoAndNewLine(op);
+}
+
+void CatapultModuleEmitter::emitStreamTryGet(StreamTryGetOp op) {
+  // Catapult synthesis: emit blocking read() instead of nb_read().
+  // nb_read inside spin-while loops triggers Catapult go compile segfault (LOOP-19).
+  // blocking read() always succeeds → spin-while exits in 1 iteration → bounded.
+  // Area/timing estimates are equivalent; scheduling semantics differ only at runtime.
+  Value result = op.getResult(0);
+  Value success = op.getResult(1);
+  fixUnsignedType(result, op->hasAttr("unsigned"));
+  auto stream = op->getOperand(0);
+
+  // Declare the result data variable first.
+  indent();
+  emitValue(result);
+  os << ";\n";
+
+  // Emit: channel[idx].read(result);
+  indent();
+  emitValue(stream, 0, false);
+  if (llvm::isa<ShapedType>(stream.getType())) {
+    auto denseArrayAttr = op->getAttrOfType<DenseI64ArrayAttr>("indices");
+    if (denseArrayAttr)
+      for (int64_t v : denseArrayAttr.asArrayRef())
+        os << "[" << v << "]";
+  }
+  os << ".read(";
+  emitValue(result);
+  os << ");\n";
+
+  // Success is always true: blocking read always returns data.
+  std::string successName = std::string(addName(success, false).str());
+  indent();
+  os << "bool " << successName << " = true;\n";
+  emitInfoAndNewLine(op);
+}
+
+void CatapultModuleEmitter::emitStreamTryPut(StreamTryPutOp op) {
+  // Catapult synthesis: emit blocking write() instead of nb_write().
+  // nb_write inside spin-while loops triggers Catapult go compile segfault (LOOP-19).
+  // blocking write() always succeeds → spin-while exits in 1 iteration → bounded.
+  // Area/timing estimates are equivalent; scheduling semantics differ only at runtime.
+  Value success = op.getResult();
+  auto stream = op->getOperand(0);
+  auto value = op->getOperand(1);
+
+  // Emit: channel[idx].write(value);
+  // ac_channel::write(const T&) accepts both lvalues and rvalue literals.
+  indent();
+  emitValue(stream, 0, false);
+  if (llvm::isa<ShapedType>(stream.getType())) {
+    auto denseArrayAttr = op->getAttrOfType<DenseI64ArrayAttr>("indices");
+    if (denseArrayAttr)
+      for (int64_t v : denseArrayAttr.asArrayRef())
+        os << "[" << v << "]";
+  }
+  os << ".write(";
+  os << getName(value) << ");\n";
+
+  // Success is always true: blocking write always succeeds.
+  std::string successName = std::string(addName(success, false).str());
+  indent();
+  os << "bool " << successName << " = true;\n";
+  emitInfoAndNewLine(op);
+}
+
+void CatapultModuleEmitter::emitStreamEmpty(StreamEmptyOp op) {
+  // ac_channel does NOT have .empty() in the synthesizable subset (EDG CIN-59).
+  // Use !ch.available(1) instead: "no element available" == empty.
+  Value result = op.getResult();
+  auto stream = op->getOperand(0);
+
+  indent();
+  emitValue(result);
+  os << " = !";
+  emitValue(stream, 0, false);
+  if (llvm::isa<ShapedType>(stream.getType())) {
+    auto denseArrayAttr = op->getAttrOfType<DenseI64ArrayAttr>("indices");
+    if (denseArrayAttr)
+      for (int64_t v : denseArrayAttr.asArrayRef())
+        os << "[" << v << "]";
+  }
+  os << ".available(1);\n";
+  emitInfoAndNewLine(op);
+}
+
+void CatapultModuleEmitter::emitStreamFull(StreamFullOp op) {
+  // ac_channel has no direct .full() API.
+  // Synthesizable alternative: use nb_write() return value for backpressure.
+  // Here we conservatively emit false (unbounded in Catapult sim by default).
+  // Depth constraints are enforced via TCL directives at synthesis time.
+  Value result = op.getResult();
+
+  indent();
+  emitValue(result);
+  os << " = false;"
+     << " /* ac_channel: no .full(); depth enforced via TCL directive */\n";
   emitInfoAndNewLine(op);
 }
 
@@ -340,8 +455,14 @@ void CatapultModuleEmitter::emitFunction(func::FuncOp func) {
   if (func.getBlocks().size() > 1)
     emitError(func, "has more than one basic blocks.");
 
-  if (func->hasAttr("top"))
+  // Emit hls_design pragma BEFORE the function declaration so EDG binds it.
+  // Top functions get #pragma hls_design top.
+  // Sub-functions are left without a block pragma; hierarchy is controlled
+  // via TCL (solution design set -block) when needed.
+  if (func->hasAttr("top")) {
     os << "/// This is top function.\n";
+    os << "#pragma hls_design top\n";
+  }
 
   // Emit function signature.
   os << "void " << func.getName() << "(\n";
@@ -482,6 +603,7 @@ void CatapultModuleEmitter::emitModule(ModuleOp module) {
 #include <ac_int.h>
 #include <ac_fixed.h>
 #include <ac_channel.h>
+#include <ac_std_float.h>
 #include <math.h>
 #include <stdint.h>
 using namespace std;

@@ -45,15 +45,17 @@ SmallString<8> AlloEmitterBase::getName(Value val) {
         return SmallString<8>(std::to_string(boolAttr.getValue()));
 
       } else if (auto floatAttr = llvm::dyn_cast<FloatAttr>(constAttr)) {
-        // as 0.0 will be interpreted as double constant, we need to explicitly
-        // declare it as float32
+        // Emit float literals with 'f' suffix for f32 to avoid implicit
+        // double-to-float or double-to-ac_ieee_float<binary32> conversions.
         int bitwidth =
             llvm::dyn_cast<FloatType>(floatAttr.getType()).getWidth();
-        std::string prefix = (bitwidth == 32) ? "(float)" : "(double)";
         auto value = floatAttr.getValueAsDouble();
-        if (std::isfinite(value))
-          return SmallString<8>(prefix + std::to_string(value));
-        else if (value > 0)
+        if (std::isfinite(value)) {
+          if (bitwidth == 32)
+            return SmallString<8>(std::to_string((float)value) + "f");
+          else
+            return SmallString<8>(std::to_string(value));
+        } else if (value > 0)
           return SmallString<8>("INFINITY");
         else
           return SmallString<8>("-INFINITY");

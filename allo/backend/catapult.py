@@ -162,11 +162,22 @@ def codegen_host(top, module):
 
 
 def codegen_tcl(top, configs):
-    """Generate TCL script for Catapult HLS synthesis"""
+    """Generate TCL script for Catapult HLS synthesis.
+
+    Generates a hierarchical synthesis flow that preserves module boundaries
+    so that per-PE and per-interconnect area/power can be extracted from reports.
+    """
     frequency = configs.get("frequency", 100)
     clock_period = 1000 / frequency
     mode = configs.get("mode", "csyn")
     device = configs.get("device", "nangate-45nm_beh")
+    # preserve_hier=True keeps sub-function boundaries in RTL output,
+    # enabling per-module area/power breakdown in area.rpt.
+    preserve_hier = configs.get("preserve_hierarchy", True)
+    # sub_funcs: list of sub-function names to synthesize as separate RTL blocks.
+    # Using block synthesis avoids HIER-10/HIER-47 errors (channels cross hierarchical
+    # boundaries when functions are blocks, not inlined into top).
+    sub_funcs = configs.get("sub_funcs", [])
 
     out_str = """# Project root directory
 set sfd [file dir [info script]]
@@ -208,8 +219,17 @@ solution options set /Output/OutputVHDL false
     out_str += """
 # Flow
 go analyze
-go compile
 """
+
+    # Block synthesis: keep sub-functions as separate RTL modules so channels
+    # cross hierarchical boundaries (avoids HIER-10/HIER-47 errors).
+    if sub_funcs:
+        for fn in sub_funcs:
+            out_str += f"solution design set {fn} -block\n"
+        out_str += "\n"
+
+    out_str += "go compile\n"
+
 
     if mode == "csim":
         out_str += """
@@ -222,15 +242,15 @@ solution app execution
         out_str += """
 solution library add ccs_sample_mem
 go assembly
-go extract
 """
+        out_str += "go extract\n"
 
     out_str += "\nexit\n"
     return out_str
 
 
 def parse_catapult_report(project_path, top):
-    """Parse Catapult HLS synthesis report.
+    """Parse Catapult HLS synthesis report (flat summary).
 
     Parameters
     ----------
@@ -242,15 +262,12 @@ def parse_catapult_report(project_path, top):
     Returns
     -------
     dict
-        Parsed metrics (Area, Latency, etc.)
+        Parsed metrics (Area, Latency, Power).
     """
     import os
     import re
 
-    report_path = os.path.join(project_path, "Catapult", f"{top}.v1", "cycle.rpt")
-    if not os.path.exists(report_path):
-        # Try another common location if the first one doesn't exist
-        report_path = os.path.join(project_path, f"{top}.rpt")
+    sol_dir = os.path.join(project_path, "Catapult", f"{top}.v1")
 
     res = {
         "Latency (cycles)": "N/A",
@@ -258,24 +275,134 @@ def parse_catapult_report(project_path, top):
         "Power": "N/A",
     }
 
-    if not os.path.exists(report_path):
-        return res
+    # --- Latency from cycle.rpt ---
+    cycle_rpt = os.path.join(sol_dir, "cycle.rpt")
+    if not os.path.exists(cycle_rpt):
+        cycle_rpt = os.path.join(project_path, f"{top}.rpt")
 
-    with open(report_path, "r") as f:
-        content = f.read()
-        # Simple regex to extract common metrics from Catapult cycle.rpt
-        # These patterns might need refinement based on exact Catapult version output
-        latency_match = re.search(r"Max Latency\s+:\s+(\d+)", content)
-        if latency_match:
-            res["Latency (cycles)"] = latency_match.group(1)
+    if os.path.exists(cycle_rpt):
+        with open(cycle_rpt, "r") as f:
+            content = f.read()
+        m = re.search(r"Max Latency\s*:\s*(\d+)", content)
+        if m:
+            res["Latency (cycles)"] = m.group(1)
 
-        # Area is often in a separate area.rpt or summary
-        area_path = os.path.join(project_path, "Catapult", f"{top}.v1", "area.rpt")
-        if os.path.exists(area_path):
-            with open(area_path, "r") as af:
-                area_content = af.read()
-                area_match = re.search(r"Total Area\s+:\s+([\d\.]+)", area_content)
-                if area_match:
-                    res["Area"] = area_match.group(1)
+    # --- Area from area.rpt ---
+    area_rpt = os.path.join(sol_dir, "area.rpt")
+    if os.path.exists(area_rpt):
+        with open(area_rpt, "r") as f:
+            area_content = f.read()
+        m = re.search(r"Total Area\s*:\s*([\d\.]+)", area_content)
+        if m:
+            res["Area"] = m.group(1)
+
+    # --- Power from power.rpt or summary ---
+    for power_fname in ("power.rpt", "power_summary.rpt"):
+        power_rpt = os.path.join(sol_dir, power_fname)
+        if os.path.exists(power_rpt):
+            with open(power_rpt, "r") as f:
+                pwr_content = f.read()
+            m = re.search(r"Total Power\s*:\s*([\d\.]+\s*\w+)", pwr_content)
+            if m:
+                res["Power"] = m.group(1)
+            break
 
     return res
+
+
+def parse_catapult_hierarchical_report(project_path, top):
+    """Parse Catapult HLS area.rpt for per-module (hierarchical) PPA breakdown.
+
+    Catapult writes a hierarchical area report when -PRESERVE_HIERARCHY is set.
+    The report has indented module entries like:
+
+        Module: memory_tile_2x1
+          Cell Area   : 1234.56
+          ...
+        Module: compute_tile_2x1
+          Cell Area   : 567.89
+
+    Returns
+    -------
+    dict
+        {
+          "top": {"area": float, "cells": int},          # entire design
+          "modules": {
+              "<func_name>": {"area": float, "cells": int},
+              ...
+          },
+          "summary": str,   # human-readable table
+        }
+    """
+    import os
+    import re
+
+    sol_dir = os.path.join(project_path, "Catapult", f"{top}.v1")
+    area_rpt = os.path.join(sol_dir, "area.rpt")
+
+    result = {"top": {}, "modules": {}, "summary": "No area.rpt found."}
+    if not os.path.exists(area_rpt):
+        return result
+
+    with open(area_rpt, "r") as f:
+        content = f.read()
+
+    # --- Top-level total ---
+    m = re.search(r"Total Area\s*:\s*([\d\.]+)", content)
+    if m:
+        result["top"]["area"] = float(m.group(1))
+    m = re.search(r"Total Cells\s*:\s*(\d+)", content)
+    if m:
+        result["top"]["cells"] = int(m.group(1))
+
+    # --- Per-module breakdown ---
+    # Catapult area.rpt format (approximate):
+    #   Module: <name>
+    #     Cell Area   : <value>
+    #     Cell Count  : <value>
+    #     Power       : <value>  (optional)
+    module_blocks = re.findall(
+        r"Module:\s*(\S+)(.*?)(?=Module:|\Z)", content, re.DOTALL
+    )
+    for mod_name, block in module_blocks:
+        info = {}
+        a = re.search(r"Cell Area\s*:\s*([\d\.]+)", block)
+        if a:
+            info["area"] = float(a.group(1))
+        c = re.search(r"Cell Count\s*:\s*(\d+)", block)
+        if c:
+            info["cells"] = int(c.group(1))
+        p = re.search(r"Power\s*:\s*([\d\.eE\+\-]+)", block)
+        if p:
+            info["power"] = float(p.group(1))
+        if info:
+            result["modules"][mod_name] = info
+
+    # --- Human-readable summary table ---
+    lines = ["Hierarchical PPA Report (Catapult HLS)", "=" * 60]
+    top_area = result["top"].get("area", "N/A")
+    lines.append(f"{'Module':<35} {'Area':>10} {'Cells':>8}")
+    lines.append("-" * 60)
+    lines.append(
+        f"{'[TOP] ' + top:<35} {str(top_area):>10} "
+        f"{str(result['top'].get('cells', 'N/A')):>8}"
+    )
+    for mod, info in result["modules"].items():
+        lines.append(
+            f"  {mod:<33} {str(info.get('area', 'N/A')):>10} "
+            f"{str(info.get('cells', 'N/A')):>8}"
+        )
+
+    # Infer interconnect cost = top - sum(compute modules)
+    module_area_sum = sum(
+        v.get("area", 0) for v in result["modules"].values()
+    )
+    if isinstance(top_area, float) and module_area_sum > 0:
+        interconnect = top_area - module_area_sum
+        lines.append("-" * 60)
+        lines.append(
+            f"  {'[Interconnect/Overhead]':<33} {interconnect:>10.2f} {'':>8}"
+        )
+
+    result["summary"] = "\n".join(lines)
+    return result

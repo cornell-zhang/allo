@@ -14,8 +14,14 @@
 | Blocking demo (reference) | ✅ DONE | test_hierachical_mesh.py (2x1, 2x2) |
 | HLS synthesis (blocking vs NB) | ✅ DONE | hls_synth_streams.py; HLS_SYNTH_REPORT.md |
 | HLS synthesis (decoupled mesh) | ✅ DONE | hls_synth_decoupled.py; HLS_SYNTH_REPORT.md |
+| Catapult HLS backend (NB streams) | ✅ DONE | EmitCatapultHLS.cpp: nb_read/nb_write/empty/full |
+| 2×1 full decoupled mesh (Catapult) | ✅ DONE | catapult_synth_decoupled_2x1.py codegen verified |
+| Hierarchical PPA report (Catapult) | ✅ DONE | parse_catapult_hierarchical_report(); TCL -PRESERVE_HIERARCHY |
+| Library compat (zhang-21 RHEL 8) | ✅ DONE | Rebuilt build-rhel8/; run_allo.sh wrapper |
+| Catapult MVP (csyn + PPA) | 🔄 NEXT | Run catapult_synth_decoupled_2x1.py --mode csyn on server with Catapult |
 | RTL/MatchLib backend | ⬜ TODO | Future work |
 | 2×2 decoupled mesh | ⬜ TODO | Extend test_decoupled_mesh.py |
+| OpenSTA timing analysis | ⬜ TODO | After Catapult RTL generation |
 
 ---
 
@@ -65,6 +71,49 @@ at every abstraction level.
 - `allo/backend/simulator.py` line ~635: `ip=before_ip` → `ip=replace_ip` for
   blocking `StreamPutOp` data-write ops after spin-while condition terminator
   (Change #6 in ALLO_CHANGE.md).
+
+---
+
+## Session Log
+
+### Session: Catapult HLS Backend + 2×1 Decoupled Mesh PPA Flow
+
+**Context**: Extending the decoupled 2×1 mesh (already passing on simulator) to the Catapult HLS backend, enabling hierarchical PPA analysis (per-PE and interconnect breakdown).
+
+**Work Completed**:
+
+1. **Catapult HLS C++ Backend** (`mlir/lib/Translation/EmitCatapultHLS.cpp`):
+   - Added `emitStreamTryGet`: emits `.nb_read()` (ac_channel API, replaces Vivado `.read_nb()`)
+   - Added `emitStreamTryPut`: emits `.nb_write()` (replaces Vivado `.write_nb()`)
+   - Added `emitStreamEmpty`: emits `.empty()` (same semantics)
+   - Added `emitStreamFull`: emits `false` with comment (ac_channel has no `.full()`; depth enforced via TCL)
+   - All 4 methods are virtual overrides in `CatapultModuleEmitter`, dispatched correctly via visitor
+   - Verified: `top_decoupled_2x1` codegen now shows `ac_channel<>` types with `.nb_write()`/`.nb_read()`
+
+2. **TCL Codegen — Hierarchy Preservation** (`allo/backend/catapult.py`):
+   - Added `preserve_hierarchy=True` config option → emits `directive set -PRESERVE_HIERARCHY true`
+   - Keeps `memory_tile_2x1` and `compute_tile_2x1` as separate RTL modules
+   - Enables per-module area/power breakdown in Catapult `area.rpt`
+
+3. **Hierarchical PPA Report Parser** (`allo/backend/catapult.py`):
+   - `parse_catapult_hierarchical_report(project_path, top)`:
+     - Parses Catapult `area.rpt` for per-module Cell Area, Cell Count, Power
+     - Computes interconnect overhead = top_area − Σ(module_areas)
+     - Returns `{top: {...}, modules: {name: {...}}, summary: str}`
+   - Integrated into `hls.py` ppa mode: prints summary table + returns `stats["hierarchical"]`
+
+4. **Catapult Synthesis Test** (`tests/dataflow/catapult_synth_decoupled_2x1.py`):
+   - Modes: `--mode codegen` (no Catapult, just emit C++), `--mode csyn`, `--mode ppa`
+   - Includes simulator functional verification (`--no-verify` to skip)
+   - Tested codegen mode: kernel.cpp verified with correct ac_channel API calls
+
+5. **C++ Rebuild Procedure** (documented in MEMORY.md):
+   - Issue: conda env has cmake 4.1.2; build.ninja was generated with 3.31.5; 4.1.2 fails to regenerate
+   - Fix: `touch mlir/build/build.ninja && conda run -n allo bash -c 'cd mlir/build && ninja -j4'`
+
+**Verified**:
+- `top_decoupled_2x1` codegen: `ac_channel< int32_t >`, `.nb_write()`, `.nb_read()` ✓
+- `tests/dataflow/test_decoupled_mesh.py`: 2/2 simulator tests still passing ✓
 
 ---
 

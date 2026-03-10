@@ -38,6 +38,7 @@ from .catapult import (
     codegen_tcl as codegen_tcl_catapult,
     codegen_host as codegen_host_catapult,
     parse_catapult_report,
+    parse_catapult_hierarchical_report,
 )
 from .ip import IPModule
 from .report import parse_xml
@@ -55,6 +56,44 @@ from ..utils import (
     get_bitwidth_from_type,
     np_supported_types,
 )
+
+
+def _find_catapult_binary():
+    """Return the path to the catapult binary, searching common install locations."""
+    import shutil
+    import glob as _glob
+
+    # 1. Explicit MGC_HOME env var (highest priority)
+    mgc_home = os.environ.get("MGC_HOME", "")
+    if mgc_home:
+        candidate = os.path.join(mgc_home, "bin", "catapult")
+        if os.path.isfile(candidate):
+            return candidate
+
+    # 2. Siemens standard install path: /opt/siemens/catapult/<version>/
+    siemens_root = "/opt/siemens/catapult"
+    if os.path.isdir(siemens_root):
+        # Pick the most recent version (sort descending)
+        versions = sorted(
+            (d for d in os.listdir(siemens_root)
+             if os.path.isdir(os.path.join(siemens_root, d))),
+            reverse=True,
+        )
+        for ver in versions:
+            candidate = os.path.join(siemens_root, ver, "bin", "catapult")
+            if os.path.isfile(candidate):
+                os.environ.setdefault("MGC_HOME", os.path.join(siemens_root, ver))
+                return candidate
+
+    # 3. System PATH fallback
+    found = shutil.which("catapult")
+    if found:
+        return found
+
+    raise RuntimeError(
+        "Catapult binary not found. Set MGC_HOME to the Catapult installation "
+        "directory (e.g. MGC_HOME=/opt/siemens/catapult/2024.2) or add it to PATH."
+    )
 
 
 def is_available(backend="vivado_hls"):
@@ -199,13 +238,15 @@ class HLSModule:
         self.platform = platform
         self.ext_libs = [] if ext_libs is None else ext_libs
         self.num_output_args = None  # Will be set from configs if provided
-        if configs is not None:
-            new_configs = DEFAULT_CONFIG.copy()
-            new_configs.update(configs)
-            configs = new_configs
-            self.num_output_args = configs.get("num_output_args", None)
+        user_configs = configs if configs is not None else {}
+        # For Catapult (ASIC), start with ASIC-appropriate defaults instead of FPGA defaults.
+        if platform == "catapult":
+            base_configs = {"device": "nangate-45nm_beh", "frequency": 500}
         else:
-            configs = DEFAULT_CONFIG.copy()
+            base_configs = DEFAULT_CONFIG.copy()
+        base_configs.update(user_configs)
+        configs = base_configs
+        self.num_output_args = configs.get("num_output_args", None)
         if self.mode is not None:
             configs["mode"] = self.mode
         with Context() as ctx, Location.unknown():
@@ -811,10 +852,12 @@ class HLSModule:
                 # Compilation with g++
                 # Assuming 'g++' is in PATH.
                 # Include path for ac_types
-                mgc_home = os.environ.get("MGC_HOME")
+                # Resolve MGC_HOME via the same logic as synthesis mode
+                _find_catapult_binary()  # sets MGC_HOME as side-effect if found
+                mgc_home = os.environ.get("MGC_HOME", "")
                 if not mgc_home:
                     raise RuntimeError(
-                        "MGC_HOME environment variable is not set. Please set it to the Catapult installation directory."
+                        "Catapult not found. Set MGC_HOME or install to /opt/siemens/catapult/."
                     )
 
                 ac_include = os.path.join(mgc_home, "shared/include")
@@ -865,9 +908,7 @@ class HLSModule:
                 return
 
             if self.mode in {"csyn", "ppa"}:
-                catapult_cmd = "catapult"
-                if "MGC_HOME" in os.environ:
-                    catapult_cmd = os.path.join(os.environ["MGC_HOME"], "bin/catapult")
+                catapult_cmd = _find_catapult_binary()
 
                 cmd = f"cd {self.project}; {catapult_cmd} -shell -f run.tcl"
                 assert len(args) == 0, f"{self.mode} mode does not need to pass in arguments"
@@ -896,6 +937,14 @@ class HLSModule:
                     print("|---------------------|----------------------|")
                     for k, v in stats.items():
                         print(f"| {k:<20} | {v:<20} |")
+
+                    # Hierarchical breakdown: per-PE and interconnect
+                    hier = parse_catapult_hierarchical_report(
+                        self.project, self.top_func_name
+                    )
+                    print()
+                    print(hier["summary"])
+                    stats["hierarchical"] = hier
                     return stats
                 return
             raise RuntimeError(
