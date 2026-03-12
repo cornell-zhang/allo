@@ -373,7 +373,7 @@ NB_MODULE(_allo, m) {
   allo_m.def("unify_kernels", &UnifyKernels);
 
   allo_m.def("copy_on_write_on_function", &copyOnWriteOnFunction);
-  allo_m.def("unroll_loop", &unrollLoop, nb::arg("loop"),
+  allo_m.def("explicit_unroll", &unrollLoop, nb::arg("loop"),
              nb::arg("factor") = 0);
 
   // Utility APIs
