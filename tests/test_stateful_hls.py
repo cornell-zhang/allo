@@ -4,14 +4,14 @@
 import re
 import pytest
 import allo
-from allo.ir.types import Int, int32, float32, stateful
+from allo.ir.types import Int, int32, float32, Stateful
 
 
 def test_stateful_scalar_hls():
     """Test HLS code generation for stateful scalar"""
 
     def test_stateful_scalar(x: Int(4)) -> Int(4):
-        acc: Int(4) @ stateful = 0
+        acc: Int(4) @ Stateful = 0
         acc = acc + x
         return acc
 
@@ -43,10 +43,10 @@ def test_moving_average_hls():
     """Test HLS code generation for moving average with multiple stateful variables"""
 
     def test_moving_average(new_value: float32) -> float32:
-        window: float32[4] @ stateful = 0.0
-        i: int32 @ stateful = 0
-        count: int32 @ stateful = 0
-        total: float32 @ stateful = 0.0
+        window: float32[4] @ Stateful = 0.0
+        i: int32 @ Stateful = 0
+        count: int32 @ Stateful = 0
+        total: float32 @ Stateful = 0.0
 
         # Subtract the old value that's being replaced
         total = total - window[i]
@@ -99,7 +99,7 @@ def test_stateful_isolate_hls():
     """Test HLS code generation for isolated stateful functions"""
 
     def acc[T_in](x: "T_in") -> "T_in":
-        state: T_in @ stateful = 0
+        state: T_in @ Stateful = 0
         state = state + x
         return state
 

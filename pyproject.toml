@@ -5,6 +5,8 @@
 requires = [
     "setuptools>=61.0",
     "wheel",
+    "cmake>=3.20",
+    "ninja",
     "nanobind>=2.9",
 ]
 build-backend = "setuptools.build_meta"
