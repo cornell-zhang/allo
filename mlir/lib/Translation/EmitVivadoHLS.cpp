@@ -2724,11 +2724,9 @@ void allo::hls::VhlsModuleEmitter::emitFunctionDirectives(
 /// After this call, indentation is back to the original level.
 SmallVector<Value, 8>
 allo::hls::VhlsModuleEmitter::emitFunctionSignature(func::FuncOp func) {
+  SmallVector<Value, 8> portList;
   os << "void " << func.getName() << "(\n";
   addIndent();
-
-  // This vector is to record all ports of the function.
-  SmallVector<Value, 8> portList;
 
   // Emit input arguments.
   unsigned argIdx = 0;
@@ -2754,6 +2752,7 @@ allo::hls::VhlsModuleEmitter::emitFunctionSignature(func::FuncOp func) {
       itypes += "x";
   }
   for (auto &arg : func.getArguments()) {
+    portList.push_back(arg);
     indent();
     fixUnsignedType(arg, itypes[argIdx] == 'u');
     if (llvm::isa<ShapedType>(arg.getType())) {
@@ -2781,7 +2780,6 @@ allo::hls::VhlsModuleEmitter::emitFunctionSignature(func::FuncOp func) {
       }
     }
 
-    portList.push_back(arg);
     if (argIdx++ != func.getNumArguments() - 1)
       os << ",\n";
   }
@@ -2801,6 +2799,7 @@ allo::hls::VhlsModuleEmitter::emitFunctionSignature(func::FuncOp func) {
     unsigned idx = 0;
     for (auto result : funcReturn.getOperands()) {
       if (std::find(args.begin(), args.end(), result) == args.end()) {
+        portList.push_back(result);
         if (func.getArguments().size() > 0)
           os << ",\n";
         indent();
@@ -2820,8 +2819,6 @@ allo::hls::VhlsModuleEmitter::emitFunctionSignature(func::FuncOp func) {
           else
             emitValue(result, /*rank=*/0, /*isPtr=*/true, output_names);
         }
-
-        portList.push_back(result);
       }
       idx += 1;
     }
@@ -3177,6 +3174,11 @@ using namespace std;
         }
       }
     }
+
+    // Clear nameTable and nameConflictCnt to ensure that the definition pass can re-emit
+    // function signatures with full types.
+    state.nameTable.clear();
+    state.nameConflictCnt.clear();
 
     // Third pass: emit function definitions and non-stateful globals
     for (auto &op : *module.getBody()) {

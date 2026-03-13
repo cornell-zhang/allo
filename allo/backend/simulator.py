@@ -79,6 +79,7 @@ def _process_function_streams(
     module: Module,
     func: func_d.FuncOp,
     processed_funcs: set,
+    all_pe_calls_by_func: dict = None,
 ):
     """
     Process streams and PE calls within a single function.
@@ -98,20 +99,23 @@ def _process_function_streams(
     stream_construct_ops: dict[str, allo_d.StreamConstructOp] = {}
 
     # Collect PE calls and stream construct ops in this function
+    all_calls = []
+    recursive_collect_ops(func, func_d.CallOp, all_calls)
+    for op in all_calls:
+        callee_name = str(op.callee)[1:]
+        if not callee_name.startswith(("load_buf", "store_res")):
+            for mod_op in module.body.operations:
+                if isinstance(mod_op, func_d.FuncOp):
+                    if callee_name == str(mod_op.sym_name).strip('"'):
+                        pe_call_define_ops[op] = mod_op
+                        # Recursively process the callee function first
+                        _process_function_streams(
+                            module, mod_op, processed_funcs, all_pe_calls_by_func
+                        )
+                        break
+    
     for op in func_ops:
-        if isinstance(op, memref_d.AllocOp):
-            continue
-        if isinstance(op, func_d.CallOp):
-            callee_name = str(op.callee)[1:]
-            if not callee_name.startswith(("load_buf", "store_res")):
-                for mod_op in module.body.operations:
-                    if isinstance(mod_op, func_d.FuncOp):
-                        if callee_name == str(mod_op.sym_name).strip('"'):
-                            pe_call_define_ops[op] = mod_op
-                            # Recursively process the callee function first
-                            _process_function_streams(module, mod_op, processed_funcs)
-                            break
-        elif isinstance(op, allo_d.StreamConstructOp):
+        if isinstance(op, allo_d.StreamConstructOp):
             stream_name = str(op.attributes["name"]).strip('"')
             stream_construct_ops[stream_name] = op
 
@@ -193,12 +197,28 @@ def _process_function_streams(
         assert isinstance(call_op.operands_, OpOperandList)
         assert isinstance(func_def_op.arguments, BlockArgumentList)
         assert len(call_op.operands_) == len(func_def_op.arguments)
+        # 1. Update this call site and callee signature for all stream arguments
         for i in range(len(call_op.operands_)):
             arg_instance = call_op.operands_[i]
             for stream_name, stream_construct_op in stream_construct_ops.items():
                 if Value(stream_construct_op.result) == arg_instance:
                     arg_def = func_def_op.arguments[i]
+                    stream_memref = stream_struct_table[stream_name]
                     arg_stream_table[arg_def] = stream_name
+                    # Change argument definitions
+                    arg_def.set_type(stream_memref.type)
+                    old_func_type = func_def_op.type
+                    new_inputs = list(old_func_type.inputs)
+                    new_inputs[arg_def.arg_number] = stream_memref.type
+                    new_func_type = FunctionType.get(
+                        inputs=new_inputs,
+                        results=old_func_type.results,
+                        context=old_func_type.context,
+                    )
+                    func_def_op.attributes["function_type"] = TypeAttr.get(
+                        new_func_type, module.context
+                    )
+                    call_op.operands_[arg_def.arg_number] = stream_memref
         # Collect and replace `stream_get`s and `stream_put`s
         func_stream_ops = []
         recursive_collect_ops(
@@ -224,20 +244,6 @@ def _process_function_streams(
             stream_name = arg_stream_table[stream_arg]
             stream_type = stream_type_table[stream_name]
             stream_memref = stream_struct_table[stream_name]
-            # Change argument definitions
-            stream_arg.set_type(stream_memref.type)
-            old_func_type = func_def_op.type
-            new_inputs = old_func_type.inputs.copy()
-            new_inputs[stream_arg.arg_number] = stream_memref.type
-            new_func_type = FunctionType.get(
-                inputs=new_inputs,
-                results=old_func_type.results,
-                context=old_func_type.context,
-            )
-            func_def_op.attributes["function_type"] = TypeAttr.get(
-                new_func_type, module.context
-            )
-            call_op.operands_[stream_arg.arg_number] = stream_memref
             # FIFO access
             # Spin and wait for the FIFO to be not full
             assert isinstance(stream_memref.type, MemRefType)
@@ -765,6 +771,10 @@ def _process_function_streams(
     for op in stream_construct_ops.values():
         op.operation.erase()
 
+    # Accumulate PE calls keyed by function for recursive OMP injection
+    if all_pe_calls_by_func is not None and pe_call_define_ops:
+        all_pe_calls_by_func[func_name] = pe_call_define_ops
+
     return (
         stream_struct_table,
         stream_type_table,
@@ -773,7 +783,35 @@ def _process_function_streams(
     )
 
 
+def _inject_omp_parallel_sections(pe_call_define_ops):
+    """Wrap a set of func.call ops in omp.parallel > omp.sections > omp.section blocks."""
+    assert len(pe_call_define_ops) > 0
+    omp_ip = InsertionPoint(beforeOperation=list(pe_call_define_ops.keys())[0])
+    omp_parallel_op = openmp_d.ParallelOp([], [], [], [], ip=omp_ip)
+    assert isinstance(omp_parallel_op.region, Region)
+    omp_parallel_block = Block.create_at_start(omp_parallel_op.region, [])
+
+    # Add `omp.sections`
+    ip_omp_parallel = InsertionPoint(omp_parallel_block)
+    omp_sections_op = openmp_d.SectionsOp([], [], [], [], ip=ip_omp_parallel)
+    omp_sections_block = Block.create_at_start(omp_sections_op.region, [])
+    openmp_d.TerminatorOp(ip=ip_omp_parallel)
+
+    # Add `omp.section`s for PE calls
+    ip_omp_sections = InsertionPoint(omp_sections_block)
+    for call_op in pe_call_define_ops:
+        assert isinstance(call_op, OpView)
+        omp_section_op = openmp_d.SectionOp(ip=ip_omp_sections)
+        omp_section_block = Block.create_at_start(omp_section_op.region, [])
+        ip_omp_section = InsertionPoint(omp_section_block)
+        omp_term_op = openmp_d.TerminatorOp(ip=ip_omp_section)
+        call_op.operation.move_before(omp_term_op.operation)
+    openmp_d.TerminatorOp(ip=ip_omp_sections)
+
+
 def build_dataflow_simulator(module: Module, top_func_name: str):
+    if os.environ.get("OMP_MAX_ACTIVE_LEVELS") is None:
+        os.environ["OMP_MAX_ACTIVE_LEVELS"] = "4"
     with module.context, Location.unknown():
         # Declare usleep for spinloop yielding
         found_usleep = False
@@ -799,12 +837,13 @@ def build_dataflow_simulator(module: Module, top_func_name: str):
 
         # Process all functions with streams recursively, starting from top
         processed_funcs: set = set()
+        all_pe_calls_by_func: dict = {}
         func = find_func_in_module(module, top_func_name)
         assert isinstance(func.body, Region)
 
         # Recursively process the top function and all its callees
         _, _, pe_call_define_ops, _ = _process_function_streams(
-            module, func, processed_funcs
+            module, func, processed_funcs, all_pe_calls_by_func
         )
 
         # If no PE calls were found in top function, collect them again from the processed functions
@@ -819,30 +858,12 @@ def build_dataflow_simulator(module: Module, top_func_name: str):
                                 if callee_name == str(mod_op.sym_name).strip('"'):
                                     pe_call_define_ops[op] = mod_op
                                     break
+            all_pe_calls_by_func[top_func_name] = pe_call_define_ops
 
-        # Add the outmost `omp.parallel`
-        assert len(pe_call_define_ops) > 0
-        omp_ip = InsertionPoint(beforeOperation=list(pe_call_define_ops.keys())[0])
-        omp_parallel_op = openmp_d.ParallelOp([], [], [], [], ip=omp_ip)
-        assert isinstance(omp_parallel_op.region, Region)
-        omp_parallel_block = Block.create_at_start(omp_parallel_op.region, [])
-
-        # Add `omp.sections`
-        ip_omp_parallel = InsertionPoint(omp_parallel_block)
-        omp_sections_op = openmp_d.SectionsOp([], [], [], [], ip=ip_omp_parallel)
-        omp_sections_block = Block.create_at_start(omp_sections_op.region, [])
-        openmp_d.TerminatorOp(ip=ip_omp_parallel)
-
-        # Add `omp.section`s for PE calls
-        ip_omp_sections = InsertionPoint(omp_sections_block)
-        for call_op in pe_call_define_ops:
-            assert isinstance(call_op, OpView)
-            omp_section_op = openmp_d.SectionOp(ip=ip_omp_sections)
-            omp_section_block = Block.create_at_start(omp_section_op.region, [])
-            ip_omp_section = InsertionPoint(omp_section_block)
-            omp_term_op = openmp_d.TerminatorOp(ip=ip_omp_section)
-            call_op.operation.move_before(omp_term_op.operation)
-        openmp_d.TerminatorOp(ip=ip_omp_sections)
+        # Inject omp.parallel/sections into every function that has PE calls
+        for func_pe_calls in all_pe_calls_by_func.values():
+            if func_pe_calls:
+                _inject_omp_parallel_sections(func_pe_calls)
 
 
 # This pass is only meant to run on fully lowered MLIR code
