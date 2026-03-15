@@ -7,6 +7,9 @@ cmake_policy(SET CMP0116 NEW)
 project(allo-dialect LANGUAGES CXX C)
 
 set(CMAKE_BUILD_WITH_INSTALL_NAME_DIR ON)
+set(LLVM_LIT_ARGS "-sv" CACHE STRING "Default options for lit")
+set(ALLO_SOURCE_DIR ${PROJECT_SOURCE_DIR})
+set(ALLO_BINARY_DIR ${PROJECT_BINARY_DIR})
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -40,3 +43,5 @@ mlir_configure_python_dev_packages()
 
 add_subdirectory(include)
 add_subdirectory(lib)
+add_subdirectory(tools)
+add_subdirectory(tests)

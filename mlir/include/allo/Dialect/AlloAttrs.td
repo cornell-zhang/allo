@@ -10,9 +10,9 @@ include "allo/Dialect/AlloDialect.td"
 include "mlir/IR/EnumAttr.td"
 
 // https://mlir.llvm.org/docs/OpDefinitions/#enum-attributes
-def CompletePartition: I32EnumAttrCase<"CompletePartition", 0>;
-def BlockPartition: I32EnumAttrCase<"BlockPartition", 1>;
-def CyclicPartition: I32EnumAttrCase<"CyclicPartition", 2>;
+def CompletePartition: I32EnumAttrCase<"CompletePartition", 0, "Complete">;
+def BlockPartition: I32EnumAttrCase<"BlockPartition", 1, "Block">;
+def CyclicPartition: I32EnumAttrCase<"CyclicPartition", 2, "Cyclic">;
 
 def PartitionKindEnum: I32EnumAttr<"PartitionKindEnum",
         "An example partition enum",
@@ -80,5 +80,27 @@ def CmpFixedPredicateAttr : I64EnumAttr<
 //     return get($_ctxt);
 //   }];
 // }
+def PartitionAxis : Allo_Attr<"PartitionAxis"> {
+  let mnemonic = "part_axis";
+  let parameters = (ins
+    "allo::PartitionKindEnum":$kind,
+    "int64_t":$factor,
+    "int64_t":$dim);
+  let assemblyFormat = [{
+    `(` $dim `,` `` $kind `,` `` $factor`)`
+  }];
+  let cppNamespace = "mlir::allo";
+  let genVerifyDecl = 1;
+}
+
+def Partition : Allo_Attr<"Partition"> {
+  let mnemonic = "partition";
+  let parameters = (ins ArrayRefParameter<"allo::PartitionAxisAttr">:$partitions);
+  let assemblyFormat = [{
+    `<` `[` $partitions `]` `>`
+  }];
+  let cppNamespace = "mlir::allo";
+  let genVerifyDecl = 1;
+}
 
 #endif // ALLO_ATTRS
