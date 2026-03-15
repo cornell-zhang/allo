@@ -8,11 +8,6 @@ mlir_tablegen(AlloDialect.h.inc -gen-dialect-decls -dialect=allo)
 mlir_tablegen(AlloDialect.cpp.inc -gen-dialect-defs -dialect=allo)
 add_public_tablegen_target(MLIRAlloOpsIncGen)
 
-set(LLVM_TARGET_DEFINITIONS AlloTransformOps.td)
-mlir_tablegen(AlloTransformOps.h.inc -gen-op-decls)
-mlir_tablegen(AlloTransformOps.cpp.inc -gen-op-defs)
-add_public_tablegen_target(MLIRAlloTransformOpsIncGen)
-
 set(LLVM_TARGET_DEFINITIONS AlloTypes.td)
 mlir_tablegen(AlloTypes.h.inc -gen-typedef-decls)
 mlir_tablegen(AlloTypes.cpp.inc -gen-typedef-defs)
@@ -30,12 +25,11 @@ add_public_tablegen_target(MLIRAlloEnumsIncGen)
 
 # used to generate all the above targets at once
 add_custom_target(MLIRAlloIncGen
-        DEPENDS
-        MLIRAlloOpsIncGen
-        MLIRAlloTransformOpsIncGen
-        MLIRAlloTypesIncGen
-        MLIRAlloAttrsIncGen
-        MLIRAlloEnumsIncGen
+    DEPENDS
+    MLIRAlloOpsIncGen
+    MLIRAlloTypesIncGen
+    MLIRAlloAttrsIncGen
+    MLIRAlloEnumsIncGen
 )
 
 add_mlir_doc(AlloDialect AlloDialect Allo/ -gen-dialect-doc)
