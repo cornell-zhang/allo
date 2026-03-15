@@ -46,6 +46,15 @@ class Layout:
     def __init__(self, partitions: list[Replicate | Shard]):
         self.partitions = partitions
 
+    def shard(self, shape: list[int], grid: list[int]):
+        local_shape = []
+        for dim, partition in zip(shape, self.partitions):
+            if isinstance(partition, Layout.Shard):
+                local_shape.append(dim // grid[partition.axis])
+            else:
+                local_shape.append(dim)
+        return local_shape
+
     def get_placement(self, mesh_dims: list[int]):
         """
         Calculate mapping from tensor tile IDs to PE tile IDs based on the partition scheme.
@@ -81,6 +90,15 @@ class Layout:
             # Convert to tuples for final output
             result[tensor_id] = [tuple(coord) for coord in coords]
         return result
+
+    def __repr__(self):
+        inner = ", ".join(
+            repr(p) if isinstance(p, Layout.Shard) else "R" for p in self.partitions
+        )
+        return f"[{inner}]"
+
+    def __str__(self):
+        return self.__repr__()
 
 
 class Memory:
