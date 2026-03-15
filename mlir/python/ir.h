@@ -436,6 +436,7 @@ void bindTensorOps(nb::module_ &m);
 void bindMemRefOps(nb::module_ &m);
 void bindLinalgOps(nb::module_ &m);
 void bindTransform(nb::module_ &m);
+void bindUtils(nb::module_ &m);
 void bindUBOps(nb::module_ &m);
 
 inline mlir::OpPrintingFlags getOpPrintingFlags(bool debug = false) {

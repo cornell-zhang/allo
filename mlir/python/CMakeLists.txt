@@ -7,6 +7,7 @@ nanobind_add_module(_liballo
     ops.cpp
     main.cpp
     transform.cpp
+    utils.cpp
 )
 
 # turn off -Wcast-qual for nanobind
