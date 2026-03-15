@@ -35,9 +35,13 @@ class Layout:
     class Shard:
         axis: int
 
+        def __repr__(self):
+            return f"S({self.axis})"
+
     @dataclass(frozen=True)
     class Replicate:
-        pass
+        def __repr__(self):
+            return "R"
 
     def __init__(self, partitions: list[Replicate | Shard]):
         self.partitions = partitions
