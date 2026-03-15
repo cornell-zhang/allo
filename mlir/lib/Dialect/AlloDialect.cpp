@@ -41,6 +41,25 @@ using namespace mlir::allo;
 
 #include "allo/Dialect/AlloEnums.cpp.inc"
 
+///===----------------------------------------------------------------------===//
+/// AsmInterface
+///===----------------------------------------------------------------------===//
+namespace {
+// Used to customize partition attribute printing and parsing in the IR
+struct AlloOpAsmDialectInterface : public OpAsmDialectInterface {
+  using OpAsmDialectInterface::OpAsmDialectInterface;
+
+  // partition attribute will not be printed inline
+  AliasResult getAlias(Attribute attr, raw_ostream &os) const override {
+    if (isa<PartitionAttr>(attr)) {
+      os << "part"; // base name for the attribute
+      return AliasResult::OverridableAlias;
+    }
+    return AliasResult::NoAlias;
+  }
+};
+} // namespace
+
 //===----------------------------------------------------------------------===//
 // Dialect initialize method.
 //===----------------------------------------------------------------------===//
@@ -57,6 +76,7 @@ void AlloDialect::initialize() {
 #define GET_ATTRDEF_LIST
 #include "allo/Dialect/AlloAttrs.cpp.inc"
       >();
+  addInterface<AlloOpAsmDialectInterface>();
 }
 
 //===----------------------------------------------------------------------===//
@@ -119,5 +139,39 @@ LogicalResult ApplyOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   //     return diag;
   //   }
 
+  return success();
+}
+
+///===----------------------------------------------------------------------===//
+/// Partition Attributes Verification
+///===----------------------------------------------------------------------===//
+
+LogicalResult
+PartitionAxisAttr::verify(llvm::function_ref<InFlightDiagnostic()> emitError,
+                          PartitionKindEnum kind, int64_t factor,
+                          int64_t dims) {
+  if (kind == PartitionKindEnum::CompletePartition && factor != 0) {
+    return emitError() << "partition factor must be 0 for complete partition";
+  }
+  if (kind != PartitionKindEnum::CompletePartition && !(factor > 1)) {
+    return emitError() << "partition factor must be greater than 1 for "
+                          "non-complete partition";
+  }
+  if (dims < 0) {
+    return emitError() << "dimension index must be non-negative";
+  }
+  return success();
+}
+
+LogicalResult
+PartitionAttr::verify(llvm::function_ref<InFlightDiagnostic()> emitError,
+                      ArrayRef<PartitionAxisAttr> axes) {
+  DenseSet<int64_t> seen;
+  for (auto &axi : axes) {
+    seen.insert(axi.getDim());
+  }
+  if (seen.size() < axes.size()) {
+    return emitError() << "duplicate partition axis detected";
+  }
   return success();
 }
