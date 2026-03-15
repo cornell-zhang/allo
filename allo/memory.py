@@ -324,7 +324,7 @@ class DTensor:
                 tuple[int | str, ...], list[tuple[int, ...]]
             ] = self.layout.get_placement(mapping)
         self.access_pattern_set = False
-        self.tile_shape: tuple[int] = tuple(tile_shape)
+        self.tile_shape = tile_shape
         self.global_id: int = id_
         self.is_input: bool = None
         self.type_as_param: list = None
@@ -334,7 +334,7 @@ class DTensor:
         Get the local shape of the tensor.
         """
         if self.tile_shape is not None:
-            return self.tile_shape
+            return tuple(self.tile_shape)
         if self.layout is None:
             return self.shape
         local_shape = []
