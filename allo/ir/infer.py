@@ -859,7 +859,7 @@ class TypeInferer(ASTVisitor):
                     ctx.mapping,
                     arg.shape,
                     arg.dtype,
-                    arg.spec,
+                    [arg.spec],
                     name=arg.arg,
                     top_name=arg.arg if not hasattr(arg, "top_arg") else arg.top_arg,
                 )
