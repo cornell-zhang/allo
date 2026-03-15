@@ -19,7 +19,7 @@ def find_function_ast(fn):
     filename = fn.__code__.co_filename
     lineno = fn.__code__.co_firstlineno + 1
     if filename not in MODULE_CACHE:
-        src = Path(filename).read_text()
+        src = Path(filename).read_text(encoding="utf-8")
         MODULE_CACHE[filename] = ast.parse(src)
     tree = MODULE_CACHE[filename]
 
@@ -48,6 +48,7 @@ def unit():
     return decorator
 
 
+# pylint: disable=unused-argument
 def work(*, grid: list[int]):
     def decorator(fn):
         return _annotate_function(fn, FunctionType.WORK)

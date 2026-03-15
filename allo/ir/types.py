@@ -18,7 +18,7 @@ from .._mlir.ir import (
 )
 from .._mlir.dialects import allo as allo_d
 from .._mlir.exceptions import DTypeError, DTypeWarning
-import allo._mlir.extras.types as mlir_types
+from .._mlir.extras import types as mlir_types
 
 
 class TypeAnnotation:
@@ -78,7 +78,6 @@ class AlloType(abc.ABC):
         """
         MLIR do not classify signed / unsigned, tag hint for correct lowering
         """
-        pass
 
     @staticmethod
     def isinstance(other):
