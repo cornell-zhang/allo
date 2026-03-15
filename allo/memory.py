@@ -286,9 +286,21 @@ class Memory:
 class DTensor:
     """
     Distributed tensor.
+
+    FIXME: need a cleaner why to manage (tile_shape / get_local_shape(self))
     """
 
-    def __init__(self, mapping, shape, dtype, spec, name=None, top_name=None):
+    def __init__(
+        self,
+        mapping,
+        shape,
+        dtype,
+        spec_list,
+        name=None,
+        top_name=None,
+        tile_shape=None,
+        id_=None,
+    ):
         self.mapping = mapping  # mesh dims
         self.shape = shape  # tensor shape
         self.dtype = dtype
@@ -298,17 +310,13 @@ class DTensor:
         # Handle spec: can be Layout, Memory, or None
         self.layout: Layout = None
         self.memory: Memory = None
-
-        if isinstance(spec, Layout):
-            self.layout = spec
-        elif isinstance(spec, Memory):
-            self.memory = spec
-        elif spec is not None:
-            # For backward compatibility, treat as layout if it has placement attr
-            if hasattr(spec, "placement"):
+        for spec in spec_list:
+            if isinstance(spec, Layout):
                 self.layout = spec
-            elif hasattr(spec, "resource"):
+            elif isinstance(spec, Memory):
                 self.memory = spec
+            else:
+                raise RuntimeError(f"Fail to resolve spec {spec}")
 
         if self.layout is not None and mapping is not None:
             # tensor tile ID -> PE tile IDs
@@ -316,7 +324,8 @@ class DTensor:
                 tuple[int | str, ...], list[tuple[int, ...]]
             ] = self.layout.get_placement(mapping)
         self.access_pattern_set = False
-        self.global_id: int = None
+        self.tile_shape: tuple[int] = tuple(tile_shape)
+        self.global_id: int = id_
         self.is_input: bool = None
         self.type_as_param: list = None
 
@@ -324,6 +333,8 @@ class DTensor:
         """
         Get the local shape of the tensor.
         """
+        if self.tile_shape is not None:
+            return self.tile_shape
         if self.layout is None:
             return self.shape
         local_shape = []
