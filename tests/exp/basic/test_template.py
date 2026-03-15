@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import numpy as np
-from src.main import process
-from allo.ir.types import int32, int64, float32, float16
+from allo.exp import process
+from allo.ir.types import int32, int64, float32
 from allo.spmw import kernel
 
 

@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # pylint: disable=redefined-builtin, no-name-in-module
 
+import abc
 import re
 import numbers
 from collections import OrderedDict
@@ -17,6 +18,7 @@ from .._mlir.ir import (
 )
 from .._mlir.dialects import allo as allo_d
 from .._mlir.exceptions import DTypeError, DTypeWarning
+import allo._mlir.extras.types as mlir_types
 
 
 class TypeAnnotation:
@@ -43,7 +45,10 @@ class TypeAnnotation:
         return f"{self.dtype}[{', '.join(str(s) for s in self.shape)}]"
 
 
-class AlloType:
+_TYPE_REGISTRY = {}
+
+
+class AlloType(abc.ABC):
     def __init__(self, bits, fracs, name):
         if not isinstance(bits, numbers.Integral):
             raise DTypeError("Bitwidth must be an integer.")
@@ -60,10 +65,20 @@ class AlloType:
         self.name = name
         self.stateful = False
         self.constexpr = False
+        if name not in _TYPE_REGISTRY:
+            _TYPE_REGISTRY[name] = self
 
+    @abc.abstractmethod
     def build(self):
         # Required a MLIR context outside
-        raise NotImplementedError
+        pass
+
+    @abc.abstractmethod
+    def type_hint(self) -> str:
+        """
+        MLIR do not classify signed / unsigned, tag hint for correct lowering
+        """
+        pass
 
     @staticmethod
     def isinstance(other):
@@ -112,6 +127,9 @@ class Index(AlloType):
     def build(self):
         return IndexType.get()
 
+    def type_hint(self) -> str:
+        return "_index"
+
     @staticmethod
     def isinstance(other):
         return isinstance(other, (Index, int))
@@ -133,7 +151,10 @@ class Int(AlloType):
         super().__init__(bits, 0, f"i{bits}")
 
     def build(self):
-        return IntegerType.get_signless(self.bits)
+        return mlir_types.i(self.bits)
+
+    def type_hint(self) -> str:
+        return "signed"
 
     @staticmethod
     def isinstance(other):
@@ -160,7 +181,10 @@ class UInt(AlloType):
         # unsigned integers as arguments, we use the signless integer type,
         # label it in the IR with attributes, and then cast it to unsigned
         # in the codegen.
-        return IntegerType.get_signless(self.bits)
+        return mlir_types.i(self.bits)
+
+    def type_hint(self) -> str:
+        return "unsigned"
 
     @staticmethod
     def isinstance(other):
@@ -172,7 +196,7 @@ class Float(AlloType):
     A floating point decimal number.
     """
 
-    def __init__(self, bits, fracs, name="float"):
+    def __init__(self, bits, fracs, name):
         """
         Constructs a floating point decimal number.
 
@@ -207,6 +231,9 @@ class Float(AlloType):
         if self.bits == 64:
             return F64Type.get()
 
+    def type_hint(self) -> str:
+        return "_float"
+
     @staticmethod
     def isinstance(other):
         return isinstance(other, (Float, float))
@@ -233,6 +260,9 @@ class Fixed(AlloType):
     def build(self):
         return allo_d.FixedType.get(self.bits, self.fracs)
 
+    def type_hint(self) -> str:
+        return "signed"
+
 
 class UFixed(AlloType):
     """
@@ -253,6 +283,9 @@ class UFixed(AlloType):
 
     def build(self):
         return allo_d.UFixedType.get(self.bits, self.fracs)
+
+    def type_hint(self) -> str:
+        return "unsigned"
 
 
 class Struct(AlloType):
@@ -290,6 +323,9 @@ class Struct(AlloType):
             types.append(dtype.build())
         return allo_d.StructType.get(types)
 
+    def type_hint(self) -> str:
+        return "_struct"
+
 
 class ConstExpr:
     """
@@ -325,7 +361,10 @@ class Stream(AlloType):
         shape = ", ".join(str(s) for s in self.shape)
         prefix = "Stateful[" if self.stateful else ""
         suffix = "]" if self.stateful else ""
-        return f"{prefix}Stream({self.dtype}[{shape}]){suffix}"
+        return f"{prefix}Stream({self.dtype}[{shape}], {self.depth}){suffix}"
+
+    def type_hint(self) -> str:
+        return "_stream"
 
 
 def allo_type_from_mlir_type(mlir_type):
@@ -341,13 +380,13 @@ def allo_type_from_mlir_type(mlir_type):
         return Int(bits=mlir_type.width)
     # float
     if isinstance(mlir_type, BF16Type):
-        return Float(16, 7)
+        return Float(16, 7, "bf16")
     if isinstance(mlir_type, F16Type):
-        return Float(16, 10)
+        return Float(16, 10, "f16")
     if isinstance(mlir_type, F32Type):
-        return Float(32, 23)
+        return Float(32, 23, "f32")
     if isinstance(mlir_type, F64Type):
-        return Float(64, 52)
+        return Float(64, 52, "f64")
     # fixme (Shihan): avoid using string matching and parsing
     pattern = re.compile(r"!allo\.(U)?Fixed<\s*(\d+)\s*,\s*(\d+)\s*>")
     m = pattern.fullmatch(str(mlir_type))

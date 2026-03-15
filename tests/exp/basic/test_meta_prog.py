@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import numpy as np
-from src.main import build, process
+from allo.exp import build, process
+from allo.exp.passes.utils import unroll_meta_for
 import allo
 from allo.ir.types import int32
 from allo.template import meta_for as allo_for
@@ -108,7 +109,6 @@ def test_meta_for():
 
 
 def test_unroll_meta_for():
-    from src.passes.meta_programming import unroll_meta_for
 
     @kernel
     def kernel1(A: int32[20]) -> int32[20]:
@@ -119,6 +119,7 @@ def test_unroll_meta_for():
     module, top_name = build(kernel1)
     assert "affine.for" in str(module) and '"unroll"' in str(module)
     unroll_meta_for(module)
+    print(module)
     assert "affine.for" not in str(module)
 
     @kernel
@@ -151,5 +152,5 @@ def test_unroll_meta_for():
 
 
 if __name__ == "__main__":
-    test_meta_for()
+    # test_meta_for()
     test_unroll_meta_for()

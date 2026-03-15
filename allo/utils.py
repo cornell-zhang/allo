@@ -33,6 +33,7 @@ from .ir.types import (
     float16,
     float32,
     float64,
+    _TYPE_REGISTRY,
 )
 
 np_supported_types = {
@@ -51,6 +52,9 @@ np_supported_types = {
     "ui64": np.uint64,
 }
 
+np_dtype_to_allo_dtype = {
+    np.dtype(v): _TYPE_REGISTRY[k] for k, v in np_supported_types.items()
+}
 np_read_file_types = dict(np_supported_types)
 np_read_file_types["bf16"] = np.uint16
 
