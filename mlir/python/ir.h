@@ -270,9 +270,13 @@ template <typename ConcreteOp, typename Base, typename BuilderFn,
 inline OpClass<ConcreteOp, Base> &
 bindConstructor(OpClass<ConcreteOp, Base> &cls, BuilderFn &&builderFn,
                 NbArgs &&...nbArgs) {
-  return bindConstructor<ConcreteOp, OpClass<ConcreteOp, Base>, BuilderFn,
-                         NbArgs...>(cls, std::forward<BuilderFn>(builderFn),
-                                    std::forward<NbArgs>(nbArgs)...);
+  using FnTraits = FunctionTraits<std::decay_t<BuilderFn>>;
+  static_assert(FnTraits::arity >= 1,
+                "builder init lambda must take AlloOpBuilder");
+  return bindConstructorImpl<ConcreteOp>(
+      cls, std::forward<BuilderFn>(builderFn),
+      std::make_index_sequence<FnTraits::arity - 1>{},
+      std::forward<NbArgs>(nbArgs)...);
 }
 
 template <typename Class, typename Getter>
