@@ -10,12 +10,11 @@ class Interface:
     meta: str  # meta programming interface, e.g. the file defineing `meta_for`
     spmw: str  # spmw related interface
     lib: str  # allo's kernel library
+    builtin: str = "__allo__"
 
 
 _TYPING_RULE_CONFIG = "default"  # Global configuration for typing rules
-_INTERFACE_PATH_CONFIG = Interface(
-    meta="allo.template", spmw="allo.spmw", lib="allo.dsl"
-)
+_INTERFACE_CONFIG = Interface(meta="allo.template", spmw="allo.spmw", lib="allo.dsl")
 
 
 def get_typing_rule_config():

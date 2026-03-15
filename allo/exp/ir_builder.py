@@ -36,8 +36,9 @@ from allo.spmw import FunctionType as FuncType
 from allo.utils import register_dialect
 from allo.memory import Layout
 from allo.ir.utils import MockArg, MockCallResultTuple
-from .utils import report_error, SymbolTable, Scope
+from .utils import report_error, ErrorMsg, SymbolTable, Scope
 from .builtin import BUILTIN_HANDLERS
+from .config import _INTERFACE_CONFIG
 
 
 class IRBuilder(ast.NodeVisitor):
@@ -65,6 +66,9 @@ class IRBuilder(ast.NodeVisitor):
         self.handler_cache = {}
 
         self.global_symbols = {}
+
+        # error reporting
+        self.err: ErrorMsg = None
 
     def get_builtin_handler(self, name):
         if name not in self.handler_cache:
@@ -97,7 +101,7 @@ class IRBuilder(ast.NodeVisitor):
         except Exception as e:
             if not getattr(e, "_reported", False) and self.func_name is not None:
                 source_file = self.symbol_table.functions[self.func_name]._source
-                report_error(e, node, source_file=source_file)
+                self.err = ErrorMsg(e, node, source_file=source_file)
                 e._reported = True
             raise
 
@@ -154,18 +158,23 @@ class IRBuilder(ast.NodeVisitor):
         return val
 
     def build(self):
-        with self.ctx, Location.unknown():
-            self.module = Module.create()
-            self.set_ip(self.module.body)
-            # set up global operations
-            for op in self.symbol_table.global_ops:
-                self.visit(op)
-            for name, func_node in self.symbol_table.functions.items():
-                self.func_name = name
-                self.visit(func_node)
-                self.func_name = None
-            self.pop_ip()
-            return self.module
+        try:
+            with self.ctx, Location.unknown():
+                self.module = Module.create()
+                self.set_ip(self.module.body)
+                # set up global operations
+                for op in self.symbol_table.global_ops:
+                    self.visit(op)
+                for name, func_node in self.symbol_table.functions.items():
+                    self.func_name = name
+                    self.visit(func_node)
+                    self.func_name = None
+                self.pop_ip()
+                return self.module
+        except:
+            if self.err is not None:
+                report_error(self.err)
+            raise
 
     def parse_type_ann(self, annotation: ast.Subscript):
         assert (
@@ -247,7 +256,7 @@ class IRBuilder(ast.NodeVisitor):
                 node.func.value, ast.Name
             ):
                 # builtin
-                if node.func.value.id == "__allo__":
+                if node.func.value.id == _INTERFACE_CONFIG.builtin:
                     handler = self.get_builtin_handler(node.func.attr)
                     if handler:
                         return handler.get_affine_expr(node, ivs, symbols)
@@ -409,7 +418,7 @@ class IRBuilder(ast.NodeVisitor):
         if (
             isinstance(node.value.func, ast.Attribute)
             and isinstance(node.value.func.value, ast.Name)
-            and node.value.func.value.id == "__allo__"
+            and node.value.func.value.id == _INTERFACE_CONFIG.builtin
         ):
             name = node.value.func.attr
             assert name in BUILTIN_HANDLERS
@@ -621,7 +630,7 @@ class IRBuilder(ast.NodeVisitor):
         if isinstance(node.func, ast.Attribute) and isinstance(
             node.func.value, ast.Name
         ):
-            if node.func.value.id == "__allo__":
+            if node.func.value.id == _INTERFACE_CONFIG.builtin:
                 # handling for builtins
                 name = node.func.attr
                 assert name in BUILTIN_HANDLERS

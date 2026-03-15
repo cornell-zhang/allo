@@ -3,6 +3,7 @@
 
 import ast
 import copy
+from dataclasses import dataclass
 import hashlib
 import inspect
 import numpy as np
@@ -16,11 +17,16 @@ from allo.ir.types import AlloType
 from allo.memory import Memory
 
 
+@dataclass(frozen=True)
+class ErrorMsg:
+    msg: Exception  # The exception or error to report.
+    node: ast.AST  # The AST node associated with the error (must have lineno).
+    source_file: str  # Path to source code.
+
+
 def report_error(
-    error: Exception,
-    node: ast.AST,
-    source_file: str = None,
-    context: int = 5,
+    error: ErrorMsg,
+    context: int = 3,
 ) -> None:
     """
     Report an error with source location from AST node.
@@ -29,16 +35,15 @@ def report_error(
     error message pointing at the offending source line.
 
     Args:
-        error: The exception or error to report.
-        node: The AST node associated with the error (must have lineno).
-        source_file: Path to source code.
+        error: Error information.
         context: Number of context lines to show above/below the error line.
     """
+    node = error.node
     lineno = getattr(node, "lineno", None)
     col_offset = getattr(node, "col_offset", None)
     end_lineno = getattr(node, "end_lineno", lineno)
     end_col_offset = getattr(node, "end_col_offset", None)
-    source_lines = Path(source_file).read_text().splitlines()
+    source_lines = Path(error.source_file).read_text().splitlines()
 
     console = Console(stderr=True)
 
@@ -67,7 +72,7 @@ def report_error(
             else:
                 snippet_lines.append(f"{line_num:5d} | {line_text}")
 
-        error_text = Text.from_markup(f"[bold red]Error:[/bold red] {error}")
+        error_text = Text.from_markup(f"[bold red]Error:[/bold red] {error.msg}")
         panel = Panel(
             "\n".join(snippet_lines),
             title=f"[bold yellow]Line {lineno}[/bold yellow]",
@@ -78,7 +83,7 @@ def report_error(
         console.print(panel)
     else:
         loc = f" (line {lineno})" if lineno else ""
-        console.print(f"[bold red]Error:[/bold red] {error}{loc}")
+        console.print(f"[bold red]Error:[/bold red] {error.msg}{loc}")
 
 
 def get_ast(src) -> ast.FunctionDef:

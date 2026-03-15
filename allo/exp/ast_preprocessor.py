@@ -10,9 +10,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 import numpy as np
 import sympy
-from .utils import get_ast, report_error, SymbolTable, Scope, ErrorValue
-from .typing_rule import cpp_style_registry
-from .config import _INTERFACE_PATH_CONFIG
+from .utils import get_ast, report_error, ErrorMsg, SymbolTable, Scope, ErrorValue
+from .config import _INTERFACE_CONFIG
 from allo.spmw import FunctionType
 from allo.ir.types import (
     AlloType,
@@ -101,6 +100,9 @@ class ASTPreProcessor(ast.NodeTransformer):
 
         self.scopes: list[Scope] = []
 
+        # error reporting
+        self.err: ErrorMsg = None
+
     @staticmethod
     def _copy_loc(new_node: ast.AST, old_node: ast.AST) -> ast.AST:
         """Copy source location from old_node to new_node and fill missing locations in children."""
@@ -125,7 +127,7 @@ class ASTPreProcessor(ast.NodeTransformer):
                 name = self.current_func or self.current_namespace
                 if name is not None:
                     source_file = self.symbol_table.functions[name]._source
-                    report_error(e, node, source_file=source_file)
+                    self.err = ErrorMsg(e, node, source_file=source_file)
                     e._reported = True
             raise
         # propagate source location
@@ -213,14 +215,19 @@ class ASTPreProcessor(ast.NodeTransformer):
             fn: The function to process.
             instantiate: The arguments to instantiate the function. default to None.
         """
-        func: ast.FunctionDef = get_ast(fn)
-        # if instantiate is not None, we need to use the args to instantiate the unique function
-        node, top_name = self.visit_function_signature(func, instantiate)
-        while self.worklist:
-            n = self.visit_function_body(
-                self.symbol_table.functions[self.worklist.popleft()]
-            )
-        return func, top_name
+        try:
+            func: ast.FunctionDef = get_ast(fn)
+            # if instantiate is not None, we need to use the args to instantiate the unique function
+            node, top_name = self.visit_function_signature(func, instantiate)
+            while self.worklist:
+                n = self.visit_function_body(
+                    self.symbol_table.functions[self.worklist.popleft()]
+                )
+            return func, top_name
+        except:
+            if self.err is not None:
+                report_error(self.err)
+            raise
 
     def eval_constant(self, node, consts=None):
         """
@@ -354,7 +361,7 @@ class ASTPreProcessor(ast.NodeTransformer):
         if spec and spec_name not in self.symbol_table.types:
             self.symbol_table.types[spec_name] = spec
         return ast.Subscript(
-            value=ast.Name(id="__allo__", ctx=ast.Load()),
+            value=ast.Name(id=_INTERFACE_CONFIG.builtin, ctx=ast.Load()),
             slice=ast.Tuple(
                 elts=[
                     ast.Name(id=dtype_name, ctx=ast.Load()),
@@ -407,7 +414,7 @@ class ASTPreProcessor(ast.NodeTransformer):
         # add a new global op
         call = ast.Call(
             func=ast.Attribute(
-                value=ast.Name(id="__allo__", ctx=ast.Load()),
+                value=ast.Name(id=_INTERFACE_CONFIG.builtin, ctx=ast.Load()),
                 attr="constant_tensor",
                 ctx=ast.Load(),
             ),
@@ -444,7 +451,7 @@ class ASTPreProcessor(ast.NodeTransformer):
         assert len(target_shape) - len(shape) == len(dims), "not a semantic constraint"
         call_node = ast.Call(
             func=ast.Attribute(
-                value=ast.Name(id="__allo__", ctx=ast.Load()),
+                value=ast.Name(id=_INTERFACE_CONFIG.builtin, ctx=ast.Load()),
                 attr="broadcast",
                 ctx=ast.Load(),
             ),
@@ -477,7 +484,7 @@ class ASTPreProcessor(ast.NodeTransformer):
                 node.value = int(node.value)
             node = ast.Call(
                 func=ast.Attribute(
-                    value=ast.Name(id="__allo__", ctx=ast.Load()),
+                    value=ast.Name(id=_INTERFACE_CONFIG.builtin, ctx=ast.Load()),
                     attr="constant",
                     ctx=ast.Load(),
                 ),
@@ -503,7 +510,7 @@ class ASTPreProcessor(ast.NodeTransformer):
 
         call_node = ast.Call(
             func=ast.Attribute(
-                value=ast.Name(id="__allo__", ctx=ast.Load()),
+                value=ast.Name(id=_INTERFACE_CONFIG.builtin, ctx=ast.Load()),
                 attr=handler,  # Dispatch to specific handler
                 ctx=ast.Load(),
             ),
@@ -684,7 +691,7 @@ class ASTPreProcessor(ast.NodeTransformer):
         if isinstance(node.ctx, ast.Load):  # get bit or get slice
             call_op = ast.Call(
                 func=ast.Attribute(
-                    value=ast.Name(id="__allo__", ctx=ast.Load()),
+                    value=ast.Name(id=_INTERFACE_CONFIG.builtin, ctx=ast.Load()),
                     attr="get_bits",
                     ctx=ast.Load(),
                 ),
@@ -798,7 +805,7 @@ class ASTPreProcessor(ast.NodeTransformer):
                 raise NotImplementedError
         call_node = ast.Call(
             func=ast.Attribute(
-                value=ast.Name(id="__allo__", ctx=ast.Load()),
+                value=ast.Name(id=_INTERFACE_CONFIG.builtin, ctx=ast.Load()),
                 attr=str(type(op).__name__),
                 ctx=ast.Load(),
             ),
@@ -822,7 +829,7 @@ class ASTPreProcessor(ast.NodeTransformer):
             )
             set_bits_op = ast.Call(
                 func=ast.Attribute(
-                    value=ast.Name(id="__allo__", ctx=ast.Load()),
+                    value=ast.Name(id=_INTERFACE_CONFIG.builtin, ctx=ast.Load()),
                     attr="set_bits",
                     ctx=ast.Load(),
                 ),
@@ -867,15 +874,9 @@ class ASTPreProcessor(ast.NodeTransformer):
             arg_dtypes.append(arg_dtype)
             new_value.append(val)
         node.values = new_value
-        try:
-            # FIXME: perhaps define a handler for this infer as well?
-            typing_result = cpp_style_registry[type(node.op)](*arg_dtypes)
-            res_type = typing_result[0]
-            for i, val in enumerate(node.values):
-                val.dtype, val.shape = typing_result[i + 1], tuple()
-        except TypeError as e:
-            raise TypeError(f"Type error in bool operation ({node.op}): {e}")
-        node.dtype, node.shape = res_type, tuple()
+        for val in node.values:
+            val.dtype, val.shape = allo_bool, tuple()
+        node.dtype, node.shape = allo_bool, tuple()
         return node
 
     def visit_Compare(self, node: ast.Compare):
@@ -998,7 +999,7 @@ class ASTPreProcessor(ast.NodeTransformer):
             stream = ast.Name(id=stream_name, ctx=ast.Store())
             call_op = ast.Call(
                 func=ast.Attribute(
-                    value=ast.Name(id="__allo__", ctx=ast.Load()),
+                    value=ast.Name(id=_INTERFACE_CONFIG.builtin, ctx=ast.Load()),
                     attr="constrcut_stream",
                     ctx=ast.Load(),
                 ),
@@ -1095,7 +1096,7 @@ class ASTPreProcessor(ast.NodeTransformer):
             # builtin for loops
             module = self.resolve_node(node.iter.func)
             assert module.__module__.startswith(
-                _INTERFACE_PATH_CONFIG.lib
+                _INTERFACE_CONFIG.lib
             ), "Invalid for statement"
             attr = module.__name__
             assert attr == "grid" or attr == "reduction", "Unsupported loop type"
@@ -1187,7 +1188,7 @@ class ASTPreProcessor(ast.NodeTransformer):
         func = node.items[0].context_expr.func
         module = self.resolve_node(func)
         assert module.__module__.startswith(
-            _INTERFACE_PATH_CONFIG.meta
+            _INTERFACE_CONFIG.meta
         ), "Invalide with statement"
         attr = module.__name__
         # compile time unrolled loop
@@ -1263,7 +1264,7 @@ class ASTPreProcessor(ast.NodeTransformer):
             arg = self.visit_broadcast(arg, arg.dtype, stream.dtype.shape)
             return ast.Call(
                 func=ast.Attribute(
-                    value=ast.Name(id="__allo__", ctx=ast.Load()),
+                    value=ast.Name(id=_INTERFACE_CONFIG.builtin, ctx=ast.Load()),
                     attr=attr,
                     ctx=ast.Load(),
                 ),
@@ -1274,7 +1275,7 @@ class ASTPreProcessor(ast.NodeTransformer):
             assert len(node.args) == 0, "invalid stream get"
             call_op = ast.Call(
                 func=ast.Attribute(
-                    value=ast.Name(id="__allo__", ctx=ast.Load()),
+                    value=ast.Name(id=_INTERFACE_CONFIG.builtin, ctx=ast.Load()),
                     attr=attr,
                     ctx=ast.Load(),
                 ),
@@ -1362,7 +1363,7 @@ class ASTPreProcessor(ast.NodeTransformer):
                 # FIXME: should support casting and broadcasting
                 call_node = ast.Call(
                     func=ast.Attribute(
-                        value=ast.Name(id="__allo__", ctx=ast.Load()),
+                        value=ast.Name(id=_INTERFACE_CONFIG.builtin, ctx=ast.Load()),
                         attr=name,
                         ctx=ast.Load(),
                     ),
@@ -1384,15 +1385,18 @@ class ASTPreProcessor(ast.NodeTransformer):
             return self.visit_call_kernel(node, func, instantiate)
         if isinstance(node.func, ast.Attribute):
             module = self.resolve_node(node.func)
-            if module and module.__module__.startswith(_INTERFACE_PATH_CONFIG.spmw):
+            if module and module.__module__.startswith(_INTERFACE_CONFIG.spmw):
                 attr = module.__name__
                 assert attr in self.work_meta, f"{attr} must be in work."
                 values = self.work_meta[attr]
                 return values  # list of symbols
             # builtin methods
-            ret = self.visit_method(node)
-            if ret is not None:
-                return ret
+            try:
+                ret = self.visit_method(node)
+                if ret is not None:
+                    return ret
+            except:
+                pass
         # TODO
         return node
 
@@ -1495,7 +1499,7 @@ class ASTPreProcessor(ast.NodeTransformer):
         )
         module = self.resolve_node(node.decorator_list[0].func)
         assert (
-            module.__module__.startswith(_INTERFACE_PATH_CONFIG.spmw)
+            module.__module__.startswith(_INTERFACE_CONFIG.spmw)
             and module.__name__ == "work"
         )
         node._type = FunctionType.WORK
@@ -1544,7 +1548,9 @@ class ASTPreProcessor(ast.NodeTransformer):
                     targets=[ast.Tuple(elts=wids, ctx=ast.Load())],
                     value=ast.Call(
                         func=ast.Attribute(
-                            value=ast.Name(id="__allo__", ctx=ast.Load()),
+                            value=ast.Name(
+                                id=_INTERFACE_CONFIG.builtin, ctx=ast.Load()
+                            ),
                             attr="get_wid",
                             ctx=ast.Load(),
                         ),
