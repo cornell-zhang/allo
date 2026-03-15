@@ -11,7 +11,6 @@ struct SubmoduleDesc {
 } // namespace
 
 static constexpr SubmoduleDesc kSubmodules[] = {
-    {"utils", bindUtils, "Utility functions and classes for MLIR"},
     {"arith", bindArithOps, "arith dialect"},
     {"math", bindMathOps, "math dialect"},
     {"scf", bindSCFOps, "scf dialect"},
