@@ -321,18 +321,12 @@ class DTensor:
                 tuple[int | str, ...], list[tuple[int, ...]]
             ] = self.layout.get_placement(mapping)
             self.tile_shape = tuple(self.layout.shard(shape, mapping))
+        else:
+            self.tile_shape = tuple(shape)
         self.access_pattern_set = False
         self.global_id: int = id_
         self.is_input: bool = None
         self.type_as_param: list = None
-
-    def get_local_shape(self):
-        """
-        Get the local shape of the tensor.
-        """
-        if self.layout is None:
-            return self.shape
-        return self.tile_shape
 
     def set_global_info(self, global_id: int, is_input: bool):
         self.global_id = global_id
