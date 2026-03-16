@@ -286,8 +286,6 @@ class Memory:
 class DTensor:
     """
     Distributed tensor.
-
-    FIXME: need a cleaner why to manage (tile_shape / get_local_shape(self))
     """
 
     def __init__(
@@ -298,7 +296,6 @@ class DTensor:
         spec_list,
         name=None,
         top_name=None,
-        tile_shape=None,
         id_=None,
     ):
         self.mapping = mapping  # mesh dims
@@ -323,8 +320,8 @@ class DTensor:
             self.global_placement: dict[
                 tuple[int | str, ...], list[tuple[int, ...]]
             ] = self.layout.get_placement(mapping)
+            self.tile_shape = tuple(self.layout.shard(shape, mapping))
         self.access_pattern_set = False
-        self.tile_shape = tile_shape
         self.global_id: int = id_
         self.is_input: bool = None
         self.type_as_param: list = None
@@ -333,17 +330,9 @@ class DTensor:
         """
         Get the local shape of the tensor.
         """
-        if self.tile_shape is not None:
-            return tuple(self.tile_shape)
         if self.layout is None:
             return self.shape
-        local_shape = []
-        for shape, partition in zip(self.shape, self.layout.partitions):
-            if isinstance(partition, Layout.Shard):
-                local_shape.append(shape // self.mapping[partition.axis])
-            else:
-                local_shape.append(shape)
-        return tuple(local_shape)
+        return self.tile_shape
 
     def set_global_info(self, global_id: int, is_input: bool):
         self.global_id = global_id
@@ -461,7 +450,7 @@ class DTensor:
         parts.extend(
             [
                 f"mapping={self.mapping}",
-                f"local_shape={self.get_local_shape()}",
+                f"local_shape={self.tile_shape}",
             ]
         )
         return f"DTensor({', '.join(parts)})"
