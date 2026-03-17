@@ -117,24 +117,24 @@ def codegen_host_cosim(top, module, num_output_args=0, project_path=""):
         if len(in_shape) == 0:
             # scalar
             out_str += f"    uint8_t _raw_in{i}[{byte_num}];\n"
-            out_str += f"    {{\n"
+            out_str += "    {\n"
             out_str += f'        std::ifstream f((dir + "input{i}.data").c_str(), std::ios::binary);\n'
             out_str += (
                 f"        f.read(reinterpret_cast<char*>(_raw_in{i}), {byte_num});\n"
             )
-            out_str += f"    }}\n"
+            out_str += "    }\n"
             out_str += f"    {ctype} in{i} = *reinterpret_cast<{ctype}*>(_raw_in{i});\n"
             call_args.append(f"in{i}")
         else:
             out_str += f"    uint8_t buf_in{i}[{byte_num}];\n"
             if i in output_input_indices:
                 out_str += f"    std::memset(buf_in{i}, 0, {byte_num});\n"
-            out_str += f"    {{\n"
+            out_str += "    {\n"
             out_str += f'        std::ifstream f((dir + "input{i}.data").c_str(), std::ios::binary);\n'
             out_str += (
                 f"        f.read(reinterpret_cast<char*>(buf_in{i}), {byte_num});\n"
             )
-            out_str += f"    }}\n"
+            out_str += "    }\n"
             call_args.append(f"reinterpret_cast<{ctype}*>(buf_in{i})")
 
     # Allocate explicit output buffers
@@ -155,16 +155,16 @@ def codegen_host_cosim(top, module, num_output_args=0, project_path=""):
     # Write outputs
     if len(outputs) > 0:
         assert len(outputs) <= 1, "Only support one explicit output for now"
-        out_str += f'    std::ofstream ofile((dir + "output.data").c_str(), std::ios::binary);\n'
+        out_str += '    std::ofstream ofile((dir + "output.data").c_str(), std::ios::binary);\n'
         out_str += f"    ofile.write(reinterpret_cast<const char*>(buf_out0), {buffer_bytes[-1]});\n"
-        out_str += f"    ofile.close();\n"
+        out_str += "    ofile.close();\n"
     else:
         for idx, i in enumerate(sorted(output_input_indices)):
-            out_str += f"    {{\n"
+            out_str += "    {\n"
             out_str += f'        std::ofstream ofile((dir + "output{idx}.data").c_str(), std::ios::binary);\n'
             out_str += f"        ofile.write(reinterpret_cast<const char*>(buf_in{i}), {buffer_bytes[i]});\n"
-            out_str += f"        ofile.close();\n"
-            out_str += f"    }}\n"
+            out_str += "        ofile.close();\n"
+            out_str += "    }\n"
 
     out_str += "    return 0;\n}\n"
     return out_str
