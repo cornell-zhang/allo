@@ -20,6 +20,7 @@ from .._mlir.passmanager import PassManager
 from .config import DEFAULT_CONFIG, PART_NUMBER
 from .vitis import (
     codegen_host,
+    codegen_host_cosim,
     postprocess_hls_code,
     generate_description_file,
     write_tensor_to_file,
@@ -112,7 +113,7 @@ open_solution "solution1"
     out_str += "# Run HLS\n"
     if "csim" in mode or "sw_emu" in mode:
         out_str += "csim_design -O\n"
-    if "csyn" in mode or "debug" in mode:
+    if "csyn" in mode or "debug" in mode or "cosim" in mode:
         out_str += "csynth_design\n"
     if "cosim" in mode or "hw_emu" in mode:
         out_str += "cosim_design\n"
@@ -290,6 +291,7 @@ class HLSModule:
                 assert self.mode in {
                     "csim",
                     "csyn",
+                    "cosim",
                     "sw_emu",
                     "hw_emu",
                     "hw",
@@ -311,7 +313,18 @@ class HLSModule:
                 header, self.args = separate_header(self.hls_code, self.top_func_name)
                 with open(f"{project}/kernel.h", "w", encoding="utf-8") as outfile:
                     outfile.write(header)
-                self.hls_code = postprocess_hls_code(self.hls_code, self.top_func_name)
+                # For cosim mode, add depth to m_axi pragmas (required by cosim_design)
+                maxi_depths = None
+                if self.mode == "cosim":
+                    maxi_depths = []
+                    for _, shape in self.args:
+                        if len(shape) > 0:
+                            maxi_depths.append(int(np.prod([int(s) for s in shape])))
+                        else:
+                            maxi_depths.append(1)
+                self.hls_code = postprocess_hls_code(
+                    self.hls_code, self.top_func_name, maxi_depths=maxi_depths
+                )
 
                 # Generate HBM/DDR configuration file if hbm_mapping is provided
                 # This must be done AFTER postprocess_hls_code to get correct arg names
@@ -355,11 +368,19 @@ class HLSModule:
                         f"{project}/{cpp_file}", "w", encoding="utf-8"
                     ) as outfile:
                         outfile.write(new_code)
-                self.host_code = codegen_host(
-                    self.top_func_name,
-                    self.module,
-                    num_output_args=self.num_output_args,
-                )
+                if self.mode == "cosim":
+                    self.host_code = codegen_host_cosim(
+                        self.top_func_name,
+                        self.module,
+                        num_output_args=self.num_output_args,
+                        project_path=project,
+                    )
+                else:
+                    self.host_code = codegen_host(
+                        self.top_func_name,
+                        self.module,
+                        num_output_args=self.num_output_args,
+                    )
             elif self.platform == "catapult":
                 assert self.mode in {
                     "csim",
@@ -577,6 +598,55 @@ class HLSModule:
                 process.wait()
                 if process.returncode != 0:
                     raise RuntimeError("Failed to synthesize the design")
+                return
+            if self.mode == "cosim":
+                # Cosim: write input data, run vitis_hls with csynth+cosim, read output
+                func = find_func_in_module(self.module, self.top_func_name)
+                inputs, outputs = get_func_inputs_outputs(func)
+                assert len(args) == len(inputs) + len(
+                    outputs
+                ), f"Number of arguments mismatch, got {len(args)}, expected {len(inputs) + len(outputs)}"
+                for i, ((in_dtype, in_shape), arg) in enumerate(zip(inputs, args)):
+                    ele_bitwidth = get_bitwidth_from_type(in_dtype)
+                    assert (
+                        ele_bitwidth == 1 or ele_bitwidth % 8 == 0
+                    ), "can only handle bytes"
+                    with open(f"{self.project}/input{i}.data", "wb") as f:
+                        if np.isscalar(arg):
+                            arg = np.array(arg, dtype=np_supported_types[in_dtype])
+                        f.write(arg.tobytes())
+                cmd = f"cd {self.project}; vitis_hls -f run.tcl"
+                print(
+                    f"[{time.strftime('%H:%M:%S', time.gmtime())}] Begin C synthesis + co-simulation ..."
+                )
+                if shell:
+                    process = subprocess.Popen(cmd, shell=True)
+                else:
+                    process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
+                process.wait()
+                if process.returncode != 0:
+                    raise RuntimeError("Failed to run co-simulation")
+                # Read output tensors from files
+                if len(outputs) > 0:
+                    if np.isscalar(args[-1]):
+                        raise RuntimeError("The output must be a tensor")
+                    arr = np.fromfile(
+                        f"{self.project}/output.data", dtype=args[-1].dtype
+                    )
+                    args[-1][:] = arr.reshape(args[-1].shape)
+                else:
+                    num_out = self.num_output_args if self.num_output_args > 0 else 1
+                    for idx in range(num_out):
+                        out_arg_idx = len(inputs) - num_out + idx
+                        if out_arg_idx < 0 or out_arg_idx >= len(args):
+                            continue
+                        out_arg = args[out_arg_idx]
+                        if np.isscalar(out_arg):
+                            continue
+                        arr = np.fromfile(
+                            f"{self.project}/output{idx}.data", dtype=out_arg.dtype
+                        )
+                        out_arg[:] = arr.reshape(out_arg.shape)
                 return
             # Use Makefile (sw_emu, hw_emu, hw)
             assert "XDEVICE" in os.environ, "Please set XDEVICE in your environment"

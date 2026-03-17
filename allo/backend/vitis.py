@@ -68,6 +68,108 @@ ctype_map = {
 }
 
 
+def codegen_host_cosim(top, module, num_output_args=0, project_path=""):
+    """Generate a C++ testbench for Vitis HLS C/RTL co-simulation (cosim_design).
+
+    Unlike the OpenCL host (codegen_host), this testbench directly calls the
+    top function.  It reads binary input files, invokes the kernel, and writes
+    binary output files – matching the data format used by the Python __call__
+    method so that results can be read back seamlessly.
+
+    Uses absolute paths because cosim_design runs the testbench from a
+    subdirectory inside the HLS project (out.prj/solution1/sim/wrapc/).
+    """
+    func = find_func_in_module(module, top)
+    inputs, outputs = get_func_inputs_outputs(func)
+
+    # Ensure path ends with separator for concatenation
+    if project_path and not project_path.endswith("/"):
+        project_path += "/"
+
+    out_str = "#include <cstdio>\n#include <cstdlib>\n#include <cstring>\n"
+    out_str += "#include <fstream>\n#include <iostream>\n"
+    out_str += "#include <string>\n"
+    out_str += '#include "kernel.h"\n\n'
+    out_str += "int main() {\n"
+    out_str += f'    std::string dir = "{project_path}";\n'
+
+    # Determine which input indices are outputs
+    output_input_indices = set()
+    if len(outputs) == 0:
+        if num_output_args > 0:
+            output_input_indices = set(
+                range(len(inputs) - num_output_args, len(inputs))
+            )
+        else:
+            output_input_indices = {len(inputs) - 1}
+
+    # Allocate and read input buffers
+    buffer_bytes: list[int] = []
+    call_args = []
+    for i, (in_dtype, in_shape) in enumerate(inputs):
+        ele_bitwidth = get_bitwidth_from_type(in_dtype)
+        ele_bytes = 1 if ele_bitwidth == 1 else ele_bitwidth // 8
+        size = np.prod(in_shape) if len(in_shape) > 0 else 1
+        byte_num = size * ele_bytes
+        buffer_bytes.append(byte_num)
+        ctype = ctype_map.get(in_dtype, "char")
+
+        if len(in_shape) == 0:
+            # scalar
+            out_str += f"    uint8_t _raw_in{i}[{byte_num}];\n"
+            out_str += f"    {{\n"
+            out_str += f'        std::ifstream f((dir + "input{i}.data").c_str(), std::ios::binary);\n'
+            out_str += (
+                f"        f.read(reinterpret_cast<char*>(_raw_in{i}), {byte_num});\n"
+            )
+            out_str += f"    }}\n"
+            out_str += f"    {ctype} in{i} = *reinterpret_cast<{ctype}*>(_raw_in{i});\n"
+            call_args.append(f"in{i}")
+        else:
+            out_str += f"    uint8_t buf_in{i}[{byte_num}];\n"
+            if i in output_input_indices:
+                out_str += f"    std::memset(buf_in{i}, 0, {byte_num});\n"
+            out_str += f"    {{\n"
+            out_str += f'        std::ifstream f((dir + "input{i}.data").c_str(), std::ios::binary);\n'
+            out_str += (
+                f"        f.read(reinterpret_cast<char*>(buf_in{i}), {byte_num});\n"
+            )
+            out_str += f"    }}\n"
+            call_args.append(f"reinterpret_cast<{ctype}*>(buf_in{i})")
+
+    # Allocate explicit output buffers
+    for i, (out_dtype, out_shape) in enumerate(outputs):
+        ele_bitwidth = get_bitwidth_from_type(out_dtype)
+        ele_bytes = 1 if ele_bitwidth == 1 else ele_bitwidth // 8
+        size = np.prod(out_shape) if len(out_shape) > 0 else 1
+        byte_num = size * ele_bytes
+        buffer_bytes.append(byte_num)
+        ctype = ctype_map.get(out_dtype, "char")
+        out_str += f"    uint8_t buf_out{i}[{byte_num}];\n"
+        out_str += f"    std::memset(buf_out{i}, 0, {byte_num});\n"
+        call_args.append(f"reinterpret_cast<{ctype}*>(buf_out{i})")
+
+    # Call the top function
+    out_str += f"\n    {top}({', '.join(call_args)});\n\n"
+
+    # Write outputs
+    if len(outputs) > 0:
+        assert len(outputs) <= 1, "Only support one explicit output for now"
+        out_str += f'    std::ofstream ofile((dir + "output.data").c_str(), std::ios::binary);\n'
+        out_str += f"    ofile.write(reinterpret_cast<const char*>(buf_out0), {buffer_bytes[-1]});\n"
+        out_str += f"    ofile.close();\n"
+    else:
+        for idx, i in enumerate(sorted(output_input_indices)):
+            out_str += f"    {{\n"
+            out_str += f'        std::ofstream ofile((dir + "output{idx}.data").c_str(), std::ios::binary);\n'
+            out_str += f"        ofile.write(reinterpret_cast<const char*>(buf_in{i}), {buffer_bytes[i]});\n"
+            out_str += f"        ofile.close();\n"
+            out_str += f"    }}\n"
+
+    out_str += "    return 0;\n}\n"
+    return out_str
+
+
 def codegen_host(top, module, num_output_args=0):
     """Generate OpenCL host code for Vitis HLS.
 
@@ -376,7 +478,7 @@ def codegen_host(top, module, num_output_args=0):
     return out_str
 
 
-def postprocess_hls_code(hls_code, top=None, pragma=True):
+def postprocess_hls_code(hls_code, top=None, pragma=True, maxi_depths=None):
     out_str = ""
     func_decl = False
     has_endif = False
@@ -400,7 +502,10 @@ def postprocess_hls_code(hls_code, top=None, pragma=True):
             # Add extra interfaces
             if pragma:
                 for i, arg in enumerate(func_args):
-                    out_str += f"  #pragma HLS interface m_axi port={arg} offset=slave bundle=gmem{i}\n"
+                    depth_str = ""
+                    if maxi_depths is not None and i < len(maxi_depths):
+                        depth_str = f" depth={maxi_depths[i]}"
+                    out_str += f"  #pragma HLS interface m_axi port={arg} offset=slave bundle=gmem{i}{depth_str}\n"
         elif func_decl:
             if pragma:
                 dtype, var = line.strip().rsplit(" ", 1)
