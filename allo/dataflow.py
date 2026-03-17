@@ -511,8 +511,23 @@ def _build_top(s, stream_info, enable_layout=False):
             if isinstance(op, allo_d.StreamConstructOp):
                 stream_name = op.attributes["name"].value
                 stream_map[stream_name] = op
+        # Sort kernel functions so that producers come before consumers.
+        # Vitis HLS #pragma HLS dataflow requires canonical forward-flow
+        # ordering: functions that only write to streams (producers) must
+        # appear before functions that both read and write (mixed), which
+        # must appear before functions that only read (consumers).
+        def _stream_order_key(func_op):
+            fname = func_op.attributes["sym_name"].value
+            dirs = {d for _, d in stream_info.get(fname, [])}
+            if dirs == {"out"}:
+                return 0  # pure producer  -> first
+            if dirs == {"in"}:
+                return 2  # pure consumer  -> last
+            return 1  # mixed / no streams -> middle
+
+        sorted_funcs = sorted(funcs, key=_stream_order_key)
         # add call functions
-        for i, func in enumerate(funcs):
+        for i, func in enumerate(sorted_funcs):
             func_name = func.attributes["sym_name"].value
             arg_lst = [new_top.arguments[idx] for idx in arg_mapping[func_name]]
             stream_lst = [
@@ -526,7 +541,7 @@ def _build_top(s, stream_info, enable_layout=False):
                     arg_lst + stream_lst,
                     ip=InsertionPoint.at_block_terminator(new_top.entry_block),
                 )
-                if i == len(funcs) - 1:
+                if i == len(sorted_funcs) - 1:
                     call_op.attributes["last"] = UnitAttr.get()
         new_top.attributes["dataflow"] = UnitAttr.get()
     s.top_func = new_top
