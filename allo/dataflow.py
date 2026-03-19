@@ -511,6 +511,7 @@ def _build_top(s, stream_info, enable_layout=False):
             if isinstance(op, allo_d.StreamConstructOp):
                 stream_name = op.attributes["name"].value
                 stream_map[stream_name] = op
+
         # Sort kernel functions so that producers come before consumers.
         # Vitis HLS #pragma HLS dataflow requires canonical forward-flow
         # ordering: functions that only write to streams (producers) must
