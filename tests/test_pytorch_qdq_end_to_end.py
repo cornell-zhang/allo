@@ -3,12 +3,12 @@
 
 import numpy as np
 import pytest
-import torch
-import torch.nn as nn
-import allo
-import pytest
 
 torch = pytest.importorskip("torch")
+import torch.nn as nn
+
+import allo
+
 torch.set_grad_enabled(False)
 torch.manual_seed(0)
 
