@@ -3526,15 +3526,13 @@ class ASTTransformer(ASTBuilder):
                 def _is_scalar(arg):
                     try:
                         mlir_val = ASTTransformer.get_mlir_op_result(ctx, arg)
-                    except Exception:
+                    except (TypeError, ValueError):
                         return False
 
                     try:
-                        from allo._mlir.ir import ShapedType
-
                         ShapedType(mlir_val.type)
                         return False
-                    except Exception:
+                    except (TypeError, ValueError):
                         return True
 
                 if attr in {"min", "max"}:
