@@ -3146,20 +3146,21 @@ class ASTTransformer(ASTBuilder):
                         )
                 return tuple(res)
             arg_types = []
-
-            arg_results = [ASTTransformer.get_mlir_op_result(ctx, x) for x in new_args]
-            arg_types = [v.type for v in arg_results]
-
-            if isinstance(new_args[0].result, OpResultList):
-                for arg in new_args:
-                    if hasattr(arg, "result") and isinstance(arg.result, OpResultList):
-                        for result in arg.result:
-                            if hasattr(result, "type"):
-                                arg_types.append(result.type)
-            else:
-                for arg in new_args:
-                    if hasattr(arg, "result") and hasattr(arg.result, "type"):
-                        arg_types.append(arg.result.type)
+            value_args = []
+            for arg in new_args:
+                # Only MLIR value-like args should go through get_mlir_op_result
+                if hasattr(arg, "result"):
+                    res = ASTTransformer.get_mlir_op_result(ctx, arg)
+                    value_args.append(res)
+                    if hasattr(res, "type"):
+                        arg_types.append(res.type)
+                elif hasattr(arg, "type"):
+                    # In case an MLIR value/op is passed directly
+                    value_args.append(arg)
+                    arg_types.append(arg.type)
+                else:
+                    # Python metadata args such as transpose dims / view shape
+                    value_args.append(None)
             if all(
                 isinstance(arg_type, (F32Type, F64Type, IntegerType))
                 for arg_type in arg_types
@@ -3182,10 +3183,8 @@ class ASTTransformer(ASTBuilder):
                     "roundeven": math_d.RoundEvenOp,
                     "clampf": math_d.ClampFOp,
                 }.get(fn_name)
-                return opcls(
-                    *[ASTTransformer.get_mlir_op_result(ctx, x) for x in new_args],
-                    ip=ctx.get_ip(),
-                )
+                scalar_operands = [v for v in value_args if v is not None]
+                return opcls(*scalar_operands, ip=ctx.get_ip())
             if any(
                 isinstance(arg_type, (MemRefType, RankedTensorType))
                 for arg_type in arg_types
@@ -3524,35 +3523,57 @@ class ASTTransformer(ASTBuilder):
                     )
                     return buf
 
-                # Broadcast scalar operands to match the output shape.
+                def _is_scalar(arg):
+                    try:
+                        mlir_val = ASTTransformer.get_mlir_op_result(ctx, arg)
+                    except Exception:
+                        return False
+
+                    try:
+                        from allo._mlir.ir import ShapedType
+
+                        ShapedType(mlir_val.type)
+                        return False
+                    except Exception:
+                        return True
+
                 if attr in {"min", "max"}:
-                    if len(new_args[1].shape) == 0:
+                    if _is_scalar(new_args[0]):
+                        new_args[0] = _splat_scalar_to_shape(new_args[0])
+                    if _is_scalar(new_args[1]):
                         new_args[1] = _splat_scalar_to_shape(new_args[1])
 
                 elif attr == "clampf":
-                    if len(new_args[1].shape) == 0:
+                    if _is_scalar(new_args[0]):
+                        new_args[0] = _splat_scalar_to_shape(new_args[0])
+                    if _is_scalar(new_args[1]):
                         new_args[1] = _splat_scalar_to_shape(new_args[1])
-                    if len(new_args[2].shape) == 0:
+                    if _is_scalar(new_args[2]):
                         new_args[2] = _splat_scalar_to_shape(new_args[2])
+                out_mlir = ASTTransformer.get_mlir_op_result(ctx, result_tensor)
+                out_type = ShapedType(out_mlir.type)
 
-                # Build elementwise linalg.generic.
-                in_vals = [ASTTransformer.get_mlir_op_result(ctx, a) for a in new_args]
-                out_val = ASTTransformer.get_mlir_op_result(ctx, result_tensor)
+                maps = []
+                for arg in new_args:
+                    arg_val = ASTTransformer.get_mlir_op_result(ctx, arg)
+                    arg_type = ShapedType(arg_val.type)
+                    maps.append(
+                        AffineMapAttr.get(AffineMap.get_identity(arg_type.rank))
+                    )
 
-                index_exprs = [AffineExpr.get_dim(d) for d in range(len(shape))]
-                affine_map = AffineMap.get(
-                    dim_count=len(shape), symbol_count=0, exprs=index_exprs
-                )
-                indexing_maps_attr = ArrayAttr.get(
-                    [AffineMapAttr.get(affine_map)] * (len(in_vals) + 1)
-                )
-                iterator_types_attr = ArrayAttr.get(
-                    [Attribute.parse("#linalg.iterator_type<parallel>")] * len(shape)
-                )
+                maps.append(AffineMapAttr.get(AffineMap.get_identity(out_type.rank)))
+                indexing_maps_attr = ArrayAttr.get(maps)
+
+                iterator_types = [linalg_d.IteratorType.parallel] * out_type.rank
+
+                in_vals = [
+                    ASTTransformer.get_mlir_op_result(ctx, arg) for arg in new_args
+                ]
+                out_val = out_mlir
 
                 gen = linalg_d.GenericOp(
                     indexing_maps=indexing_maps_attr,
-                    iterator_types=iterator_types_attr,
+                    iterator_types=iterator_types,
                     inputs=in_vals,
                     outputs=[out_val],
                     result_tensors=[],
