@@ -2634,6 +2634,19 @@ class ASTTransformer(ASTBuilder):
 
             if node.func.id in {"min", "max"}:
                 stmts = build_stmts(ctx, node.args)
+
+                # Elementwise tensor/memref min/max must lower through library-style
+                # broadcasting/generic lowering, not raw arith ops.
+                if node.shape is not None and len(node.shape) > 0:
+                    attr = "min" if node.func.id == "min" else "max"
+                    return ASTTransformer.build_library_op(
+                        ctx,
+                        node=node,
+                        attr=attr,
+                        new_args=stmts,
+                    )
+
+                # Scalar case
                 if isinstance(node.dtype, Float):
                     opcls = {
                         "min": arith_d.MinimumFOp,
@@ -2649,6 +2662,11 @@ class ASTTransformer(ASTBuilder):
                         "min": arith_d.MinUIOp,
                         "max": arith_d.MaxUIOp,
                     }.get(node.func.id)
+                else:
+                    raise RuntimeError(
+                        f"Unsupported dtype for {node.func.id}: {node.dtype}"
+                    )
+
                 lhs = ASTTransformer.build_cast_op(
                     ctx, stmts[0], node.args[0].dtype, node.dtype
                 )
@@ -2660,6 +2678,27 @@ class ASTTransformer(ASTBuilder):
                     ASTTransformer.get_mlir_op_result(ctx, rhs),
                     ip=ctx.get_ip(),
                 )
+
+            if node.func.id == "roundeven":
+                stmts = build_stmts(ctx, node.args)
+                assert len(stmts) == 1, "roundeven expects 1 argument"
+                return ASTTransformer.build_library_op(
+                    ctx,
+                    node=node,
+                    attr="roundeven",
+                    new_args=stmts,
+                )
+
+            if node.func.id == "clampf":
+                stmts = build_stmts(ctx, node.args)
+                assert len(stmts) == 3, "clampf expects 3 arguments"
+                return ASTTransformer.build_library_op(
+                    ctx,
+                    node=node,
+                    attr="clampf",
+                    new_args=stmts,
+                )
+
             raise RuntimeError(f"Cannot resolve function `{node.func.id}`")
 
         # Check if it is a Allo dataflow region/kernel (has mappings attribute from @df.region decorator)
@@ -3107,18 +3146,26 @@ class ASTTransformer(ASTBuilder):
                         )
                 return tuple(res)
             arg_types = []
-            if isinstance(new_args[0].result, OpResultList):
-                for arg in new_args:
-                    if hasattr(arg, "result") and isinstance(arg.result, OpResultList):
-                        for result in arg.result:
-                            if hasattr(result, "type"):
-                                arg_types.append(result.type)
-            else:
-                for arg in new_args:
-                    if hasattr(arg, "result") and hasattr(arg.result, "type"):
-                        arg_types.append(arg.result.type)
+            value_args = []
+            for arg in new_args:
+                # Only MLIR value-like args should go through get_mlir_op_result
+                if hasattr(arg, "result"):
+                    res = ASTTransformer.get_mlir_op_result(ctx, arg)
+                    value_args.append(res)
+                    if hasattr(res, "type"):
+                        arg_types.append(res.type)
+                elif hasattr(arg, "type"):
+                    # In case an MLIR value/op is passed directly
+                    value_args.append(arg)
+                    arg_types.append(arg.type)
+                else:
+                    # Python metadata args such as transpose dims / view shape
+                    value_args.append(None)
             if all(
                 isinstance(arg_type, (F32Type, F64Type, IntegerType))
+                for arg_type in arg_types
+            ) and not any(
+                isinstance(arg_type, (MemRefType, RankedTensorType))
                 for arg_type in arg_types
             ):
                 opcls = {
@@ -3133,11 +3180,11 @@ class ASTTransformer(ASTBuilder):
                     "tanh": math_d.TanhOp,
                     "power": math_d.PowFOp,
                     "abs": math_d.AbsIOp,
+                    "roundeven": math_d.RoundEvenOp,
+                    "clampf": math_d.ClampFOp,
                 }.get(fn_name)
-                return opcls(
-                    *[ASTTransformer.get_mlir_op_result(ctx, x) for x in new_args],
-                    ip=ctx.get_ip(),
-                )
+                scalar_operands = [v for v in value_args if v is not None]
+                return opcls(*scalar_operands, ip=ctx.get_ip())
             if any(
                 isinstance(arg_type, (MemRefType, RankedTensorType))
                 for arg_type in arg_types
@@ -3161,6 +3208,8 @@ class ASTTransformer(ASTBuilder):
                 "linear",
                 "view",
                 "concat",
+                "roundeven",
+                "clampf",
             }:
                 if fn_name in {"add", "sub", "mul", "div"}:
                     new_args[0] = ASTTransformer.build_broadcast_op(
@@ -3463,6 +3512,128 @@ class ASTTransformer(ASTBuilder):
                     ],
                 )
                 op = op.owner if hasattr(op, "owner") else op
+
+            elif attr in {"roundeven", "clampf", "min", "max"}:
+
+                def _splat_scalar_to_shape(arg):
+                    buf = ASTTransformer.build_array(ctx, dtype, shape)
+                    linalg_d.fill(
+                        ASTTransformer.get_mlir_op_result(ctx, arg),
+                        outs=[ASTTransformer.get_mlir_op_result(ctx, buf)],
+                    )
+                    return buf
+
+                def _is_scalar(arg):
+                    try:
+                        mlir_val = ASTTransformer.get_mlir_op_result(ctx, arg)
+                    except (TypeError, ValueError):
+                        return False
+
+                    try:
+                        ShapedType(mlir_val.type)
+                        return False
+                    except (TypeError, ValueError):
+                        return True
+
+                if attr in {"min", "max"}:
+                    if _is_scalar(new_args[0]):
+                        new_args[0] = _splat_scalar_to_shape(new_args[0])
+                    if _is_scalar(new_args[1]):
+                        new_args[1] = _splat_scalar_to_shape(new_args[1])
+
+                elif attr == "clampf":
+                    if _is_scalar(new_args[0]):
+                        new_args[0] = _splat_scalar_to_shape(new_args[0])
+                    if _is_scalar(new_args[1]):
+                        new_args[1] = _splat_scalar_to_shape(new_args[1])
+                    if _is_scalar(new_args[2]):
+                        new_args[2] = _splat_scalar_to_shape(new_args[2])
+                out_mlir = ASTTransformer.get_mlir_op_result(ctx, result_tensor)
+                out_type = ShapedType(out_mlir.type)
+
+                maps = []
+                for arg in new_args:
+                    arg_val = ASTTransformer.get_mlir_op_result(ctx, arg)
+                    arg_type = ShapedType(arg_val.type)
+                    maps.append(
+                        AffineMapAttr.get(AffineMap.get_identity(arg_type.rank))
+                    )
+
+                maps.append(AffineMapAttr.get(AffineMap.get_identity(out_type.rank)))
+                indexing_maps_attr = ArrayAttr.get(maps)
+
+                iterator_types = [linalg_d.IteratorType.parallel] * out_type.rank
+
+                in_vals = [
+                    ASTTransformer.get_mlir_op_result(ctx, arg) for arg in new_args
+                ]
+                out_val = out_mlir
+
+                gen = linalg_d.GenericOp(
+                    indexing_maps=indexing_maps_attr,
+                    iterator_types=iterator_types,
+                    inputs=in_vals,
+                    outputs=[out_val],
+                    result_tensors=[],
+                    ip=ctx.get_ip(),
+                )
+
+                def _elem_type(t):
+                    return t.element_type if hasattr(t, "element_type") else t
+
+                out_ty = out_val.type
+                elem_ty = (
+                    out_ty.element_type if hasattr(out_ty, "element_type") else out_ty
+                )
+
+                block_arg_types = [_elem_type(v.type) for v in in_vals] + [elem_ty]
+                block = gen.regions[0].blocks.append(*block_arg_types)
+                ctx.set_ip(block)
+
+                if attr == "roundeven":
+                    y = math_d.RoundEvenOp(block.arguments[0], ip=ctx.get_ip()).result
+                elif attr == "clampf":
+                    y = math_d.ClampFOp(
+                        block.arguments[0],
+                        block.arguments[1],
+                        block.arguments[2],
+                        ip=ctx.get_ip(),
+                    ).result
+                elif attr == "max":
+                    if isinstance(dtype, Float):
+                        y = arith_d.MaximumFOp(
+                            block.arguments[0], block.arguments[1], ip=ctx.get_ip()
+                        ).result
+                    elif isinstance(dtype, Int):
+                        y = arith_d.MaxSIOp(
+                            block.arguments[0], block.arguments[1], ip=ctx.get_ip()
+                        ).result
+                    elif isinstance(dtype, UInt):
+                        y = arith_d.MaxUIOp(
+                            block.arguments[0], block.arguments[1], ip=ctx.get_ip()
+                        ).result
+                    else:
+                        raise RuntimeError(f"Unsupported dtype for max: {dtype}")
+                elif attr == "min":
+                    if isinstance(dtype, Float):
+                        y = arith_d.MinimumFOp(
+                            block.arguments[0], block.arguments[1], ip=ctx.get_ip()
+                        ).result
+                    elif isinstance(dtype, Int):
+                        y = arith_d.MinSIOp(
+                            block.arguments[0], block.arguments[1], ip=ctx.get_ip()
+                        ).result
+                    elif isinstance(dtype, UInt):
+                        y = arith_d.MinUIOp(
+                            block.arguments[0], block.arguments[1], ip=ctx.get_ip()
+                        ).result
+                    else:
+                        raise RuntimeError(f"Unsupported dtype for min: {dtype}")
+
+                linalg_d.YieldOp([y], ip=ctx.get_ip())
+                ctx.pop_ip()
+                op = gen
+
             elif attr == "softmax":
                 # TODO: Failed to lower to LLVM, see https://reviews.llvm.org/D153422
                 # We temporarily replace SoftmaxOp with a predefined lowered function to enable LLVM execution
