@@ -3512,35 +3512,26 @@ class ASTTransformer(ASTBuilder):
                 op = op.owner if hasattr(op, "owner") else op
 
             elif attr in {"roundeven", "clampf", "min", "max"}:
-                # Scalar-to-tensor broadcasting for elementwise ops
+                def _splat_scalar_to_shape(arg):
+                    buf = ASTTransformer.build_array(ctx, dtype, shape)
+                    linalg_d.fill(
+                        ASTTransformer.get_mlir_op_result(ctx, arg),
+                        outs=[ASTTransformer.get_mlir_op_result(ctx, buf)],
+                    )
+                    return buf
+
+                # Broadcast scalar operands to match the output shape.
                 if attr in {"min", "max"}:
-                    # If rhs is scalar, splat it to tensor/memref via fill
-                    if len(node.args[1].shape) == 0:
-                        rhs_buf = ASTTransformer.build_array(ctx, dtype, shape)
-                        linalg_d.fill(
-                            ASTTransformer.get_mlir_op_result(ctx, new_args[1]),
-                            outs=[ASTTransformer.get_mlir_op_result(ctx, rhs_buf)],
-                        )
-                        new_args[1] = rhs_buf
+                    if len(new_args[1].shape) == 0:
+                        new_args[1] = _splat_scalar_to_shape(new_args[1])
 
                 elif attr == "clampf":
-                    # If lo/hi are scalars, splat them to tensor/memref via fill
-                    if len(node.args[1].shape) == 0:
-                        lo_buf = ASTTransformer.build_array(ctx, dtype, shape)
-                        linalg_d.fill(
-                            ASTTransformer.get_mlir_op_result(ctx, new_args[1]),
-                            outs=[ASTTransformer.get_mlir_op_result(ctx, lo_buf)],
-                        )
-                        new_args[1] = lo_buf
-                    if len(node.args[2].shape) == 0:
-                        hi_buf = ASTTransformer.build_array(ctx, dtype, shape)
-                        linalg_d.fill(
-                            ASTTransformer.get_mlir_op_result(ctx, new_args[2]),
-                            outs=[ASTTransformer.get_mlir_op_result(ctx, hi_buf)],
-                        )
-                        new_args[2] = hi_buf
+                    if len(new_args[1].shape) == 0:
+                        new_args[1] = _splat_scalar_to_shape(new_args[1])
+                    if len(new_args[2].shape) == 0:
+                        new_args[2] = _splat_scalar_to_shape(new_args[2])
 
-                # Elementwise generic op
+                # Build elementwise linalg.generic.
                 in_vals = [ASTTransformer.get_mlir_op_result(ctx, a) for a in new_args]
                 out_val = ASTTransformer.get_mlir_op_result(ctx, result_tensor)
 
@@ -3568,7 +3559,9 @@ class ASTTransformer(ASTBuilder):
                     return t.element_type if hasattr(t, "element_type") else t
 
                 out_ty = out_val.type
-                elem_ty = out_ty.element_type if hasattr(out_ty, "element_type") else out_ty
+                elem_ty = (
+                    out_ty.element_type if hasattr(out_ty, "element_type") else out_ty
+                )
 
                 block_arg_types = [_elem_type(v.type) for v in in_vals] + [elem_ty]
                 block = gen.regions[0].blocks.append(*block_arg_types)

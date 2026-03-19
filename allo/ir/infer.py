@@ -1118,7 +1118,7 @@ class TypeInferer(ASTVisitor):
                 node.dtype = res_type
                 node.shape = new_args[0].shape
             elif node.func.id == "roundeven":
-                # Builtin lowering stub; real lowering happens later in IR builder.
+                # roundeven preserves the input tensor shape and dtype.
                 assert len(node.args) == 1, "Only support one argument for `roundeven`"
                 new_args = visit_stmts(ctx, node.args)
                 node.shape = new_args[0].shape
@@ -1129,15 +1129,6 @@ class TypeInferer(ASTVisitor):
                 new_args = visit_stmts(ctx, node.args)
                 node.shape = new_args[0].shape
                 node.dtype = new_args[0].dtype
-            elif node.func.id in {"maximumf", "minimumf"}:
-                # elementwise float min/max; second arg can be scalar
-                assert (
-                    len(node.args) == 2
-                ), "Only support two arguments for `maximumf` and `minimumf`"
-                new_args = visit_stmts(ctx, node.args)
-                node.shape = new_args[0].shape
-                node.dtype = new_args[0].dtype
-
             else:
                 raise RuntimeError(f"Unsupported function call {node.func.id}")
             return node

@@ -440,23 +440,18 @@ class TorchBuilder:
         x = get_var_name(node.args[0])
         return f"{node.name} = roundeven({x})"
 
-    def build_clampf(self, node):
-        x = get_var_name(node.args[0])
-        lo = get_var_name(node.args[1])
-        hi = get_var_name(node.args[2])
-        return f"{node.name} = clampf({x}, {lo}, {hi})"
-
     def _resolve_fx_scalar(self, x):
+        """Resolve a scalar from Python value, scalar tensor, or FX node."""
         # Python scalar
         if isinstance(x, (int, float)):
             return x
-
         # Torch scalar tensor
         if isinstance(x, torch.Tensor):
             if x.numel() != 1:
-                raise NotImplementedError(f"Expected scalar tensor, got shape {tuple(x.shape)}")
+                raise NotImplementedError(
+                    f"Expected scalar tensor, got shape {tuple(x.shape)}"
+                )
             return x.item()
-
         # FX node
         if isinstance(x, fx.Node):
             if x.op == "get_attr":
@@ -464,11 +459,11 @@ class TorchBuilder:
                 attr_itr = self.gm
                 for atom in target_atoms:
                     attr_itr = getattr(attr_itr, atom)
-
                 if isinstance(attr_itr, torch.Tensor):
                     if attr_itr.numel() != 1:
                         raise NotImplementedError(
-                            f"Expected scalar attr tensor for {x.target}, got shape {tuple(attr_itr.shape)}"
+                            f"Expected scalar attr tensor for {x.target}, "
+                            f"got shape {tuple(attr_itr.shape)}"
                         )
                     return attr_itr.item()
                 if isinstance(attr_itr, (int, float)):
@@ -476,7 +471,6 @@ class TorchBuilder:
                 raise NotImplementedError(
                     f"Unsupported get_attr scalar type for {x.target}: {type(attr_itr)}"
                 )
-
             # Sometimes constant-like info may be carried in meta/val
             if "val" in x.meta:
                 val = x.meta["val"]
@@ -488,17 +482,26 @@ class TorchBuilder:
                     return val.item()
                 if isinstance(val, (int, float)):
                     return val
-
-            raise NotImplementedError(f"Unable to resolve scalar from FX node: {x.format_node()}")
-
+            raise NotImplementedError(
+                f"Unable to resolve scalar from FX node: {x.format_node()}"
+            )
         raise NotImplementedError(f"Unsupported scalar source: {type(x)}")
 
     def build_quantize_per_tensor(self, node):
+        # Lower quantize_per_tensor into float-domain fake-quant math.
         x = get_var_name(node.args[0])
-
-        scale_src = node.kwargs["scale"] if "scale" in node.kwargs else node.args[1]
-        zp_src = node.kwargs["zero_point"] if "zero_point" in node.kwargs else node.args[2]
-        qdtype = node.kwargs.get("dtype", node.args[3] if len(node.args) > 3 else None)
+        
+        scale_src = (
+            node.kwargs["scale"] if "scale" in node.kwargs else node.args[1]
+        )
+        zp_src = (
+            node.kwargs["zero_point"]
+            if "zero_point" in node.kwargs
+            else node.args[2]
+        )
+        qdtype = node.kwargs.get(
+            "dtype", node.args[3] if len(node.args) > 3 else None
+        )
 
         scale = float(self._resolve_fx_scalar(scale_src))
         zp = int(self._resolve_fx_scalar(zp_src))
@@ -525,19 +528,7 @@ class TorchBuilder:
         self.code.append(f"{t3} = min({t3a}, {qmax})")
         self.code.append(f"{t4} = {t3} - {float(zp)}")
         self.code.append(f"{t5} = {t4} * {scale}")
-
         return f"{node.name} = {t5}"
-
-    def build_maximumf(self, node):
-        lhs = get_var_name(node.args[0])
-        rhs = get_var_name(node.args[1])
-        return f"{node.name} = max({lhs}, {rhs})"
-
-    def build_minimumf(self, node):
-        lhs = get_var_name(node.args[0])
-        rhs = get_var_name(node.args[1])
-        return f"{node.name} = min({lhs}, {rhs})"
-
 
     def build_call_function(self, node):
         opcls = {

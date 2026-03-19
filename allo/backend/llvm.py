@@ -104,13 +104,13 @@ class LLVMModule:
             pm.run(self.module.operation)
             self.intermediate_module = self.module.operation.clone()
             # Attach necessary attributes
-            #func = find_func_in_module(self.module, top_func_name)
-            #if func is None:
-            #    raise RuntimeError(
-            #        "No top-level function found in the built MLIR module"
-            #    )
-            #func.attributes["llvm.emit_c_interface"] = UnitAttr.get()
-            #func.attributes["top"] = UnitAttr.get()
+            func = find_func_in_module(self.module, top_func_name)
+            if func is None:
+                raise RuntimeError(
+                   "No top-level function found in the built MLIR module"
+                )
+            func.attributes["llvm.emit_c_interface"] = UnitAttr.get()
+            func.attributes["top"] = UnitAttr.get()
             # Final lowering
             allo_d.lower_allo_to_llvm(self.module, ctx)
             pm = PassManager.parse("builtin.module(reconcile-unrealized-casts)")
