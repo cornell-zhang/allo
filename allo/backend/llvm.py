@@ -61,7 +61,9 @@ class LLVMModule:
             self.top_func_name = top_func_name
             func = find_func_in_module(self.module, top_func_name)
             if func is None:
-                raise RuntimeError("No top-level function found in the input MLIR module")
+                raise RuntimeError(
+                    "No top-level function found in the input MLIR module"
+                )
             ext_libs = [] if ext_libs is None else ext_libs
             # Get input/output types
             self.in_types, self.out_types = get_func_inputs_outputs(func)
@@ -90,7 +92,6 @@ class LLVMModule:
                 "expand-strided-metadata,"
                 # common lowering passes
                 "func.func(convert-linalg-to-affine-loops),lower-affine,"
-
                 "canonicalize,"
                 "cse,"
                 "convert-scf-to-cf,"
@@ -107,7 +108,7 @@ class LLVMModule:
             func = find_func_in_module(self.module, top_func_name)
             if func is None:
                 raise RuntimeError(
-                   "No top-level function found in the built MLIR module"
+                    "No top-level function found in the built MLIR module"
                 )
             func.attributes["llvm.emit_c_interface"] = UnitAttr.get()
             func.attributes["top"] = UnitAttr.get()

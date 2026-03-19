@@ -2663,7 +2663,9 @@ class ASTTransformer(ASTBuilder):
                         "max": arith_d.MaxUIOp,
                     }.get(node.func.id)
                 else:
-                    raise RuntimeError(f"Unsupported dtype for {node.func.id}: {node.dtype}")
+                    raise RuntimeError(
+                        f"Unsupported dtype for {node.func.id}: {node.dtype}"
+                    )
 
                 lhs = ASTTransformer.build_cast_op(
                     ctx, stmts[0], node.args[0].dtype, node.dtype
@@ -3161,8 +3163,10 @@ class ASTTransformer(ASTBuilder):
             if all(
                 isinstance(arg_type, (F32Type, F64Type, IntegerType))
                 for arg_type in arg_types
-                and not any(isinstance(arg_type, (MemRefType, RankedTensorType)) 
-                for arg_type in arg_types)
+                and not any(
+                    isinstance(arg_type, (MemRefType, RankedTensorType))
+                    for arg_type in arg_types
+                )
             ):
                 opcls = {
                     "exp": math_d.ExpOp,
@@ -3512,6 +3516,7 @@ class ASTTransformer(ASTBuilder):
                 op = op.owner if hasattr(op, "owner") else op
 
             elif attr in {"roundeven", "clampf", "min", "max"}:
+
                 def _splat_scalar_to_shape(arg):
                     buf = ASTTransformer.build_array(ctx, dtype, shape)
                     linalg_d.fill(

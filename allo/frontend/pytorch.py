@@ -120,12 +120,12 @@ def from_pytorch(
 def get_var_name(node):
     return node.name if isinstance(node, fx.Node) else node
 
+
 class _ShimNode:
     def __init__(self, args, kwargs=None, meta=None):
         self.args = tuple(args)
         self.kwargs = {} if kwargs is None else dict(kwargs)
         self.meta = {} if meta is None else dict(meta)
-
 
 
 class TorchBuilder:
@@ -490,18 +490,12 @@ class TorchBuilder:
     def build_quantize_per_tensor(self, node):
         # Lower quantize_per_tensor into float-domain fake-quant math.
         x = get_var_name(node.args[0])
-        
-        scale_src = (
-            node.kwargs["scale"] if "scale" in node.kwargs else node.args[1]
-        )
+
+        scale_src = node.kwargs["scale"] if "scale" in node.kwargs else node.args[1]
         zp_src = (
-            node.kwargs["zero_point"]
-            if "zero_point" in node.kwargs
-            else node.args[2]
+            node.kwargs["zero_point"] if "zero_point" in node.kwargs else node.args[2]
         )
-        qdtype = node.kwargs.get(
-            "dtype", node.args[3] if len(node.args) > 3 else None
-        )
+        qdtype = node.kwargs.get("dtype", node.args[3] if len(node.args) > 3 else None)
 
         scale = float(self._resolve_fx_scalar(scale_src))
         zp = int(self._resolve_fx_scalar(zp_src))
