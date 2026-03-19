@@ -4,8 +4,9 @@
 import numpy as np
 import allo
 from allo.ir.types import float32
+import pytest
 
-
+torch = pytest.importorskip("torch")
 def clampf_kernel(x: float32[4, 4]) -> float32[4, 4]:
     return clampf(x, -1.0, 1.0)
 
