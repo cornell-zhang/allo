@@ -1107,7 +1107,6 @@ class TypeInferer(ASTVisitor):
                 new_args = visit_stmts(ctx, node.args)
                 node.shape = tuple()
                 node.dtype = float32 if node.func.id == "float" else int32
-
             elif node.func.id in {"min", "max"}:
                 # Python-Builtin functions
                 assert (
@@ -1124,10 +1123,17 @@ class TypeInferer(ASTVisitor):
                 new_args = visit_stmts(ctx, node.args)
                 node.shape = new_args[0].shape
                 node.dtype = new_args[0].dtype
-
             elif node.func.id == "clampf":
                 # clampf(x, lo, hi): elementwise clamp; lo/hi can be scalars.
                 assert len(node.args) == 3, "Only support three arguments for `clampf`"
+                new_args = visit_stmts(ctx, node.args)
+                node.shape = new_args[0].shape
+                node.dtype = new_args[0].dtype
+            elif node.func.id in {"maximumf", "minimumf"}:
+                # elementwise float min/max; second arg can be scalar
+                assert (
+                    len(node.args) == 2
+                ), "Only support two arguments for `maximumf` and `minimumf`"
                 new_args = visit_stmts(ctx, node.args)
                 node.shape = new_args[0].shape
                 node.dtype = new_args[0].dtype

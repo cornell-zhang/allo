@@ -2634,6 +2634,19 @@ class ASTTransformer(ASTBuilder):
 
             if node.func.id in {"min", "max"}:
                 stmts = build_stmts(ctx, node.args)
+
+                # Elementwise tensor/memref min/max must lower through library-style
+                # broadcasting/generic lowering, not raw arith ops.
+                if node.shape is not None and len(node.shape) > 0:
+                    attr = "min" if node.func.id == "min" else "max"
+                    return ASTTransformer.build_library_op(
+                        ctx,
+                        node=node,
+                        attr=attr,
+                        new_args=stmts,
+                    )
+
+                # Scalar case
                 if isinstance(node.dtype, Float):
                     opcls = {
                         "min": arith_d.MinimumFOp,
@@ -2649,6 +2662,9 @@ class ASTTransformer(ASTBuilder):
                         "min": arith_d.MinUIOp,
                         "max": arith_d.MaxUIOp,
                     }.get(node.func.id)
+                else:
+                    raise RuntimeError(f"Unsupported dtype for {node.func.id}: {node.dtype}")
+
                 lhs = ASTTransformer.build_cast_op(
                     ctx, stmts[0], node.args[0].dtype, node.dtype
                 )
@@ -3495,9 +3511,19 @@ class ASTTransformer(ASTBuilder):
                 )
                 op = op.owner if hasattr(op, "owner") else op
 
-            elif attr in {"roundeven", "clampf"}:
-                # 1) Make sure clamp bounds are tensors if inputs are tensors/memrefs
-                if attr == "clampf":
+            elif attr in {"roundeven", "clampf", "min", "max"}:
+                # Scalar-to-tensor broadcasting for elementwise ops
+                if attr in {"min", "max"}:
+                    # If rhs is scalar, splat it to tensor/memref via fill
+                    if len(node.args[1].shape) == 0:
+                        rhs_buf = ASTTransformer.build_array(ctx, dtype, shape)
+                        linalg_d.fill(
+                            ASTTransformer.get_mlir_op_result(ctx, new_args[1]),
+                            outs=[ASTTransformer.get_mlir_op_result(ctx, rhs_buf)],
+                        )
+                        new_args[1] = rhs_buf
+
+                elif attr == "clampf":
                     # If lo/hi are scalars, splat them to tensor/memref via fill
                     if len(node.args[1].shape) == 0:
                         lo_buf = ASTTransformer.build_array(ctx, dtype, shape)
@@ -3514,12 +3540,10 @@ class ASTTransformer(ASTBuilder):
                         )
                         new_args[2] = hi_buf
 
-                # 2) Call the same elementwise path used by exp/log
-                # (copy the exp/log generic construction exactly)
+                # Elementwise generic op
                 in_vals = [ASTTransformer.get_mlir_op_result(ctx, a) for a in new_args]
                 out_val = ASTTransformer.get_mlir_op_result(ctx, result_tensor)
-                
-                # Identity indexing maps
+
                 index_exprs = [AffineExpr.get_dim(d) for d in range(len(shape))]
                 affine_map = AffineMap.get(
                     dim_count=len(shape), symbol_count=0, exprs=index_exprs
@@ -3540,11 +3564,9 @@ class ASTTransformer(ASTBuilder):
                     ip=ctx.get_ip(),
                 )
 
-                # Region: elementwise math op
-                # IMPORTANT: region arg types must match the element types
                 def _elem_type(t):
                     return t.element_type if hasattr(t, "element_type") else t
-                
+
                 out_ty = out_val.type
                 elem_ty = out_ty.element_type if hasattr(out_ty, "element_type") else out_ty
 
@@ -3554,13 +3576,43 @@ class ASTTransformer(ASTBuilder):
 
                 if attr == "roundeven":
                     y = math_d.RoundEvenOp(block.arguments[0], ip=ctx.get_ip()).result
-                else:
+                elif attr == "clampf":
                     y = math_d.ClampFOp(
                         block.arguments[0],
                         block.arguments[1],
                         block.arguments[2],
                         ip=ctx.get_ip(),
                     ).result
+                elif attr == "max":
+                    if isinstance(dtype, Float):
+                        y = arith_d.MaximumFOp(
+                            block.arguments[0], block.arguments[1], ip=ctx.get_ip()
+                        ).result
+                    elif isinstance(dtype, Int):
+                        y = arith_d.MaxSIOp(
+                            block.arguments[0], block.arguments[1], ip=ctx.get_ip()
+                        ).result
+                    elif isinstance(dtype, UInt):
+                        y = arith_d.MaxUIOp(
+                            block.arguments[0], block.arguments[1], ip=ctx.get_ip()
+                        ).result
+                    else:
+                        raise RuntimeError(f"Unsupported dtype for max: {dtype}")
+                else:  # attr == "min"
+                    if isinstance(dtype, Float):
+                        y = arith_d.MinimumFOp(
+                            block.arguments[0], block.arguments[1], ip=ctx.get_ip()
+                        ).result
+                    elif isinstance(dtype, Int):
+                        y = arith_d.MinSIOp(
+                            block.arguments[0], block.arguments[1], ip=ctx.get_ip()
+                        ).result
+                    elif isinstance(dtype, UInt):
+                        y = arith_d.MinUIOp(
+                            block.arguments[0], block.arguments[1], ip=ctx.get_ip()
+                        ).result
+                    else:
+                        raise RuntimeError(f"Unsupported dtype for min: {dtype}")
 
                 linalg_d.YieldOp([y], ip=ctx.get_ip())
                 ctx.pop_ip()

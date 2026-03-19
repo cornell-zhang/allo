@@ -60,10 +60,14 @@ class LLVMModule:
             self.module = Module.parse(str(mod), ctx)
             self.top_func_name = top_func_name
             func = find_func_in_module(self.module, top_func_name)
+            if func is None:
+                raise RuntimeError("No top-level function found in the input MLIR module")
             ext_libs = [] if ext_libs is None else ext_libs
             # Get input/output types
             self.in_types, self.out_types = get_func_inputs_outputs(func)
             self.module = decompose_library_function(self.module)
+            func.attributes["llvm.emit_c_interface"] = UnitAttr.get()
+            func.attributes["top"] = UnitAttr.get()
             # Start lowering
             _mlir_lower_pipeline(self.module, canonicalize=True, lower_linalg=True)
             if len(ext_libs) > 0:
@@ -85,19 +89,28 @@ class LLVMModule:
                 # used for lowering memref.subview
                 "expand-strided-metadata,"
                 # common lowering passes
-                "func.func(convert-linalg-to-affine-loops),lower-affine"
+                "func.func(convert-linalg-to-affine-loops),lower-affine,"
+
+                "canonicalize,"
+                "cse,"
+                "convert-scf-to-cf,"
+                "convert-math-to-llvm,"
+                "convert-arith-to-llvm,"
+                "finalize-memref-to-llvm,"
+                "convert-func-to-llvm,"
+                "reconcile-unrealized-casts"
                 ")"
             )
             pm.run(self.module.operation)
             self.intermediate_module = self.module.operation.clone()
             # Attach necessary attributes
-            func = find_func_in_module(self.module, top_func_name)
-            if func is None:
-                raise RuntimeError(
-                    "No top-level function found in the built MLIR module"
-                )
-            func.attributes["llvm.emit_c_interface"] = UnitAttr.get()
-            func.attributes["top"] = UnitAttr.get()
+            #func = find_func_in_module(self.module, top_func_name)
+            #if func is None:
+            #    raise RuntimeError(
+            #        "No top-level function found in the built MLIR module"
+            #    )
+            #func.attributes["llvm.emit_c_interface"] = UnitAttr.get()
+            #func.attributes["top"] = UnitAttr.get()
             # Final lowering
             allo_d.lower_allo_to_llvm(self.module, ctx)
             pm = PassManager.parse("builtin.module(reconcile-unrealized-casts)")

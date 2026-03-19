@@ -446,11 +446,62 @@ class TorchBuilder:
         hi = get_var_name(node.args[2])
         return f"{node.name} = clampf({x}, {lo}, {hi})"
 
+    def _resolve_fx_scalar(self, x):
+        # Python scalar
+        if isinstance(x, (int, float)):
+            return x
+
+        # Torch scalar tensor
+        if isinstance(x, torch.Tensor):
+            if x.numel() != 1:
+                raise NotImplementedError(f"Expected scalar tensor, got shape {tuple(x.shape)}")
+            return x.item()
+
+        # FX node
+        if isinstance(x, fx.Node):
+            if x.op == "get_attr":
+                target_atoms = x.target.split(".")
+                attr_itr = self.gm
+                for atom in target_atoms:
+                    attr_itr = getattr(attr_itr, atom)
+
+                if isinstance(attr_itr, torch.Tensor):
+                    if attr_itr.numel() != 1:
+                        raise NotImplementedError(
+                            f"Expected scalar attr tensor for {x.target}, got shape {tuple(attr_itr.shape)}"
+                        )
+                    return attr_itr.item()
+                if isinstance(attr_itr, (int, float)):
+                    return attr_itr
+                raise NotImplementedError(
+                    f"Unsupported get_attr scalar type for {x.target}: {type(attr_itr)}"
+                )
+
+            # Sometimes constant-like info may be carried in meta/val
+            if "val" in x.meta:
+                val = x.meta["val"]
+                if isinstance(val, torch.Tensor):
+                    if val.numel() != 1:
+                        raise NotImplementedError(
+                            f"Expected scalar meta tensor, got shape {tuple(val.shape)}"
+                        )
+                    return val.item()
+                if isinstance(val, (int, float)):
+                    return val
+
+            raise NotImplementedError(f"Unable to resolve scalar from FX node: {x.format_node()}")
+
+        raise NotImplementedError(f"Unsupported scalar source: {type(x)}")
+
     def build_quantize_per_tensor(self, node):
         x = get_var_name(node.args[0])
-        scale = float(node.kwargs["scale"])
-        zp = int(node.kwargs["zero_point"])
-        qdtype = node.kwargs.get("dtype", None)
+
+        scale_src = node.kwargs["scale"] if "scale" in node.kwargs else node.args[1]
+        zp_src = node.kwargs["zero_point"] if "zero_point" in node.kwargs else node.args[2]
+        qdtype = node.kwargs.get("dtype", node.args[3] if len(node.args) > 3 else None)
+
+        scale = float(self._resolve_fx_scalar(scale_src))
+        zp = int(self._resolve_fx_scalar(zp_src))
 
         if qdtype == torch.qint8:
             qmin, qmax = -128.0, 127.0
@@ -459,24 +510,34 @@ class TorchBuilder:
         else:
             raise RuntimeError(f"Unsupported quant dtype: {qdtype}")
 
-        # temp names
         t0 = self._new_tmp_name("qdq_div")
         t1 = self._new_tmp_name("qdq_round")
         t2 = self._new_tmp_name("qdq_addz")
-        t3 = self._new_tmp_name("qdq_clamp")
+        t3a = self._new_tmp_name("qdq_max")
+        t3 = self._new_tmp_name("qdq_min")
         t4 = self._new_tmp_name("qdq_subz")
         t5 = self._new_tmp_name("qdq_mul")
 
-        # emit fake-quant (QDQ) in float
         self.code.append(f"{t0} = {x} / {scale}")
         self.code.append(f"{t1} = roundeven({t0})")
         self.code.append(f"{t2} = {t1} + {float(zp)}")
-        self.code.append(f"{t3} = clampf({t2}, {qmin}, {qmax})")
+        self.code.append(f"{t3a} = max({t2}, {qmin})")
+        self.code.append(f"{t3} = min({t3a}, {qmax})")
         self.code.append(f"{t4} = {t3} - {float(zp)}")
         self.code.append(f"{t5} = {t4} * {scale}")
 
-        # set this node's value to the final temp
         return f"{node.name} = {t5}"
+
+    def build_maximumf(self, node):
+        lhs = get_var_name(node.args[0])
+        rhs = get_var_name(node.args[1])
+        return f"{node.name} = max({lhs}, {rhs})"
+
+    def build_minimumf(self, node):
+        lhs = get_var_name(node.args[0])
+        rhs = get_var_name(node.args[1])
+        return f"{node.name} = min({lhs}, {rhs})"
+
 
     def build_call_function(self, node):
         opcls = {
