@@ -554,7 +554,7 @@ class TorchBuilder:
         return None
 
     def build_call_method(self, node):
-        if node.target in ("contiguous", "dequantize"):
+        if node.target in {"contiguous", "dequantize"}:
             return self.build_identity(node)
         # Only nodes with shape need to be built.
         return (

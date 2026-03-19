@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 import allo
 
-torch.set_grad_enabled(False)
+torch.set_grad_enabled(False)if attr in [
 torch.manual_seed(0)
 
 

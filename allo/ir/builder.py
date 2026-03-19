@@ -3595,7 +3595,7 @@ class ASTTransformer(ASTBuilder):
                         ).result
                     else:
                         raise RuntimeError(f"Unsupported dtype for max: {dtype}")
-                else:  # attr == "min"
+                elif attr == "min":
                     if isinstance(dtype, Float):
                         y = arith_d.MinimumFOp(
                             block.arguments[0], block.arguments[1], ip=ctx.get_ip()
