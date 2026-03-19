@@ -3163,10 +3163,9 @@ class ASTTransformer(ASTBuilder):
             if all(
                 isinstance(arg_type, (F32Type, F64Type, IntegerType))
                 for arg_type in arg_types
-                and not any(
-                    isinstance(arg_type, (MemRefType, RankedTensorType))
-                    for arg_type in arg_types
-                )
+            ) and not any(
+                isinstance(arg_type, (MemRefType, RankedTensorType))
+                for arg_type in arg_types
             ):
                 opcls = {
                     "exp": math_d.ExpOp,
