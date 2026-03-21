@@ -16,6 +16,8 @@
 #include "allo/Dialect/AlloDialect.h"
 #include "allo/Dialect/AlloTypes.h"
 
+#include "mlir/Dialect/Affine/IR/AffineOps.h"
+#include "mlir/IR/AffineMap.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypes.h"
@@ -230,6 +232,42 @@ ParseResult GlobalStreamPutOp::parse(OpAsmParser &parser,
     return failure();
 
   return success();
+}
+
+//===----------------------------------------------------------------------===//
+// Canonicalization: GlobalStreamGetOp / GlobalStreamPutOp
+//===----------------------------------------------------------------------===//
+
+/// Shared helper: compose, simplify, and canonicalize the affine map
+template <typename OpTy>
+static LogicalResult canonicalizeStreamAffineMap(OpTy op,
+                                                 PatternRewriter &rewriter) {
+  AffineMap oldMap = op.getMap();
+  SmallVector<Value, 4> operands(op.getIndices().begin(),
+                                 op.getIndices().end());
+  AffineMap map = oldMap;
+  mlir::affine::fullyComposeAffineMapAndOperands(&map, &operands);
+  map = mlir::simplifyAffineMap(map);
+  mlir::affine::canonicalizeMapAndOperands(&map, &operands);
+
+  if (map == oldMap && llvm::equal(op.getIndices(), operands))
+    return failure(); // nothing changed
+
+  rewriter.modifyOpInPlace(op, [&]() {
+    op.setMapAttr(AffineMapAttr::get(map));
+    op.getIndicesMutable().assign(operands);
+  });
+  return success();
+}
+
+LogicalResult GlobalStreamGetOp::canonicalize(GlobalStreamGetOp op,
+                                              PatternRewriter &rewriter) {
+  return canonicalizeStreamAffineMap(op, rewriter);
+}
+
+LogicalResult GlobalStreamPutOp::canonicalize(GlobalStreamPutOp op,
+                                              PatternRewriter &rewriter) {
+  return canonicalizeStreamAffineMap(op, rewriter);
 }
 
 //===----------------------------------------------------------------------===//

@@ -39,6 +39,7 @@ To simplify the installation process, we provide a docker image that has already
   $ docker pull chhzh123/allo:latest
   $ docker run --rm -it chhzh123/allo:latest
   (docker) $ git clone https://github.com/cornell-zhang/allo.git && cd allo
+  (docker) $ git submodule update --init externals/mlir-python-extra
   (docker) $ python3 -m pip install -v -e .
 
 
@@ -80,6 +81,7 @@ You can now install Allo by running the following commands.
 
 .. code-block:: console
 
+  $ git submodule update --init externals/mlir-python-extra
   $ python3 -m pip install -v -e .
 
 
@@ -122,6 +124,7 @@ Then, you can pull the latest version of Allo from GitHub and install it by runn
 
   $ git clone https://github.com/cornell-zhang/allo.git
   $ cd allo
+  $ git submodule update --init externals/mlir-python-extra
   $ python3 -m pip install -v -e .
 
 Now, you can run the following command to test if the installation is successful

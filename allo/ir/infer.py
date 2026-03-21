@@ -856,16 +856,15 @@ class TypeInferer(ASTVisitor):
                         "Stateful variables can only be declared locally within a kernel."
                     )
                 arg.dtensor = DTensor(
-                    ctx.rank,
                     ctx.mapping,
                     arg.shape,
                     arg.dtype,
-                    arg.spec,
+                    [arg.spec] if arg.spec is not None else [],
                     name=arg.arg,
                     top_name=arg.arg if not hasattr(arg, "top_arg") else arg.top_arg,
                 )
                 # update shape
-                arg.shape = arg.dtensor.get_local_shape()
+                arg.shape = arg.dtensor.tile_shape
                 assert ctx.get_symbol(name=arg.arg, allow_missing=True) is None, (
                     f"Argument name '{arg.arg}' conflicts with an existing symbol. "
                     f"Please choose a different name to avoid the conflict."
