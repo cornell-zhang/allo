@@ -50,7 +50,13 @@ class Layout:
         local_shape = []
         for dim, partition in zip(shape, self.partitions):
             if isinstance(partition, Layout.Shard):
-                local_shape.append(dim // grid[partition.axis])
+                shard_size = grid[partition.axis]
+                if dim % shard_size != 0:
+                    raise ValueError(
+                        f"Cannot shard dimension of size {dim} over {shard_size} devices "
+                        f"along axis {partition.axis}: dimension is not evenly divisible."
+                    )
+                local_shape.append(dim // shard_size)
             else:
                 local_shape.append(dim)
         return local_shape
