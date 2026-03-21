@@ -250,9 +250,7 @@ static LogicalResult canonicalizeStreamAffineMap(OpTy op,
   map = mlir::simplifyAffineMap(map);
   mlir::affine::canonicalizeMapAndOperands(&map, &operands);
 
-  if (map == oldMap &&
-      llvm::equal(op.getIndices().begin(), op.getIndices().end(),
-                  operands.begin(), operands.end()))
+  if (map == oldMap && llvm::equal(op.getIndices(), operands))
     return failure(); // nothing changed
 
   rewriter.modifyOpInPlace(op, [&]() {
