@@ -47,11 +47,17 @@ class GridMapOp(GridMapOp):
             memref_type = MemRefType(arg.type)
             shape = list(memref_type.shape)
             for k, s in enumerate(shardings[i]):
+                if s >= len(grid) or s < -1:
+                    raise ValueError(
+                        f"Invalid sharding value {s} for argument {i}, dimension {k}"
+                    )
                 if s >= 0:
-                    assert s < len(grid)
-                    shape[k] = shape[k] // grid[s]
-                else:
-                    assert s == -1
+                    grid_value = grid[s]
+                    if shape[k] % grid_value != 0:
+                        raise ValueError(
+                            f"Shape dimension {shape[k]} at arg {i}, dim {k} is not evenly divisible by grid value {grid_value}"
+                        )
+                    shape[k] = shape[k] // grid_value
             new_type = MemRefType.get(
                 shape,
                 memref_type.element_type,
