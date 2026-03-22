@@ -462,22 +462,60 @@ def _build_top(s, stream_info, enable_layout=False):
 
     # create argument mapping
     funcs = get_all_df_kernels(s)
+
+    # Phase 1: collect all unique args and classify as input-only vs output
+    # An arg is an "output" if any kernel that uses it is a pure consumer
+    # (only reads from streams). Otherwise it's an "input".
+    arg_info = {}  # {kernel_arg_name: (dtensor, signed_char)}
+    arg_roles = {}  # {kernel_arg_name: set of kernel roles}
+    for func in funcs:
+        func_name = func.attributes["sym_name"].value
+        dirs = {d for _, d in stream_info.get(func_name, [])}
+        if dirs == {"out"}:
+            role = "producer"
+        elif dirs == {"in"}:
+            role = "consumer"
+        else:
+            role = "mixed"
+        for i, arg in enumerate(func.arguments):
+            if "!allo.stream" not in str(arg.type):
+                arg_name = s.func_args[func_name][i].name
+                if arg_name not in arg_info:
+                    dtensor = s.func_args[func_name][i]
+                    signed = ""
+                    if "itypes" in func.attributes:
+                        signed = func.attributes["itypes"].value[i]
+                    arg_info[arg_name] = (dtensor, signed)
+                    arg_roles[arg_name] = set()
+                arg_roles[arg_name].add(role)
+
+    # Phase 2: sort args so input-only come first, output/both come last.
+    # The Vitis HLS backend requires output arguments at the end.
+    def _is_output(name):
+        return "consumer" in arg_roles.get(name, set())
+
+    sorted_arg_names = sorted(
+        arg_info.keys(), key=lambda n: (1 if _is_output(n) else 0)
+    )
+
+    # Phase 3: build input_types and used_args in sorted order
     input_types = []
     input_signed = ""
-    arg_mapping = {}
     used_args = {}  # {arg_name: arg_idx in top_func}
+    for arg_name in sorted_arg_names:
+        dtensor, signed = arg_info[arg_name]
+        used_args[arg_name] = len(input_types)
+        input_types.append((dtensor.shape, dtensor.dtype))
+        input_signed += signed if signed else "_"
+
+    # Phase 4: build arg_mapping for each kernel
+    arg_mapping = {}
     for func in funcs:
         func_name = func.attributes["sym_name"].value
         arg_mapping[func_name] = []
         for i, arg in enumerate(func.arguments):
             if "!allo.stream" not in str(arg.type):
                 arg_name = s.func_args[func_name][i].name
-                if arg_name not in used_args:
-                    used_args[arg_name] = len(input_types)
-                    dtensor = s.func_args[func_name][i]
-                    input_types.append((dtensor.shape, dtensor.dtype))
-                    if "itypes" in func.attributes:
-                        input_signed += func.attributes["itypes"].value[i]
                 arg_mapping[func_name].append(used_args[arg_name])
     # update top function
     top_func = None
@@ -511,8 +549,24 @@ def _build_top(s, stream_info, enable_layout=False):
             if isinstance(op, allo_d.StreamConstructOp):
                 stream_name = op.attributes["name"].value
                 stream_map[stream_name] = op
+
+        # Sort kernel functions so that producers come before consumers.
+        # Vitis HLS #pragma HLS dataflow requires canonical forward-flow
+        # ordering: functions that only write to streams (producers) must
+        # appear before functions that both read and write (mixed), which
+        # must appear before functions that only read (consumers).
+        def _stream_order_key(func_op):
+            fname = func_op.attributes["sym_name"].value
+            dirs = {d for _, d in stream_info.get(fname, [])}
+            if dirs == {"out"}:
+                return 0  # pure producer  -> first
+            if dirs == {"in"}:
+                return 2  # pure consumer  -> last
+            return 1  # mixed / no streams -> middle
+
+        sorted_funcs = sorted(funcs, key=_stream_order_key)
         # add call functions
-        for i, func in enumerate(funcs):
+        for i, func in enumerate(sorted_funcs):
             func_name = func.attributes["sym_name"].value
             arg_lst = [new_top.arguments[idx] for idx in arg_mapping[func_name]]
             stream_lst = [
@@ -526,7 +580,7 @@ def _build_top(s, stream_info, enable_layout=False):
                     arg_lst + stream_lst,
                     ip=InsertionPoint.at_block_terminator(new_top.entry_block),
                 )
-                if i == len(funcs) - 1:
+                if i == len(sorted_funcs) - 1:
                     call_op.attributes["last"] = UnitAttr.get()
         new_top.attributes["dataflow"] = UnitAttr.get()
     s.top_func = new_top
