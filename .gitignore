@@ -94,3 +94,17 @@ sg_execution_times.rst
 tests/xlscc_tests/**/test.cpp
 tests/xlscc_tests/**/test_block.cpp
 tests/xlscc_tests/**/test
+
+# Catapult / HLS experiment artifacts (local only)
+mlir/build-rhel8/
+hls_projects/
+glibc_compat/
+ccc/
+f32_softmax_prj/
+softmax_prj/
+*_csim.prj/
+*_csyn.prj/
+catapult_*.prj/
+catapult_*.prj
+
+

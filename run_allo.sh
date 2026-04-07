@@ -1,0 +1,12 @@
+#!/bin/bash
+# Wrapper for conda run -n allo that sets the required LD_LIBRARY_PATH
+# for libstdc++ compatibility on RHEL 8 (zhang-21).
+#
+# Usage:
+#   ./run_allo.sh python tests/dataflow/catapult_synth_decoupled_2x1.py
+#   ./run_allo.sh python -m pytest tests/dataflow/test_decoupled_mesh.py -v
+
+CONDA_ENV_LIB="/work/shared/users/phd/sk3463/envs/miniconda3/envs/allo/lib"
+export LD_LIBRARY_PATH="${CONDA_ENV_LIB}:${LD_LIBRARY_PATH}"
+
+exec conda run -n allo "$@"
