@@ -119,6 +119,29 @@ def _process_function_streams(
             stream_name = str(op.attributes["name"]).strip('"')
             stream_construct_ops[stream_name] = op
 
+    # Also discover and recursively process func.call ops that are nested
+    # inside control flow (scf.if / scf.for / etc.) and were missed by the
+    # top-level scan above.  These callee regions need their own stream and
+    # PE-call processing (and OMP injection), but they are NOT top-level
+    # parallel PE calls in the current function, so they must not be added
+    # to pe_call_define_ops.  The processed_funcs guard makes repeated calls
+    # for already-visited functions a cheap no-op.
+    all_calls_in_body: list = []
+    recursive_collect_ops(func.operation, (func_d.CallOp,), all_calls_in_body)
+    for nested_call_op in all_calls_in_body:
+        if nested_call_op in pe_call_define_ops:
+            continue  # Already handled as a top-level PE call
+        callee_name = str(nested_call_op.callee)[1:]
+        if callee_name.startswith(("load_buf", "store_res", "usleep")):
+            continue
+        for mod_op in module.body.operations:
+            if isinstance(mod_op, func_d.FuncOp):
+                if callee_name == str(mod_op.sym_name).strip('"'):
+                    _process_function_streams(
+                        module, mod_op, processed_funcs, all_pe_calls_by_func
+                    )
+                    break
+
     # If no streams, nothing to do for this function
     if not stream_construct_ops:
         return {}, {}, pe_call_define_ops, {}
@@ -1395,6 +1418,10 @@ def _inject_omp_parallel_sections(pe_call_define_ops):
 
 
 def build_dataflow_simulator(module: Module, top_func_name: str):
+    # Enable nested OpenMP parallelism so that peer kernels calling
+    # sub-regions (which have their own omp.parallel/sections) don't
+    # deadlock.  This is safe because the simulator already controls
+    # thread counts via omp.sections.
     if os.environ.get("OMP_MAX_ACTIVE_LEVELS") is None:
         os.environ["OMP_MAX_ACTIVE_LEVELS"] = "4"
     with module.context, Location.unknown():

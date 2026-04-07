@@ -96,14 +96,17 @@ def parse_cpp_function(code, target_function):
 
 
 class IPModule:
-    def __init__(self, top, impl, include_paths=None, link_hls=True):
+    def __init__(self, top, impl, include_paths=None, link_hls=True, abs_path=None):
         self.top = top
         self.impl = os.path.abspath(os.path.expanduser(impl))
         if not os.path.exists(self.impl):
             raise FileNotFoundError(
                 f"Path does not exist: {self.impl}. Consider using an absolute path."
             )
-        self.abs_path = os.path.dirname(self.impl)
+        if abs_path is not None:
+            self.abs_path = abs_path
+        else:
+            self.abs_path = os.path.dirname(self.impl)
         self.temp_path = os.path.join(self.abs_path, "_tmp")
         os.makedirs(self.temp_path, exist_ok=True)
         if include_paths is None:

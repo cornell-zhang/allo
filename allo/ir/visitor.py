@@ -145,6 +145,8 @@ class ASTContext:
         ctx.mapping = self.mapping
         ctx.meta_fors_to_unroll = self.meta_fors_to_unroll
         ctx.current_node = self.current_node
+        if hasattr(self, "global_op_cache"):
+            ctx.global_op_cache = self.global_op_cache
         if hasattr(self, "func_suffix"):
             ctx.func_suffix = self.func_suffix
         ctx.global_op_cache = self.global_op_cache

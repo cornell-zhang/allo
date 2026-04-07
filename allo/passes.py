@@ -165,6 +165,8 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
                     mapping=mappings[idx],
                     typehint=input_typehints.get(idx),
                 )
+            else:
+                load_func_names.append("")
 
     # Find ReturnOp
     for op in top_func.entry_block.operations:
