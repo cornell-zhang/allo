@@ -163,9 +163,7 @@ class IPModule:
 
         # Function signature using nanobind-compatible types
         out_str += f"void {self.lib_name}(\n"
-        for i, ((arg_type, arg_shape), nb_type) in enumerate(
-            zip(self.args, nb_types)
-        ):
+        for i, ((arg_type, arg_shape), nb_type) in enumerate(zip(self.args, nb_types)):
             if arg_shape is None or len(arg_shape) > 0:
                 out_str += f"  const nb::ndarray<{nb_type}> &arg{i}"
             else:
@@ -175,9 +173,7 @@ class IPModule:
         # Function body: cast nb types back to the original HLS types
         out_str += "\n"
         in_ptrs = []
-        for i, ((arg_type, arg_shape), nb_type) in enumerate(
-            zip(self.args, nb_types)
-        ):
+        for i, ((arg_type, arg_shape), nb_type) in enumerate(zip(self.args, nb_types)):
             if arg_shape is None or len(arg_shape) == 1:
                 out_str += (
                     f"  {arg_type} *p_arg{i} = "
