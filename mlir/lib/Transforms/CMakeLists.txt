@@ -12,6 +12,7 @@ add_mlir_library(MLIRAlloPasses
     DataPlacement.cpp
     CopyOnWrite.cpp
     UnifyKernels.cpp
+    TransformationUtils.cpp
 
     ADDITIONAL_HEADER_DIRS
     ${PROJECT_SOURCE_DIR}/include/allo
