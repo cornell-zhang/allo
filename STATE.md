@@ -26,7 +26,7 @@ Tapa NB stream additions (removed). Primary synthesis target: Vitis HLS.
 |----|-------|--------|-----------|------------|
 | [ISSUE-001](issues/ISSUE-001-pr554-black-format.md) | Black formatting on PR #554 branch | **DONE** | push to fork only | — |
 | [ISSUE-002](issues/ISSUE-002-pr554-add-tests.md) | Add test cases for PR #554 | **DONE** | push + comment | ISSUE-001 |
-| [ISSUE-003](issues/ISSUE-003-pr563-surgery.md) | Create focused PR replacing #563 | **NEEDS-REVIEW** | close PR + open new | ISSUE-004 |
+| [ISSUE-003](issues/ISSUE-003-pr563-surgery.md) | Create focused PR replacing #563 | **NEEDS-REVIEW** (CI PASSED) | close PR + open new | ISSUE-004 |
 | [ISSUE-004](issues/ISSUE-004-merge-upstream-spmw.md) | Merge upstream SPMW into feature branch | **DONE** | local only | — |
 | [ISSUE-005](issues/ISSUE-005-u280-inner-product-overview.md) | U280 inner product — architecture & overview | **OPEN** | standalone RTL project | — |
 | [ISSUE-006](issues/ISSUE-006-u280-rtl-implementation.md) | U280 inner product — RTL implementation (5 SV files) | **OPEN** | standalone RTL project | ISSUE-005 |
@@ -80,10 +80,12 @@ Steps that are purely local (edit, commit, local merge, run tests) do **not** re
 
 - ISSUE-001: PR #554 black fmt — DONE
 - ISSUE-002: PR #554 tests — DONE
-- ISSUE-003: PR #577 opened (replaces #563) — NEEDS-REVIEW (CI running)
+- ISSUE-003: PR #577 opened (replaces #563) — NEEDS-REVIEW (CI PASSED — awaiting maintainer)
 - ISSUE-004: SPMW merge — DONE
 - Catapult/Tapa removal — DONE (commit `89339f0`)
-- Adopted upstream `Stateful` API — DONE
+- `stateful` alias removed; all files updated to `Stateful` — DONE (commit `e665bbc`)
+- Project structure: `CLAUDE.md` created, root `STATE.md` + `notes/` + `issues/` restructured — DONE (commit `039e163`)
+- PR #554 CI: PASSED; PR #577 CI: PASSED
 
 ---
 

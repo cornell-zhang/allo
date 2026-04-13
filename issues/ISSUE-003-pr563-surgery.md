@@ -1,6 +1,6 @@
 # ISSUE-003: Create focused PR for hierarchical dataflow fixes (#561 / #565)
 
-## Status: NEEDS-REVIEW (local branch `fix/hierarchical-dataflow-codegen` created — awaiting push approval)
+## Status: NEEDS-REVIEW (PR #577 open, CI PASSED — awaiting maintainer review/merge)
 ## Upstream interaction: YES — close PR #563, open new PR (approval required)
 
 ## Context

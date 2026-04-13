@@ -91,13 +91,16 @@ Resolution: kept both sets (NB stream ops + SPMW global stream ops, plus the `Gr
 ### Post-merge fix required
 
 The SPMW commit renamed `def stateful(dtype)` to `class Stateful` in `allo/ir/types.py`.
-This broke `test_decoupled_mesh.py` which imports `stateful` (lowercase).
-Fix: added `stateful = Stateful` backward-compatibility alias in `allo/ir/types.py`.
+This broke `test_decoupled_mesh.py` and other files importing `stateful` (lowercase).
+Initial fix: added `stateful = Stateful` backward-compatibility alias in `allo/ir/types.py`
+(commit `5595fab`). **Superseded**: alias removed and all files updated to `Stateful` directly
+in commit `e665bbc`.
 
 ### Commits
 
 - Merge commit: `f8fa50c` — "Merge upstream main (SPMW ops #555) into feature/mesh-accelerator"
-- Fix commit: `5595fab` — "fix: add stateful backward-compat alias after SPMW upstream merge"
+- Alias fix (superseded): `5595fab` — "fix: add stateful backward-compat alias after SPMW upstream merge"
+- Full API update: `e665bbc` — "fix: stateful→Stateful across test files, remove alias"
 
 ### Test results
 
