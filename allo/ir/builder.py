@@ -2211,10 +2211,20 @@ class ASTTransformer(ASTBuilder):
                                 args_kw = get_kwarg_value(decorator.keywords, "args")
                                 if args_kw is not None:
                                     args = build_stmts(ctx, args_kw)
-                                    arg_values = [
-                                        ASTTransformer.get_mlir_op_result(ctx, arg)
-                                        for arg in args
-                                    ]
+                                    arg_values = []
+                                    for arg in args:
+                                        res = ASTTransformer.get_mlir_op_result(
+                                            ctx, arg
+                                        )
+                                        # If it's a 0D memref (scalar), load it to get the value
+                                        if (
+                                            isinstance(res.type, MemRefType)
+                                            and len(res.type.shape) == 0
+                                        ):
+                                            op_ = ASTTransformer.build_scalar(ctx, arg)
+                                            arg_values.append(op_.result)
+                                        else:
+                                            arg_values.append(res)
                                 else:
                                     arg_values = []
                                 # Insert calls
@@ -2729,13 +2739,22 @@ class ASTTransformer(ASTBuilder):
                     new_ctx.func_suffix = inst_suffix
 
             func_op = ASTTransformer.build_FunctionDef(new_ctx, func_def)
+            func_op.attributes["dataflow"] = UnitAttr.get()
+            if ctx.top_func is not None:
+                func_op.operation.move_before(ctx.top_func)
 
             # Now insert the call
             # Parse arguments
             new_args = build_stmts(ctx, node.args)
-            arg_values = [
-                ASTTransformer.get_mlir_op_result(ctx, arg) for arg in new_args
-            ]
+            arg_values = []
+            for arg in new_args:
+                res = ASTTransformer.get_mlir_op_result(ctx, arg)
+                if isinstance(res.type, MemRefType) and len(res.type.shape) == 0:
+                    op_ = ASTTransformer.build_scalar(ctx, arg)
+                    arg_values.append(op_.result)
+                else:
+                    arg_values.append(res)
+
             call_op = func_d.CallOp(
                 [],
                 FlatSymbolRefAttr.get(func_def.name),
