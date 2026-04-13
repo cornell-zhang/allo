@@ -69,6 +69,16 @@ user approval before execution**.
 - Do not modify repository structure without approval
 - Do not install system packages without explicit user confirmation
 
+# Code Quality
+- All implementation must follow the project's and relevant community's established practices
+- Web-search idiomatic patterns before writing non-trivial code if not 100% confident
+- No ad-hoc patching: check how similar features are done in the same file/module first
+- This applies to all upstream PRs, compiler changes, MLIR passes, and HLS backend code
+
+# Filesystem
+- `/work/shared/users/phd/sk3463/` — NFS home for source files and docs; **quota-limited**
+- `/scratch/sk3463/` — local scratch, ~1.8 TB free; use for HLS project dirs, build artifacts, large outputs
+
 # Troubleshooting & Known Issues
 - **"Fail to resolve the expression as symbolic expression" in Dataflow**: When using stream arrays (e.g., `gemm_in_A[m]`), the index `m` must be a compile-time constant (like `df.get_pid()`) or statically unrollable. Using a dynamic runtime loop index or variable will cause this type-inference failure. Manually unroll the loops or use literal constants where possible.
 - **"AttributeError: 'ASTContext' object has no attribute 'global_op_cache'"**: This occurs when compiling stateful variables in nested kernels inside `df.region()`. Fixed upstream; ensure `ASTContext.copy()` properly preserves `self.global_op_cache`. Documented in `notes/ALLO_CHANGE.md`.

@@ -31,6 +31,9 @@ Tapa NB stream additions (removed). Primary synthesis target: Vitis HLS.
 | [ISSUE-005](issues/ISSUE-005-u280-inner-product-overview.md) | U280 inner product — architecture & overview | **OPEN** | standalone RTL project | — |
 | [ISSUE-006](issues/ISSUE-006-u280-rtl-implementation.md) | U280 inner product — RTL implementation (5 SV files) | **OPEN** | standalone RTL project | ISSUE-005 |
 | [ISSUE-007](issues/ISSUE-007-u280-packaging-and-verify.md) | U280 inner product — packaging, build, sw_emu verify | **OPEN** | standalone RTL project | ISSUE-006 |
+| [ISSUE-008](issues/ISSUE-008-fp16-hls-synthesis-verify.md) | Verify float16 arithmetic + exp synthesize in Vitis HLS | **OPEN** | no (local verify; informs PR #578) | — |
+| [ISSUE-009](issues/ISSUE-009-fp16-builder-scalar-exp.md) | Fix scalar exp dispatch in builder.py for float16 | **OPEN** | yes (PR against upstream) | ISSUE-008 |
+| [ISSUE-010](issues/ISSUE-010-fp16-emitter-exp-half.md) | Conditional: fix exp(half) emitter if csyn fails | **OPEN** | yes (follow-up to PR #578) | ISSUE-008 |
 
 ---
 
@@ -42,6 +45,9 @@ ISSUE-001  ──►  ISSUE-002  ──►  (PR #554 merge-ready, await maintain
 ISSUE-004  ──►  ISSUE-003  ──►  (PR #577 opened, replaces #563, CI running)
 
 ISSUE-005 (arch) ──►  ISSUE-006 (RTL) ──►  ISSUE-007 (package+verify)
+
+ISSUE-008 (fp16 csyn verify) ──►  ISSUE-009 (builder.py fix, upstream PR)
+                              ──►  ISSUE-010 (emitter fix, conditional on Test B fail)
                        [standalone U280 inner product RTL kernel project]
 ```
 
