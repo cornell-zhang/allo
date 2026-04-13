@@ -2213,7 +2213,9 @@ class ASTTransformer(ASTBuilder):
                                     args = build_stmts(ctx, args_kw)
                                     arg_values = []
                                     for arg in args:
-                                        res = ASTTransformer.get_mlir_op_result(ctx, arg)
+                                        res = ASTTransformer.get_mlir_op_result(
+                                            ctx, arg
+                                        )
                                         # If it's a 0D memref (scalar), load it to get the value
                                         if (
                                             isinstance(res.type, MemRefType)
@@ -2747,15 +2749,12 @@ class ASTTransformer(ASTBuilder):
             arg_values = []
             for arg in new_args:
                 res = ASTTransformer.get_mlir_op_result(ctx, arg)
-                if (
-                    isinstance(res.type, MemRefType)
-                    and len(res.type.shape) == 0
-                ):
+                if isinstance(res.type, MemRefType) and len(res.type.shape) == 0:
                     op_ = ASTTransformer.build_scalar(ctx, arg)
                     arg_values.append(op_.result)
                 else:
                     arg_values.append(res)
-            
+
             call_op = func_d.CallOp(
                 [],
                 FlatSymbolRefAttr.get(func_def.name),

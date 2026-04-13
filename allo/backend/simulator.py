@@ -110,7 +110,9 @@ def _process_function_streams(
                         if callee_name == str(mod_op.sym_name).strip('"'):
                             pe_call_define_ops[op] = mod_op
                             # Recursively process the callee function first
-                            _process_function_streams(module, mod_op, processed_funcs, all_pe_calls_by_func)
+                            _process_function_streams(
+                                module, mod_op, processed_funcs, all_pe_calls_by_func
+                            )
                             break
         elif isinstance(op, allo_d.StreamConstructOp):
             stream_name = str(op.attributes["name"]).strip('"')
