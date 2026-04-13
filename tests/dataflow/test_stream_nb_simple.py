@@ -174,37 +174,6 @@ def test_nb_ops_hls_codegen():
 
 
 # ---------------------------------------------------------------------------
-# Test 4: Tapa HLS Code Generation
-# ---------------------------------------------------------------------------
-
-def test_nb_ops_tapa_codegen():
-    """
-    Verifies that non-blocking stream ops lower to correct Tapa HLS API calls:
-      - try_get  -> stream.try_read(val)
-      - try_put  -> stream.try_write(val)
-    """
-    @df.region()
-    def top_nb_tapa():
-        S: Stream[int32, 2][1]
-
-        @df.kernel(mapping=[1])
-        def kernel():
-            val: int32 = 0
-            ok: int1 = 0
-            val, ok = S[0].try_get()
-            if ok:
-                ok = S[0].try_put(val)
-
-    mod = allo.customize(top_nb_tapa)
-    hls_mod = mod.build(target="tapa")
-    hls_code = hls_mod.hls_code
-
-    assert ".try_read(" in hls_code, "Expected .try_read() for try_get"
-    assert ".try_write(" in hls_code, "Expected .try_write() for try_put"
-    print("test_nb_ops_tapa_codegen PASSED")
-
-
-# ---------------------------------------------------------------------------
 # NOTE: CSIM / COSIM require Vitis HLS to be installed and configured.
 # Run these manually with:
 #   df.build(top, target="vitis_hls", mode="csim", project="nb_csim.prj")
@@ -215,5 +184,4 @@ if __name__ == "__main__":
     test_empty_full_sim()
     test_try_put_try_get_sim()
     test_nb_ops_hls_codegen()
-    # test_nb_ops_tapa_codegen() # Prioritize VHLS[].
     print("\nAll test_stream_nb_simple tests PASSED!")

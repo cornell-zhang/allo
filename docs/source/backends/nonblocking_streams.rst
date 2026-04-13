@@ -98,9 +98,6 @@ All examples live in the ``tests/dataflow/`` directory on the ``feature/mesh-acc
    * - ``tests/dataflow/test_stream_ops_hls.py``
      - HLS codegen checks — verifies ``nb_write()`` / ``nb_read()`` / ``.empty()`` appear in the
        emitted Vivado HLS C++ and TAPA C++.
-   * - ``tests/dataflow/catapult_synth_decoupled_2x1.py``
-     - Catapult HLS synthesis script for the ``decoupled_2x1`` and ``arb_2to1`` designs.
-       Includes ``--mode codegen | csyn | ppa``. See :doc:`catapult`.
 
 Running the Simulator Tests
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -248,9 +245,6 @@ Non-blocking operations add only ~O(1) LUTs per stream (one comparator + branch)
 The success bit propagation is the main scheduling concern in HLS — keep it in control
 logic, not on the datapath critical path.
 
-For the full decoupled mesh on Catapult (nangate-45nm, 500 MHz) see :doc:`catapult`
-and ``CATAPULT.md`` in the project root.
-
 Files Modified (PR Scope)
 --------------------------
 
@@ -274,12 +268,10 @@ Files Modified (PR Scope)
      - Vivado HLS: emit ``write_nb`` / ``read_nb`` / ``empty`` / ``full``
    * - ``mlir/lib/Translation/EmitTapaHLS.cpp``
      - TAPA: emit ``try_write`` / ``try_read`` / ``empty``
-   * - ``mlir/lib/Translation/EmitCatapultHLS.cpp``
-     - Catapult: emit ``nb_write`` / ``nb_read`` / ``empty``
    * - ``allo/backend/simulator.py``
      - Interpret non-blocking ops; OMP flush; recursive kernel injection
    * - ``tests/dataflow/test_stream_nb_simple.py``
-     - Simulator unit tests (6 test cases)
+     - Simulator unit tests (3 test cases)
    * - ``tests/dataflow/test_decoupled_mesh.py``
      - End-to-end 1-CT and 2×1 mesh tests
    * - ``tests/dataflow/test_stream_ops_ir.py``
@@ -292,6 +284,4 @@ Files Modified (PR Scope)
 See Also
 --------
 
-- :doc:`catapult` — Catapult HLS backend overview
-- ``CATAPULT.md`` — Detailed Catapult synthesis analysis for the decoupled mesh (area/latency breakdown, error log)
 - ``docs/source/dive/dataflow.rst`` — Dataflow programming model overview

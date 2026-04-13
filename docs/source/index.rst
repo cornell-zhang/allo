@@ -61,7 +61,6 @@ Allo is an Accelerator Design Language (ADL) and compiler that facilitates the c
 
    backends/llvm.rst
    backends/vitis.rst
-   backends/catapult.rst
    backends/tapa.rst
    backends/xls.rst
    backends/simulator.rst

@@ -34,12 +34,6 @@ from .pynq import (
 from .tapa import (
     codegen_tapa_host,
 )
-from .catapult import (
-    codegen_tcl as codegen_tcl_catapult,
-    codegen_host as codegen_host_catapult,
-    parse_catapult_report,
-    parse_catapult_hierarchical_report,
-)
 from .ip import IPModule
 from .report import parse_xml
 from ..passes import (
@@ -56,44 +50,6 @@ from ..utils import (
     get_bitwidth_from_type,
     np_supported_types,
 )
-
-
-def _find_catapult_binary():
-    """Return the path to the catapult binary, searching common install locations."""
-    import shutil
-    import glob as _glob
-
-    # 1. Explicit MGC_HOME env var (highest priority)
-    mgc_home = os.environ.get("MGC_HOME", "")
-    if mgc_home:
-        candidate = os.path.join(mgc_home, "bin", "catapult")
-        if os.path.isfile(candidate):
-            return candidate
-
-    # 2. Siemens standard install path: /opt/siemens/catapult/<version>/
-    siemens_root = "/opt/siemens/catapult"
-    if os.path.isdir(siemens_root):
-        # Pick the most recent version (sort descending)
-        versions = sorted(
-            (d for d in os.listdir(siemens_root)
-             if os.path.isdir(os.path.join(siemens_root, d))),
-            reverse=True,
-        )
-        for ver in versions:
-            candidate = os.path.join(siemens_root, ver, "bin", "catapult")
-            if os.path.isfile(candidate):
-                os.environ.setdefault("MGC_HOME", os.path.join(siemens_root, ver))
-                return candidate
-
-    # 3. System PATH fallback
-    found = shutil.which("catapult")
-    if found:
-        return found
-
-    raise RuntimeError(
-        "Catapult binary not found. Set MGC_HOME to the Catapult installation "
-        "directory (e.g. MGC_HOME=/opt/siemens/catapult/2024.2) or add it to PATH."
-    )
 
 
 def is_available(backend="vivado_hls"):
@@ -239,11 +195,7 @@ class HLSModule:
         self.ext_libs = [] if ext_libs is None else ext_libs
         self.num_output_args = None  # Will be set from configs if provided
         user_configs = configs if configs is not None else {}
-        # For Catapult (ASIC), start with ASIC-appropriate defaults instead of FPGA defaults.
-        if platform == "catapult":
-            base_configs = {"device": "nangate-45nm_beh", "frequency": 500}
-        else:
-            base_configs = DEFAULT_CONFIG.copy()
+        base_configs = DEFAULT_CONFIG.copy()
         base_configs.update(user_configs)
         configs = base_configs
         self.num_output_args = configs.get("num_output_args", None)
@@ -299,8 +251,6 @@ class HLSModule:
                 success = allo_d.emit_thls(self.module, buf)
             case "intel_hls":
                 success = allo_d.emit_ihls(self.module, buf)
-            case "catapult":
-                success = allo_d.emit_catapult(self.module, buf)
             case _:
                 # wrap_io=True has already linearized array indexing in
                 # generate_input_output_buffers, so we don't need to do it again
@@ -320,13 +270,10 @@ class HLSModule:
             os.makedirs(project, exist_ok=True)
             path = os.path.dirname(__file__)
             path = os.path.join(path, "../harness/")
-            if platform in {"vivado_hls", "vitis_hls", "tapa", "pynq", "catapult"}:
+            if platform in {"vivado_hls", "vitis_hls", "tapa", "pynq"}:
                 os.system("cp " + path + f"{platform.split('_')[0]}/* " + project)
                 with open(f"{project}/run.tcl", "w", encoding="utf-8") as outfile:
-                    if platform == "catapult":
-                        outfile.write(codegen_tcl_catapult(top_func_name, configs))
-                    else:
-                        outfile.write(codegen_tcl(top_func_name, configs))
+                    outfile.write(codegen_tcl(top_func_name, configs))
             copy_ext_libs(ext_libs, project)
             if self.platform == "vitis_hls":
                 assert self.mode in {
@@ -402,43 +349,6 @@ class HLSModule:
                     self.module,
                     num_output_args=self.num_output_args,
                 )
-            elif self.platform == "catapult":
-                assert self.mode in {
-                    "csim",
-                    "csyn",
-                    "ppa",
-                }, "Invalid mode for catapult"
-
-                if self.mode == "csim":
-                    self.host_code = codegen_host_catapult(
-                        self.top_func_name,
-                        self.module,
-                    )
-                else:
-                    self.host_code = ""
-
-                # For Catapult, we don't have separate kernel.h generation logic yet
-                # similar to separate_header. The kernel.cpp contains everything needed
-                # or headers are handled differently.
-                # If we want to support csim, kernel.cpp usually needs a header
-                # referenced by host.cpp.
-                # allo/backend/catapult.py's codegen_host includes "kernel.h".
-                # So we SHOULD generate kernel.h.
-                # Re-using separate_header which is generic enough for C-style headers.
-                #
-                # However, separate_header currently only understands builtin and
-                # ap_(u)int<...> types. When Catapult emits ac_int<...> (e.g., for
-                # non-standard integer widths), separate_header can raise ValueError.
-                # Fall back to including kernel.cpp directly if that happens.
-                try:
-                    header, self.args = separate_header(
-                        self.hls_code, self.top_func_name
-                    )
-                except ValueError:
-                    header = '#pragma once\n#include "kernel.cpp"\n'
-                    self.args = []
-                with open(f"{project}/kernel.h", "w", encoding="utf-8") as outfile:
-                    outfile.write(header)
             elif self.platform == "tapa":
                 assert self.mode in {
                     "csim",
@@ -826,130 +736,4 @@ class HLSModule:
             )
             args[-1][:] = result
             return
-        if self.platform == "catapult":
-            if self.mode == "csim":
-                # Check for input arguments
-                func = find_func_in_module(self.module, self.top_func_name)
-                inputs, outputs = get_func_inputs_outputs(func)
-                assert len(args) == len(inputs) + len(
-                    outputs
-                ), f"Number of arguments mismatch, got {len(args)}, expected {len(inputs) + len(outputs)}"
-
-                # Generate kernel.h
-                # self.args might be updated by separate_header if needed, but for csim we use passed args
-                header, _ = separate_header(
-                    self.hls_code, self.top_func_name, extern_c=False
-                )
-                with open(
-                    os.path.join(self.project, "kernel.h"), "w", encoding="utf-8"
-                ) as outfile:
-                    outfile.write(header)
-
-                # Write input data
-                for i, ((in_dtype, in_shape), arg) in enumerate(
-                    zip(inputs, args[: len(inputs)])
-                ):
-                    write_tensor_to_file(arg, in_shape, f"{self.project}/input{i}.data")
-
-                # Compilation with g++
-                # Assuming 'g++' is in PATH.
-                # Include path for ac_types
-                # Resolve MGC_HOME via the same logic as synthesis mode
-                _find_catapult_binary()  # sets MGC_HOME as side-effect if found
-                mgc_home = os.environ.get("MGC_HOME", "")
-                if not mgc_home:
-                    raise RuntimeError(
-                        "Catapult not found. Set MGC_HOME or install to /opt/siemens/catapult/."
-                    )
-
-                ac_include = os.path.join(mgc_home, "shared/include")
-                if not os.path.isdir(ac_include):
-                    raise RuntimeError(
-                        f"Catapult headers not found at {ac_include}. Check MGC_HOME."
-                    )
-
-                cmd = f"cd {self.project}; g++ -std=c++11 -I{ac_include} kernel.cpp host.cpp -o sim"
-                print(
-                    f"[{time.strftime('%H:%M:%S', time.gmtime())}] Compiling with g++ ..."
-                )
-                if shell:
-                    process = subprocess.Popen(cmd, shell=True)
-                else:
-                    process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
-                process.wait()
-                if process.returncode != 0:
-                    raise RuntimeError(
-                        "Failed to compile with g++. Check if g++ is installed and ac_types headers are correct."
-                    )
-
-                # Execution
-                cmd = f"cd {self.project}; ./sim"
-                print(
-                    f"[{time.strftime('%H:%M:%S', time.gmtime())}] Running simulation ..."
-                )
-                if shell:
-                    process = subprocess.Popen(cmd, shell=True)
-                else:
-                    process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
-                process.wait()
-                if process.returncode != 0:
-                    raise RuntimeError("Simulation failed.")
-
-                # Read outputs
-                for i, ((out_dtype, out_shape), out_arg) in enumerate(
-                    zip(outputs, args[len(inputs) :])
-                ):
-                    if not os.path.exists(f"{self.project}/output{i}.data"):
-                        raise RuntimeError(
-                            f"Output file output{i}.data not found. Simulation might have failed."
-                        )
-                    result = read_tensor_from_file(
-                        out_dtype, out_shape, f"{self.project}/output{i}.data"
-                    )
-                    out_arg[:] = result
-                return
-
-            if self.mode in {"csyn", "ppa"}:
-                catapult_cmd = _find_catapult_binary()
-
-                cmd = f"cd {self.project}; {catapult_cmd} -shell -f run.tcl"
-                assert len(args) == 0, f"{self.mode} mode does not need to pass in arguments"
-                print(
-                    f"[{time.strftime('%H:%M:%S', time.gmtime())}] Begin synthesizing project with Catapult HLS ({self.mode} mode)..."
-                )
-                if shell:
-                    process = subprocess.Popen(cmd, shell=True)
-                else:
-                    process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
-                process.wait()
-                if process.returncode != 0:
-                    raise RuntimeError(
-                        f"Failed to synthesize the design with Catapult HLS in {self.mode} mode"
-                    )
-                print(
-                    f"[{time.strftime('%H:%M:%S', time.gmtime())}] Catapult HLS synthesis completed successfully"
-                )
-
-                if self.mode == "ppa":
-                    print(
-                        f"[{time.strftime('%H:%M:%S', time.gmtime())}] Extracting PPA metrics..."
-                    )
-                    stats = parse_catapult_report(self.project, self.top_func_name)
-                    print("| Metric              | Value                |")
-                    print("|---------------------|----------------------|")
-                    for k, v in stats.items():
-                        print(f"| {k:<20} | {v:<20} |")
-
-                    # Hierarchical breakdown: per-PE and interconnect
-                    hier = parse_catapult_hierarchical_report(
-                        self.project, self.top_func_name
-                    )
-                    print()
-                    print(hier["summary"])
-                    stats["hierarchical"] = hier
-                    return stats
-                return
-            raise RuntimeError(
-                f"Catapult backend currently only supports 'csyn', 'csim', and 'ppa' mode, got '{self.mode}'"
-            )
         raise RuntimeError("Not implemented")

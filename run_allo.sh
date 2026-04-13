@@ -7,6 +7,7 @@
 #   ./run_allo.sh python -m pytest tests/dataflow/test_decoupled_mesh.py -v
 
 CONDA_ENV_LIB="/work/shared/users/phd/sk3463/envs/miniconda3/envs/allo/lib"
-export LD_LIBRARY_PATH="${CONDA_ENV_LIB}:${LD_LIBRARY_PATH}"
+MLIR_BUILD_LIB="/work/shared/users/phd/sk3463/projects/allo/mlir/build/tools/allo/_mlir"
+export LD_LIBRARY_PATH="${MLIR_BUILD_LIB}:${CONDA_ENV_LIB}:${LD_LIBRARY_PATH}"
 
 exec conda run -n allo "$@"
