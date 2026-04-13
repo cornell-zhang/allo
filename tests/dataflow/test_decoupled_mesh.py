@@ -1,7 +1,7 @@
 from __future__ import annotations
 import pytest
 import allo
-from allo.ir.types import int32, float32, int1, Stream, stateful
+from allo.ir.types import int32, float32, int1, Stream, Stateful
 import numpy as np
 import allo.dataflow as df
 
@@ -75,7 +75,7 @@ def top_message_passing(
 
     @df.kernel(mapping=[1])
     def compute_tile():
-        data_mem: float32[256] @ stateful = 0.0
+        data_mem: float32[256] @ Stateful = 0.0
         
         running: int1 = 1
         req_count: int32 = 0
@@ -216,7 +216,7 @@ def top_decoupled_2x1(
     def compute_tile_2x1():
         """Each CT instance handles one req_valid/grant_ready/data channel."""
         id = df.get_pid()   # 0 or 1 — resolved at compile time per instance
-        spad: float32[BURST_SIZE] @ stateful = 0.0
+        spad: float32[BURST_SIZE] @ Stateful = 0.0
 
         req_count: int32 = 0
         while req_count < 3:   # Expects: WRITE, COMPUTE, READ

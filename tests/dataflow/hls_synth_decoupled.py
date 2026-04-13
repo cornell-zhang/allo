@@ -12,7 +12,7 @@ import xml.etree.ElementTree as ET
 import numpy as np
 import allo
 import allo.dataflow as df
-from allo.ir.types import int32, float32, int1, Stream, stateful
+from allo.ir.types import int32, float32, int1, Stream, Stateful
 from allo.backend import hls
 
 BURST_SIZE = 16
@@ -89,7 +89,7 @@ def top_message_passing(
 
     @df.kernel(mapping=[1])
     def compute_tile():
-        data_mem: float32[256] @ stateful = 0.0
+        data_mem: float32[256] @ Stateful = 0.0
 
         running: int1 = 1
         req_count: int32 = 0
@@ -208,7 +208,7 @@ def top_decoupled_2x1(
     @df.kernel(mapping=[N_CTS])
     def compute_tile_2x1():
         id = df.get_pid()
-        spad: float32[BURST_SIZE] @ stateful = 0.0
+        spad: float32[BURST_SIZE] @ Stateful = 0.0
 
         req_count: int32 = 0
         while req_count < 3:

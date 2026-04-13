@@ -101,12 +101,6 @@ class Stateful:
     """
 
 
-# Backward-compatibility alias: old API used lowercase `stateful` as a function/marker.
-# After the SPMW upstream merge (#555), the API changed to the class `Stateful`.
-# Keep `stateful = Stateful` so existing code using `@ stateful` continues to work.
-stateful = Stateful
-
-
 class Index(AlloType):
     """
     An array index.

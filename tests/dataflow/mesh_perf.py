@@ -26,7 +26,7 @@ import subprocess
 import xml.etree.ElementTree as ET
 import numpy as np
 import allo.dataflow as df
-from allo.ir.types import int32, float32, int1, Stream, stateful
+from allo.ir.types import int32, float32, int1, Stream, Stateful
 
 # ─── Design imports (reuse from test_decoupled_mesh) ─────────────────────────
 
@@ -96,7 +96,7 @@ def top_decoupled_2x1(
     @df.kernel(mapping=[N_CTS])
     def compute_tile_2x1():
         id = df.get_pid()
-        spad: float32[BURST_SIZE] @ stateful = 0.0
+        spad: float32[BURST_SIZE] @ Stateful = 0.0
         req_count: int32 = 0
         while req_count < 3:
             has_req: int1 = 0

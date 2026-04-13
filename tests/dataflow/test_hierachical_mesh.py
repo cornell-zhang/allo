@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import allo
-from allo.ir.types import int32, float32, Stream, stateful
+from allo.ir.types import int32, float32, Stream, Stateful
 import allo.dataflow as df
 import numpy as np
 
@@ -139,12 +139,12 @@ def top_2x1(
         size_in: int32[1],
         outval_in: float32[BW]
     ):
-        mt_spad_2x1: float32[MEM_SIZE] @ stateful = 0.0
-        temp_in_2x1: float32[2, BW] @ stateful = 0.0
-        temp_out_2x1: float32[2, BW] @ stateful = 0.0
-        ct_ctrl_2x1: int32[2] @ stateful = 0
-        ct_daddr_2x1: int32[2] @ stateful = 0
-        ct_size_2x1: int32[2] @ stateful = 0
+        mt_spad_2x1: float32[MEM_SIZE] @ Stateful = 0.0
+        temp_in_2x1: float32[2, BW] @ Stateful = 0.0
+        temp_out_2x1: float32[2, BW] @ Stateful = 0.0
+        ct_ctrl_2x1: int32[2] @ Stateful = 0
+        ct_daddr_2x1: int32[2] @ Stateful = 0
+        ct_size_2x1: int32[2] @ Stateful = 0
 
         for t in range(2):
             ct_ctrl_2x1[t] = CTRL_CT_NOP
@@ -228,16 +228,16 @@ def top_2x1(
     @df.kernel(mapping=[2])
     def ct_2x1():
         id = df.get_pid()
-        imem: int32[IMEM_SIZE * 4] @ stateful = 0
-        data_mem: float32[MEM_SIZE] @ stateful = 0.0
-        A_buf: float32[M * K] @ stateful = 0.0
-        B_buf: float32[K * N] @ stateful = 0.0
-        C_buf: float32[M * N] @ stateful = 0.0
-        result: float32[BW] @ stateful = 0.0
-        ctrl_p: int32[1] @ stateful = 0
-        daddr_p: int32[1] @ stateful = 0
-        size_p: int32[1] @ stateful = 0
-        indata: float32[BW] @ stateful = 0.0
+        imem: int32[IMEM_SIZE * 4] @ Stateful = 0
+        data_mem: float32[MEM_SIZE] @ Stateful = 0.0
+        A_buf: float32[M * K] @ Stateful = 0.0
+        B_buf: float32[K * N] @ Stateful = 0.0
+        C_buf: float32[M * N] @ Stateful = 0.0
+        result: float32[BW] @ Stateful = 0.0
+        ctrl_p: int32[1] @ Stateful = 0
+        daddr_p: int32[1] @ Stateful = 0
+        size_p: int32[1] @ Stateful = 0
+        indata: float32[BW] @ Stateful = 0.0
 
         # Receive fixed command packet from memory tile
         ctrl_p[0] = cmd_ctrl_2x1[id].get()
@@ -351,20 +351,20 @@ def top_2x2(
         size_in: int32[1],
         outval_in: float32[BW]
     ):
-        mt_spad_r0: float32[MEM_SIZE] @ stateful = 0.0
-        temp_in_2x2_0: float32[2, BW] @ stateful = 0.0
-        temp_out_2x2_0: float32[2, BW] @ stateful = 0.0
-        temp_fwd_in_0: float32[BW] @ stateful = 0.0
-        temp_fwd_out_0: float32[BW] @ stateful = 0.0
+        mt_spad_r0: float32[MEM_SIZE] @ Stateful = 0.0
+        temp_in_2x2_0: float32[2, BW] @ Stateful = 0.0
+        temp_out_2x2_0: float32[2, BW] @ Stateful = 0.0
+        temp_fwd_in_0: float32[BW] @ Stateful = 0.0
+        temp_fwd_out_0: float32[BW] @ Stateful = 0.0
 
-        ct_ctrl_2x2_0: int32[2] @ stateful = 0
-        ct_daddr_2x2_0: int32[2] @ stateful = 0
-        ct_size_2x2_0: int32[2] @ stateful = 0
+        ct_ctrl_2x2_0: int32[2] @ Stateful = 0
+        ct_daddr_2x2_0: int32[2] @ Stateful = 0
+        ct_size_2x2_0: int32[2] @ Stateful = 0
 
-        mt1_ctrl_2x2_0: int32[1] @ stateful = 0
-        mt1_tile_id_2x2_0: int32[1] @ stateful = 0
-        mt1_daddr_2x2_0: int32[1] @ stateful = 0
-        mt1_size_2x2_0: int32[1] @ stateful = 0
+        mt1_ctrl_2x2_0: int32[1] @ Stateful = 0
+        mt1_tile_id_2x2_0: int32[1] @ Stateful = 0
+        mt1_daddr_2x2_0: int32[1] @ Stateful = 0
+        mt1_size_2x2_0: int32[1] @ Stateful = 0
 
         for t in range(2):
             ct_ctrl_2x2_0[t] = CTRL_CT_NOP
@@ -477,20 +477,20 @@ def top_2x2(
 
     @df.kernel(mapping=[1])
     def mt_2x2_1():
-        mt_spad_r1: float32[MEM_SIZE] @ stateful = 0.0
-        temp_in_2x2_1: float32[2, BW] @ stateful = 0.0
-        temp_out_2x2_1: float32[2, BW] @ stateful = 0.0
-        temp_fwd_in_1: float32[BW] @ stateful = 0.0
-        temp_fwd_out_1: float32[BW] @ stateful = 0.0
+        mt_spad_r1: float32[MEM_SIZE] @ Stateful = 0.0
+        temp_in_2x2_1: float32[2, BW] @ Stateful = 0.0
+        temp_out_2x2_1: float32[2, BW] @ Stateful = 0.0
+        temp_fwd_in_1: float32[BW] @ Stateful = 0.0
+        temp_fwd_out_1: float32[BW] @ Stateful = 0.0
 
-        ct_ctrl_2x2_1: int32[2] @ stateful = 0
-        ct_daddr_2x2_1: int32[2] @ stateful = 0
-        ct_size_2x2_1: int32[2] @ stateful = 0
+        ct_ctrl_2x2_1: int32[2] @ Stateful = 0
+        ct_daddr_2x2_1: int32[2] @ Stateful = 0
+        ct_size_2x2_1: int32[2] @ Stateful = 0
 
-        mt1_ctrl_2x2_1: int32[1] @ stateful = 0
-        mt1_tile_id_2x2_1: int32[1] @ stateful = 0
-        mt1_daddr_2x2_1: int32[1] @ stateful = 0
-        mt1_size_2x2_1: int32[1] @ stateful = 0
+        mt1_ctrl_2x2_1: int32[1] @ Stateful = 0
+        mt1_tile_id_2x2_1: int32[1] @ Stateful = 0
+        mt1_daddr_2x2_1: int32[1] @ Stateful = 0
+        mt1_size_2x2_1: int32[1] @ Stateful = 0
         
         for t in range(2):
             ct_ctrl_2x2_1[t] = CTRL_CT_NOP
@@ -590,16 +590,16 @@ def top_2x2(
     @df.kernel(mapping=[2, 2])
     def ct_2x2():
         r, c = df.get_pid()
-        imem: int32[IMEM_SIZE * 4] @ stateful = 0
-        data_mem: float32[MEM_SIZE] @ stateful = 0.0
-        A_buf: float32[M * K] @ stateful = 0.0
-        B_buf: float32[K * N] @ stateful = 0.0
-        C_buf: float32[M * N] @ stateful = 0.0
-        result: float32[BW] @ stateful = 0.0
-        ctrl_p: int32[1] @ stateful = 0
-        daddr_p: int32[1] @ stateful = 0
-        size_p: int32[1] @ stateful = 0
-        indata: float32[BW] @ stateful = 0.0
+        imem: int32[IMEM_SIZE * 4] @ Stateful = 0
+        data_mem: float32[MEM_SIZE] @ Stateful = 0.0
+        A_buf: float32[M * K] @ Stateful = 0.0
+        B_buf: float32[K * N] @ Stateful = 0.0
+        C_buf: float32[M * N] @ Stateful = 0.0
+        result: float32[BW] @ Stateful = 0.0
+        ctrl_p: int32[1] @ Stateful = 0
+        daddr_p: int32[1] @ Stateful = 0
+        size_p: int32[1] @ Stateful = 0
+        indata: float32[BW] @ Stateful = 0.0
 
         ctrl_p[0] = cmd_ctrl_2x2[r, c].get()
         daddr_p[0] = cmd_daddr_2x2[r, c].get()
