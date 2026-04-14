@@ -19,6 +19,8 @@ from .._mlir.ir import (
     RankedTensorType,
     ShapedType,
     IntegerType,
+    F16Type,
+    BF16Type,
     F32Type,
     F64Type,
     UnitAttr,
@@ -3118,7 +3120,7 @@ class ASTTransformer(ASTBuilder):
                     if hasattr(arg, "result") and hasattr(arg.result, "type"):
                         arg_types.append(arg.result.type)
             if all(
-                isinstance(arg_type, (F32Type, F64Type, IntegerType))
+                isinstance(arg_type, (F16Type, BF16Type, F32Type, F64Type, IntegerType))
                 for arg_type in arg_types
             ):
                 opcls = {
