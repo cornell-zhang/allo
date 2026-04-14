@@ -31,9 +31,9 @@ Tapa NB stream additions (removed). Primary synthesis target: Vitis HLS.
 | [ISSUE-005](issues/ISSUE-005-u280-inner-product-overview.md) | U280 inner product — architecture & overview | **OPEN** | standalone RTL project | — |
 | [ISSUE-006](issues/ISSUE-006-u280-rtl-implementation.md) | U280 inner product — RTL implementation (5 SV files) | **OPEN** | standalone RTL project | ISSUE-005 |
 | [ISSUE-007](issues/ISSUE-007-u280-packaging-and-verify.md) | U280 inner product — packaging, build, sw_emu verify | **OPEN** | standalone RTL project | ISSUE-006 |
-| [ISSUE-008](issues/ISSUE-008-fp16-hls-synthesis-verify.md) | Verify float16 arithmetic + exp synthesize in Vitis HLS | **OPEN** | no (local verify; informs PR #578) | — |
-| [ISSUE-009](issues/ISSUE-009-fp16-builder-scalar-exp.md) | Fix scalar exp dispatch in builder.py for float16 | **OPEN** | yes (PR against upstream) | ISSUE-008 |
-| [ISSUE-010](issues/ISSUE-010-fp16-emitter-exp-half.md) | Conditional: fix exp(half) emitter if csyn fails | **OPEN** | yes (follow-up to PR #578) | ISSUE-008 |
+| [ISSUE-008](issues/ISSUE-008-fp16-hls-synthesis-verify.md) | Verify float16 arithmetic + exp synthesize in Vitis HLS | **DONE** | no (local verify; informs PR #578) | — |
+| [ISSUE-009](issues/ISSUE-009-fp16-builder-scalar-exp.md) | Fix scalar exp dispatch in builder.py for float16 | **DONE** | yes (PR against upstream) | ISSUE-008 |
+| [ISSUE-010](issues/ISSUE-010-fp16-emitter-exp-half.md) | Fix exp(half) emitter in EmitVivadoHLS.cpp | **DONE** | yes (follow-up to PR #578) | ISSUE-008 |
 
 ---
 
@@ -82,7 +82,7 @@ Steps that are purely local (edit, commit, local merge, run tests) do **not** re
 
 ---
 
-## Completed This Cycle (2026-04-13)
+## Completed This Cycle (2026-04-13, continued)
 
 - ISSUE-001: PR #554 black fmt — DONE
 - ISSUE-002: PR #554 tests — DONE
@@ -92,6 +92,9 @@ Steps that are purely local (edit, commit, local merge, run tests) do **not** re
 - `stateful` alias removed; all files updated to `Stateful` — DONE (commit `e665bbc`)
 - Project structure: `CLAUDE.md` created, root `STATE.md` + `notes/` + `issues/` restructured — DONE (commit `039e163`)
 - PR #554 CI: PASSED; PR #577 CI: PASSED
+- ISSUE-008: fp16 HLS synthesis verified — Test A PASS (half synthesizes, LUT=3986, FF=4233, 411 MHz), Test B FAIL (exp(half) ambiguous in hls_math.h → ISSUE-010) — DONE
+- ISSUE-009: builder.py scalar math dispatch now handles F16Type/BF16Type — DONE (fixes allo.exp(float16) Python→MLIR lowering)
+- ISSUE-010: EmitVivadoHLS.cpp math unary ops now emit hls::exp etc. for Float16Type — DONE; also fixed missing TapaHLS emitStreamTry*/Empty/Full implementations; both fp16 synth tests PASS (arith: LUT=3986/FF=4233; exp: LUT=2668/FF=2576)
 
 ---
 

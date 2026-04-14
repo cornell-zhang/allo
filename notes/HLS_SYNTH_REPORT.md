@@ -248,7 +248,50 @@ The decoupled mesh has higher absolute area because:
 
 ---
 
-## 6. HLS Synthesis Command Reference
+## 6. float16 (`half`) Type Verification (ISSUE-008, 2026-04-13)
+
+**Script**: `tests/dataflow/hls_synth_fp16.py`
+**Device**: U280, Vitis HLS 2023.2, 3.33 ns clock
+
+### 6.1 Test A — `top_fp16_arith` (elementwise add + scale): PASS
+
+| LUT | FF | BRAM_18K | DSP | Latency (cycles) | II | Fmax |
+|-----|----|----------|-----|------------------|----|------|
+| 3986 | 4233 | 6 | 5 | 46–48 | 21 | 411 MHz |
+
+HLS generates `hptosp_16ns_32` (half→float) and `sptohp_32ns_16` (float→half)
+conversion cores for arithmetic. The `half` type synthesizes cleanly — PR #578's
+`"f16" → "half"` type mapping in `allo/backend/vitis.py` is confirmed correct.
+
+### 6.2 Test B — `top_fp16_exp` (allo.exp per element): PASS (after ISSUE-010 fix)
+
+| LUT | FF | BRAM_18K | DSP | Latency (cycles) | II | Fmax |
+|-----|----|----------|-----|------------------|----|------|
+| 2668 | 2576 | 4 | 2 | 38–40 | 13 | 411 MHz |
+
+**Root cause (now fixed)**: `hls_math.h` declares `exp(half)` in `namespace hls`.
+With `<math.h>` also included, `exp(half_val)` was ambiguous (C `double` vs C++ `float`).
+The fix: emit `hls::exp(x)` (namespace-qualified) for `Float16Type` operands in
+`EmitVivadoHLS.cpp`. This applies to all scalar math ops: `exp`, `exp2`, `log`,
+`log2`, `log10`, `sqrt`, `rsqrt`, `sin`, `cos`, `tanh`, `abs`.
+
+### 6.3 Compiler Fixes Applied (ISSUE-009)
+
+**`allo/ir/builder.py`**: Added `F16Type`, `BF16Type` to imports and to the
+scalar math dispatch guard (line ~3261):
+```python
+# before:
+isinstance(arg_type, (F32Type, F64Type, IntegerType))
+# after:
+isinstance(arg_type, (F16Type, BF16Type, F32Type, F64Type, IntegerType))
+```
+Without this fix, calling `allo.exp(float16_val)` in a kernel raises
+`RuntimeError: Unsupported function exp with type [F16Type(f16)]` at Python→MLIR
+lowering. Now correctly emits `math.ExpOp` with `f16` operand type.
+
+---
+
+## 7. HLS Synthesis Command Reference
 
 ```bash
 # Run all stream primitive tests

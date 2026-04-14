@@ -1,6 +1,6 @@
 # ISSUE-008: Verify float16 arithmetic synthesizes in Vitis HLS
 
-**Status**: OPEN
+**Status**: DONE
 **Priority**: High — unblocks ISSUE-009 and ISSUE-010
 **Upstream**: No (local verification; results inform PR #578 description update)
 
@@ -37,10 +37,38 @@ Follow the exact pattern of `tests/dataflow/hls_synth_streams.py`:
 
 ## Acceptance Criteria
 
-- [ ] Script runs without Python errors
-- [ ] Test A csyn completes without HLS errors (confirms `half` is synthesizable)
-- [ ] Test B csyn outcome documented (pass → note; fail → triggers ISSUE-010)
-- [ ] PR #578 description updated with actual verified status
+- [x] Script runs without Python errors
+- [x] Test A csyn completes without HLS errors (confirms `half` is synthesizable)
+- [x] Test B csyn outcome documented (pass → note; fail → triggers ISSUE-010)
+- [ ] PR #578 description updated with actual verified status (pending upstream PR)
+
+## Results (2026-04-13, Vitis HLS 2023.2, U280, 411 MHz)
+
+**Test A — `top_fp16_arith` (add + scale): PASS**
+
+| LUT | FF | BRAM_18K | DSP | Latency (cycles) | II | Fmax |
+|-----|----|----------|-----|------------------|----|------|
+| 3986 | 4233 | 6 | 5 | 46–48 | 21 | 411 MHz |
+
+HLS generates `hptosp`/`sptohp` half↔float conversion cores for arithmetic.
+The `half` type synthesizes correctly — PR #578's `"f16" → "half"` mapping is verified.
+
+**Fixes applied during verification:**
+1. `allo/ir/builder.py`: Added `F16Type`, `BF16Type` to imports and the scalar
+   `math_d.*` dispatch type guard (line ~3261). Without this, `allo.exp(float16_val)`
+   raised `AttributeError: 'Float' object has no attribute '__name__'` at the
+   Python→MLIR lowering stage.
+
+**Test B — `top_fp16_exp` (allo.exp per element): PASS** (after ISSUE-010 fix)
+
+| LUT | FF | BRAM_18K | DSP | Latency (cycles) | II |
+|-----|----|----------|-----|------------------|----|
+| 2668 | 2576 | 4 | 2 | 38–40 | 13 |
+
+Initial run failed with `[HLS 207-3320] call to 'exp' is ambiguous`. Fixed in
+ISSUE-010 by emitting `hls::exp(x)` instead of `exp(x)` for `Float16Type` operands
+in `EmitVivadoHLS.cpp`. `hls_math.h` provides `exp(half)` in `namespace hls`;
+qualification resolves the ambiguity.
 
 ---
 
