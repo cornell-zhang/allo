@@ -1,3 +1,6 @@
+<!--- Copyright Allo authors. All Rights Reserved. -->
+<!--- SPDX-License-Identifier: Apache-2.0  -->
+
 # ISSUE-010: Conditional emitter fix for exp(half) in Vitis HLS
 
 **Status**: DONE

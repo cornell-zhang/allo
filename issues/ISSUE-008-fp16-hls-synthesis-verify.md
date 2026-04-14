@@ -1,3 +1,6 @@
+<!--- Copyright Allo authors. All Rights Reserved. -->
+<!--- SPDX-License-Identifier: Apache-2.0  -->
+
 # ISSUE-008: Verify float16 arithmetic synthesizes in Vitis HLS
 
 **Status**: DONE

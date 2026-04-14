@@ -1,3 +1,6 @@
+<!--- Copyright Allo authors. All Rights Reserved. -->
+<!--- SPDX-License-Identifier: Apache-2.0  -->
+
 # Dataflow Simulation Semantics: Allo vs HLS CSIM
 
 This document clarifies the execution semantics of the three simulation/verification

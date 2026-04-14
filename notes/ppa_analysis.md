@@ -1,3 +1,6 @@
+<!--- Copyright Allo authors. All Rights Reserved. -->
+<!--- SPDX-License-Identifier: Apache-2.0  -->
+
 # Catapult HLS PPA Analysis Flow
 
 This document describes how to perform Power, Performance, and Area (PPA) analysis using the Catapult HLS backend in Allo, and how to further lower the design to ASIC using OpenROAD.
