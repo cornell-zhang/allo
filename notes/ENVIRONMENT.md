@@ -1,6 +1,3 @@
-<!--- Copyright Allo authors. All Rights Reserved. -->
-<!--- SPDX-License-Identifier: Apache-2.0  -->
-
 # Environment Setup — Per-Server, Per-Use-Case
 
 ## Server Inventory

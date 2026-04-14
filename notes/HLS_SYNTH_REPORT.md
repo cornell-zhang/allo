@@ -1,6 +1,3 @@
-<!--- Copyright Allo authors. All Rights Reserved. -->
-<!--- SPDX-License-Identifier: Apache-2.0  -->
-
 # HLS Synthesis Report: Non-Blocking Stream Interconnect & Decoupled Mesh
 
 **Device**: Xilinx U280 (xcu280-fsvh2892-2L-e)

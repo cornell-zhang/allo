@@ -1,6 +1,3 @@
-<!--- Copyright Allo authors. All Rights Reserved. -->
-<!--- SPDX-License-Identifier: Apache-2.0  -->
-
 # ISSUE-005: U280 Inner Product RTL Kernel — Overview & Architecture
 
 ## Status: MOVED

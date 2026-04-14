@@ -1,6 +1,3 @@
-<!--- Copyright Allo authors. All Rights Reserved. -->
-<!--- SPDX-License-Identifier: Apache-2.0  -->
-
 # float16 Support in Vitis HLS Backend
 
 ## Summary

@@ -1,6 +1,3 @@
-<!--- Copyright Allo authors. All Rights Reserved. -->
-<!--- SPDX-License-Identifier: Apache-2.0  -->
-
 # ISSUE-004: Merge upstream SPMW commit into feature/mesh-accelerator
 
 ## Status: DONE

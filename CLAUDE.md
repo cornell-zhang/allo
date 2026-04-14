@@ -1,6 +1,3 @@
-<!--- Copyright Allo authors. All Rights Reserved. -->
-<!--- SPDX-License-Identifier: Apache-2.0  -->
-
 ## This fork's project management conventions
 
 This fork (`sunwookim028/allo`, branch `feature/mesh-accelerator`) extends upstream Allo with

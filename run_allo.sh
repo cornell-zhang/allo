@@ -1,7 +1,4 @@
 #!/bin/bash
-# Copyright Allo authors. All Rights Reserved.
-# SPDX-License-Identifier: Apache-2.0
-
 # Wrapper for conda run -n allo that sets the required LD_LIBRARY_PATH
 # for libstdc++ compatibility on RHEL 8 (zhang-21).
 #

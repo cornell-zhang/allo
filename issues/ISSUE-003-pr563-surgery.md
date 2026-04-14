@@ -1,6 +1,3 @@
-<!--- Copyright Allo authors. All Rights Reserved. -->
-<!--- SPDX-License-Identifier: Apache-2.0  -->
-
 # ISSUE-003: Create focused PR for hierarchical dataflow fixes (#561 / #565)
 
 ## Status: NEEDS-REVIEW (PR #577 open, CI PASSED — awaiting maintainer review/merge)

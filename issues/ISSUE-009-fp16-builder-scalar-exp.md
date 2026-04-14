@@ -1,6 +1,3 @@
-<!--- Copyright Allo authors. All Rights Reserved. -->
-<!--- SPDX-License-Identifier: Apache-2.0  -->
-
 # ISSUE-009: Fix scalar exp dispatch in builder.py for float16
 
 **Status**: DONE

@@ -1,6 +1,3 @@
-<!--- Copyright Allo authors. All Rights Reserved. -->
-<!--- SPDX-License-Identifier: Apache-2.0  -->
-
 # ISSUE-001: Fix black formatting on PR #554 branch
 
 ## Status: TODO

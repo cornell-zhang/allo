@@ -1,6 +1,3 @@
-<!--- Copyright Allo authors. All Rights Reserved. -->
-<!--- SPDX-License-Identifier: Apache-2.0  -->
-
 # Allo Compiler Changes
 
 The following changes were applied to the `allo` compiler codebase to fix bugs discovered during the implementation of the `test_mesh_accelerator.py` dataflow region.

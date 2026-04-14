@@ -45,9 +45,14 @@ def main():
     assert proc.returncode == 0, f'{" ".join(cmd)} errored: {out}'
     res = out.decode("utf-8")
 
+    # Fork-local project-management paths — never need upstream license headers.
+    _LOCAL_PREFIXES = ("issues/", "notes/", "STATE.md", "CLAUDE.md", "run_allo.sh")
+
     error_list = []
     for fname in res.split():
         if fname.startswith(".github/ISSUE_TEMPLATE") or fname == "AGENTS.md":
+            continue
+        if any(fname == p or fname.startswith(p) for p in _LOCAL_PREFIXES):
             continue
         if not check_license(fname):
             error_list.append(fname)
