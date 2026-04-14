@@ -53,6 +53,7 @@ dtype_size_map = {
 
 ctype_map = {
     "bf16": "std::bfloat16_t",
+    "f16": "half",  # NEW
     "f32": "float",
     "f64": "double",
     "i8": "int8_t",
