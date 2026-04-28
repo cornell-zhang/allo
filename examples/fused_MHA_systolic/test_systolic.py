@@ -60,7 +60,6 @@ def run_test_with_params(BATCH_SIZE, CONTEXT_LENGTH, HIDDEN_SIZE, NUM_HEADS, BLO
         BLOCK_T=BLOCK_T,
     )
 
-
     if hls.is_available("vitis_hls"):
         with tempfile.TemporaryDirectory() as tmpdir:
             print("Running Software Simulator for numerical correctness...")
