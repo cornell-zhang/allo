@@ -59,10 +59,10 @@ def run_test_with_params(BATCH_SIZE, CONTEXT_LENGTH, HIDDEN_SIZE, NUM_HEADS, BLO
         NUM_HEADS=NUM_HEADS,
         BLOCK_T=BLOCK_T,
     )
-    with tempfile.TemporaryDirectory() as sim_dir:
-        print("Running Software Simulator for numerical correctness...")
-        sim_mod = df.build(s, project=sim_dir)
-        sim_mod(A, B_out)
+
+    print("Running Software Simulator for numerical correctness...")
+    sim_mod = df.build(s)
+    sim_mod(A, B_out)
 
     try:
         np.testing.assert_allclose(B_out, B_golden, rtol=0.05, atol=1e-2)
