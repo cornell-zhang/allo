@@ -9,7 +9,6 @@ import allo.dataflow as df
 import allo.backend.hls as hls
 import numpy as np
 
-
 M, N, K = 16, 16, 16
 P0 = K + 2
 

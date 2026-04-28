@@ -9,9 +9,9 @@ from ..ir.types import int8
 from ..ir.utils import MockBuffer
 
 
-def pe_kernel[
-    L, D, P
-](x_in: "int8[P, D//P*L]", y_in: "int8[P, D//P*L]", o: "int8[P, D//P]", p: "index"):
+def pe_kernel[L, D, P](
+    x_in: "int8[P, D//P*L]", y_in: "int8[P, D//P*L]", o: "int8[P, D//P]", p: "index"
+):
     # """Finds the dot product of D//P vectors within given column of inputs."""
     for d in dsl.grid(D // P, name="l_loop"):
         total: int8 = 0
@@ -20,9 +20,11 @@ def pe_kernel[
         o[p, d] = total
 
 
-def int8xint8_mat_vec[
-    L, D, P
-](x_in: "Int(8 * P)[D // P, L]", y_in: "int8[L]", out: "int8[D]",):
+def int8xint8_mat_vec[L, D, P](
+    x_in: "Int(8 * P)[D // P, L]",
+    y_in: "int8[L]",
+    out: "int8[D]",
+):
     # """Gets the matrix vector multiply result."""
     x: int8[P, D // P * L]
     y_buff: int8[L]

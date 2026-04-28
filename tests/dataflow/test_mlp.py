@@ -10,7 +10,6 @@ import allo.dataflow as df
 import allo.backend.hls as hls
 import numpy as np
 
-
 Ty = float32
 BS = 2
 M0, M1, M2 = 256, 128, 64

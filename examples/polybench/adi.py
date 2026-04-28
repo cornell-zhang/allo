@@ -70,9 +70,9 @@ e = 0.0
 f = 0.0
 
 
-def kernel_adi[
-    T: (float32, int32), TSTEPS: int32, N: int32
-](u: "T[N, N]", v: "T[N, N]", p: "T[N, N]", q: "T[N, N]"):
+def kernel_adi[T: (float32, int32), TSTEPS: int32, N: int32](
+    u: "T[N, N]", v: "T[N, N]", p: "T[N, N]", q: "T[N, N]"
+):
     for t in range(1, TSTEPS + 1):
         for i in range(1, N - 1):
             v[0, i] = 1.0

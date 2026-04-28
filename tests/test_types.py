@@ -528,7 +528,9 @@ def test_polymorphism():
         M: int32,
         N: int32,
         K: int32,
-    ](A: "T[M, K]", B: "T[K, N]") -> "T[M, N]":
+    ](
+        A: "T[M, K]", B: "T[K, N]"
+    ) -> "T[M, N]":
         C: T[M, N] = 0
         for i, j, k in allo.grid(M, N, K):
             C[i, j] += A[i, k] * B[k, j]
@@ -561,7 +563,9 @@ def test_multiple_poly_types():
         ),
         M: int32,
         N: int32,
-    ](A: "T0[M, N]", B: "T1[M, N]") -> "T2[M, N]":
+    ](
+        A: "T0[M, N]", B: "T1[M, N]"
+    ) -> "T2[M, N]":
         C: T2[M, N] = 0
         for i in range(M):
             for j in range(N):

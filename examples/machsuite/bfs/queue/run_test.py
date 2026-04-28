@@ -103,8 +103,8 @@ def test_bfs_queue(psize="small"):
     np_B = np.array(edges_list, np.int32)
     np_C = generated_data["starting_node"]
 
-    (D, F) = mod(np_A, np_B, np_C)
-    (golden_D, golden_F) = bfs_queue_ref(np_A, np_B, np_C)
+    D, F = mod(np_A, np_B, np_C)
+    golden_D, golden_F = bfs_queue_ref(np_A, np_B, np_C)
 
     np.testing.assert_allclose(D, golden_D, rtol=1e-5, atol=1e-5)
     np.testing.assert_allclose(F, golden_F, rtol=1e-5, atol=1e-5)

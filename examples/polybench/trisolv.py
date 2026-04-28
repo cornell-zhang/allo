@@ -20,9 +20,9 @@ def trisolv_np(L, x, b):
     return x
 
 
-def kernel_trisolv[
-    T: (float32, int32), N: int32
-](L: float32[N, N], b: float32[N], x: float32[N]):
+def kernel_trisolv[T: (float32, int32), N: int32](
+    L: float32[N, N], b: float32[N], x: float32[N]
+):
     for i in range(N):
         x[i] = b[i]
         for j in range(i):

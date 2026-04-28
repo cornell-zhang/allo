@@ -21,18 +21,21 @@ def symm_np(A, B, C, alpha, beta, M, N):
     return C
 
 
-def compute_sum[
-    T: (float32, int32), M: int32, N: int32
-](A: "T[M, M]", B: "T[M, N]", summ: "T[M, N]"):
+def compute_sum[T: (float32, int32), M: int32, N: int32](
+    A: "T[M, M]", B: "T[M, N]", summ: "T[M, N]"
+):
     for i1, j1 in allo.grid(M, N, name="sum"):
         for k1 in allo.reduction(M, name="k1"):
             if k1 < i1:
                 summ[i1, j1] += B[k1, j1] * A[i1, k1]
 
 
-def update_C[
-    T: (float32, int32), M: int32, N: int32
-](A: "T[M, M]", B: "T[M, N]", summ: "T[M, N]", C: "T[M, N]",):
+def update_C[T: (float32, int32), M: int32, N: int32](
+    A: "T[M, M]",
+    B: "T[M, N]",
+    summ: "T[M, N]",
+    C: "T[M, N]",
+):
     for i in range(M):
         for k in range(i):  # pipeline
             for j in range(N):  # unroll
@@ -43,9 +46,9 @@ def update_C[
             )
 
 
-def kernel_symm[
-    T: (float32, int32), M: int32, N: int32
-](A0: "T[M, M]", A1: "T[M, M]", B0: "T[M, N]", B1: "T[M, N]", C: "T[M, N]"):
+def kernel_symm[T: (float32, int32), M: int32, N: int32](
+    A0: "T[M, M]", A1: "T[M, M]", B0: "T[M, N]", B1: "T[M, N]", C: "T[M, N]"
+):
     # dataflow
     summ: T[M, N] = 0
     compute_sum(A0, B0, summ)

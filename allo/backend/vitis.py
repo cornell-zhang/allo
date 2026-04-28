@@ -90,8 +90,7 @@ def codegen_host(top, module, num_output_args=0):
     out_str = format_str(header, indent=0, strip=False)
     out_str += format_str(main_header, indent=0, strip=False)
     out_str += format_str("cl::Kernel krnl_" + top + ";\n", strip=False)
-    out_str += format_str(
-        """
+    out_str += format_str("""
         // Allocate Memory in Host Memory
         // When creating a buffer with user pointer (CL_MEM_USE_HOST_PTR), under the
         // hood user ptr is used if it is properly aligned. when not aligned, runtime had no choice
@@ -99,8 +98,7 @@ def codegen_host(top, module, num_output_args=0):
         // user wish to create buffer using CL_MEM_USE_HOST_PTR to align user buffer to page
         // boundary. It will ensure that user buffer is used when user create Buffer/Mem object with
         // CL_MEM_USE_HOST_PTR
-        """
-    )
+        """)
     # Generate in/out buffers
     buffer_bytes: list[int] = []
     for i, (in_dtype, in_shape) in enumerate(inputs):
@@ -158,8 +156,7 @@ def codegen_host(top, module, num_output_args=0):
         )
     out_str += "\n"
     # Generate OpenCL host code
-    out_str += format_str(
-        """
+    out_str += format_str("""
         // OPENCL HOST CODE AREA START
         // get_xil_devices() is a utility API which will find the xilinx
         // platforms and will return list of devices connected to Xilinx platform
@@ -180,8 +177,7 @@ def codegen_host(top, module, num_output_args=0):
                 std::cout << "Failed to program device[" << i << "] with xclbin file!\\n";
             } else {
                 std::cout << "Device[" << i << "]: program successful!\\n";
-        """
-    )
+        """)
     out_str += format_str(
         f'OCL_CHECK(err, krnl_{top} = cl::Kernel(program, "{top}", &err));', 12, False
     )
@@ -198,13 +194,11 @@ def codegen_host(top, module, num_output_args=0):
         strip=False,
         indent=0,
     )
-    out_str += format_str(
-        """
+    out_str += format_str("""
         // Allocate Buffer in Global Memory
         // Buffers are allocated using CL_MEM_USE_HOST_PTR for efficient memory and
         // Device-to-host communication
-        """
-    )
+        """)
     # Determine which input indices are actually outputs
     output_input_indices = set()
     if len(outputs) == 0:
@@ -262,15 +256,13 @@ def codegen_host(top, module, num_output_args=0):
             strip=False,
         )
     out_str += "\n"
-    out_str += format_str(
-        """
+    out_str += format_str("""
     cl::Event event;
     uint64_t nstimestart, nstimeend;
     std::cout << "|-------------------------+-------------------------|\\n"
               << "| Kernel                  |    Wall-Clock Time (ns) |\\n"
               << "|-------------------------+-------------------------|\\n";
-    """
-    )
+    """)
     out_str += "\n"
     # Launch kernel
     out_str += format_str("// Launch the Kernel", strip=False)
@@ -303,14 +295,12 @@ def codegen_host(top, module, num_output_args=0):
     out_str += format_str("// OpenCL Host Code Ends", strip=False)
     out_str += "\n"
     # Timing
-    out_str += format_str(
-        """
+    out_str += format_str("""
         // Get the execution time
         OCL_CHECK(err, err = event.getProfilingInfo<uint64_t>(CL_PROFILING_COMMAND_START, &nstimestart));
         OCL_CHECK(err, err = event.getProfilingInfo<uint64_t>(CL_PROFILING_COMMAND_END, &nstimeend));
         auto exe_time = nstimeend - nstimestart;
-        """
-    )
+        """)
     out_str += "\n"
     out_str += format_str(
         f'std::cout << "| " << std::left << std::setw(24) << "{top} "',

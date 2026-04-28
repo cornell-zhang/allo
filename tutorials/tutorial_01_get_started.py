@@ -16,7 +16,6 @@ First we import the necessary packages.
 
 import allo
 
-
 ##############################################################################
 # Algorithm Definition
 # --------------------

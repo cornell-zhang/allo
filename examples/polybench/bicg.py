@@ -34,9 +34,9 @@ def stageQ[T: (float32, int32), M: int32, N: int32](A: "T[N, M]", p: "T[M]", q: 
             q[i1] += A[i1, j1] * p[j1]
 
 
-def kernel_bicg[
-    T: (float32, int32), M: int32, N: int32
-](A: "T[N, M]", A_copy: "T[N, M]", p: "T[M]", r: "T[N]", q: "T[N]", s: "T[M]"):
+def kernel_bicg[T: (float32, int32), M: int32, N: int32](
+    A: "T[N, M]", A_copy: "T[N, M]", p: "T[M]", r: "T[N]", q: "T[N]", s: "T[M]"
+):
     stageS(A, r, s)
     stageQ(A_copy, p, q)
 

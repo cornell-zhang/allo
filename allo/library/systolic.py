@@ -27,9 +27,7 @@ from .._mlir.dialects.affine import AffineExpr
 import re
 
 
-def PE_kernel[
-    TyA, TyB, TyC, K: int32, Mt: int32, Nt: int32
-](
+def PE_kernel[TyA, TyB, TyC, K: int32, Mt: int32, Nt: int32](
     A_in: "TyA[K]",
     B_in: "TyB[K]",
     A_out: "TyA[K]",
@@ -49,9 +47,7 @@ def PE_kernel[
     C[i, j] = v
 
 
-def PE_kernel_packed_int4xint8[
-    K: int32, Mt: int32, Nt: int32
-](
+def PE_kernel_packed_int4xint8[K: int32, Mt: int32, Nt: int32](
     A_in: "int8[K]",  # not bit-packed
     B_in: "int8[K]",  # bit-packed, each element is 4 bits
     A_out: "int8[K]",
@@ -88,9 +84,7 @@ def PE_kernel_packed_int4xint8[
     C[i, j] = v
 
 
-def PE_kernel_packed_int8xint8[
-    K: int32, Mt: int32, Nt: int32
-](
+def PE_kernel_packed_int8xint8[K: int32, Mt: int32, Nt: int32](
     A_in: "int8[K]",  # not bit-packed
     B_in: "int16[K]",  # bit-packed, each element is 8 bits
     A_out: "int8[K]",
@@ -128,9 +122,9 @@ def PE_kernel_packed_int8xint8[
     C[i, j] = v
 
 
-def systolic_tile[
-    TyA, TyB, TyC, K: int32, Mt: int32, Nt: int32
-](A: "TyA[Mt, K]", B: "TyB[K, Nt]", C: "TyC[Mt, Nt]"):
+def systolic_tile[TyA, TyB, TyC, K: int32, Mt: int32, Nt: int32](
+    A: "TyA[Mt, K]", B: "TyB[K, Nt]", C: "TyC[Mt, Nt]"
+):
     A_fifo: TyA[Mt, Nt + 1, K]
     B_fifo: TyB[Nt, Mt + 1, K]
     A_drain: TyA[Mt]
@@ -159,9 +153,9 @@ def systolic_tile[
             B_drain[n] = B_fifo[n, Mt, k]
 
 
-def systolic[
-    TyA, TyB, TyC, M: int32, K: int32, N: int32, Mt: int32, Nt: int32
-](A: "TyA[M, K]", B: "TyB[K, N]", C: "TyC[M, N]"):
+def systolic[TyA, TyB, TyC, M: int32, K: int32, N: int32, Mt: int32, Nt: int32](
+    A: "TyA[M, K]", B: "TyB[K, N]", C: "TyC[M, N]"
+):
     local_A: TyA[Mt, K]
     local_B: TyB[K, Nt]
     local_C: TyC[Mt, Nt]
@@ -245,7 +239,9 @@ def packed_int8xint8_systolic[
     Mt: int32,
     Nt: int32,
     P: int32,  # packing factor
-](A: "Int(8 * P)[M // P, K]", B: "Int(8 * P)[K, N // P]", C: "Int(8 * P)[M // P, N]"):
+](
+    A: "Int(8 * P)[M // P, K]", B: "Int(8 * P)[K, N // P]", C: "Int(8 * P)[M // P, N]"
+):
     local_A: int8[Mt, K]
     local_B: int16[K, Nt // 2]
     local_C: int32[Mt, Nt // 2]

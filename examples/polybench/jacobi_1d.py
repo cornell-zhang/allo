@@ -20,9 +20,9 @@ def jacobi_1d_np(A, B, TSTEPS, N):
     return A, B
 
 
-def kernel_jacobi_1d[
-    T: (float32, int32), TSTEPS: int32, N: int32
-](A: "T[N]", B: "T[N]"):
+def kernel_jacobi_1d[T: (float32, int32), TSTEPS: int32, N: int32](
+    A: "T[N]", B: "T[N]"
+):
     for m in range(TSTEPS):
         for i0 in range(1, N - 1):
             B[i0] = 0.33333 * (A[i0 - 1] + A[i0] + A[i0 + 1])

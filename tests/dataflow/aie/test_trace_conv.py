@@ -12,7 +12,6 @@ import numpy as np
 from allo.backend.aie.external_kernel import ExternalModule
 from allo.backend.aie import is_available
 
-
 # Convolution dimensions
 IN_H = 3  # Input height (smaller for int32)
 IN_W = 3  # Input width (smaller for int32)

@@ -75,9 +75,9 @@ def deriche_np(imgIn, imgOut, y1, y2, a1, a2, a3, a4, a5, a6, a7, a8, b1, b2, c1
 a1 = a2 = a3 = a4 = a5 = a6 = a7 = a8 = b1 = b2 = c1 = c2 = 0.0
 
 
-def kernel_deriche[
-    T: (float32, int32), W: int32, H: int32
-](imgIn: "T[W, H]", imgOut: "T[W, H]", y1: "T[W, H]", y2: "T[W, H]"):
+def kernel_deriche[T: (float32, int32), W: int32, H: int32](
+    imgIn: "T[W, H]", imgOut: "T[W, H]", y1: "T[W, H]", y2: "T[W, H]"
+):
     for i in range(W):
         ym1: T = 0.0
         ym2: T = 0.0

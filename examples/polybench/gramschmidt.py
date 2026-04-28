@@ -33,9 +33,9 @@ def gramschmidt_np(A, Q, R):
     return A, Q, R
 
 
-def kernel_gramschmidt[
-    T: (float32, int32), M: int32, N: int32
-](A: "T[M, N]", Q: "T[M, N]", R: "T[N, N]"):
+def kernel_gramschmidt[T: (float32, int32), M: int32, N: int32](
+    A: "T[M, N]", Q: "T[M, N]", R: "T[N, N]"
+):
     for k in range(N):
         nrm: T = 0.0
         for i in range(M):

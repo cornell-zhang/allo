@@ -3,6 +3,7 @@
 # Modification: Slapo. See https://github.com/awslabs/slapo/blob/main/scripts/lint/check_license_header.py
 
 """Helper tool to check license header."""
+
 import os
 import sys
 import subprocess
@@ -41,7 +42,7 @@ def main():
     else:
         cmd = ["git", "diff", "--name-only", "--diff-filter=ACMRTUX", commit]
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    (out, _) = proc.communicate()
+    out, _ = proc.communicate()
     assert proc.returncode == 0, f'{" ".join(cmd)} errored: {out}'
     res = out.decode("utf-8")
 

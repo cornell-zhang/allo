@@ -30,9 +30,9 @@ def covariance_np(data, mean, cov, M, N):
     return data, mean, cov
 
 
-def kernel_covariance[
-    T: (float32, int32), M: int32, N: int32
-](data: "T[N, M]", mean: "T[M]", cov: "T[M, M]"):
+def kernel_covariance[T: (float32, int32), M: int32, N: int32](
+    data: "T[N, M]", mean: "T[M]", cov: "T[M, M]"
+):
     # Compute mean
     for x in allo.grid(M):
         total: float32 = 0.0

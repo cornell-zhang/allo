@@ -524,7 +524,7 @@ def test_layernorm_gelu_ops():
     beta = np.random.uniform(size=(hidden_size)).astype(np.float32)
 
     def foo(
-        inp: float32[bs, seq_len, hidden_size]
+        inp: float32[bs, seq_len, hidden_size],
     ) -> float32[bs, seq_len, hidden_size]:
         outp = allo.gelu(inp)
         return outp

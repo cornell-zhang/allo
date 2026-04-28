@@ -17,7 +17,6 @@ from examples.polybench.gemm import kernel_gemm, gemm_np
 from examples.polybench.gesummv import kernel_gesummv, gesummv_np
 from examples.polybench.mvt import kernel_mvt, mvt_np
 
-
 polybench_registry: dict[str, tuple[Callable, Callable, Callable]] = {}
 
 

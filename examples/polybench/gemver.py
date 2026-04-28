@@ -29,9 +29,7 @@ def gemver_np(A, u1, u2, v1, v2, x, y, w, z, alpha, beta):
     return A, x, y, w
 
 
-def kernel_gemver[
-    T: (float32, int32), N: int32
-](
+def kernel_gemver[T: (float32, int32), N: int32](
     A: "T[N, N]",
     u1: "T[N]",
     u2: "T[N]",

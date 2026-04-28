@@ -9,7 +9,6 @@ import allo.dataflow as df
 import allo.backend.hls as hls
 import numpy as np
 
-
 W: int32 = 2  # gap penalty score per length, assuming a linear increament
 
 M, N = 4, 4

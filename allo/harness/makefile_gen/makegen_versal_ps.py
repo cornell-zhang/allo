@@ -11,8 +11,7 @@ config_file = 0
 
 
 def mk_copyright(target):
-    target.write(
-        """#
+    target.write("""#
 # Copyright 2019-2021 Xilinx, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -28,8 +27,7 @@ def mk_copyright(target):
 # limitations under the License.
 # makefile-generator v1.0.3
 #
-"""
-    )
+""")
     return
 
 

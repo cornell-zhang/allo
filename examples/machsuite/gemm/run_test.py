@@ -7,7 +7,6 @@ import json
 import allo
 import numpy as np
 
-
 _dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _dir)
 from gemm_ncubed import gemm

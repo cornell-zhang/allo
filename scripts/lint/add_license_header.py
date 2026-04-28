@@ -3,6 +3,7 @@
 # Modification: Slapo. See https://github.com/awslabs/slapo/blob/main/scripts/lint/add_license_header.py
 
 """Helper tool to add license header to files."""
+
 import os
 import sys
 import subprocess
@@ -144,7 +145,7 @@ def main(args):
     if len(file_list) == 1 and file_list[0] == "all":
         cmd = ["git", "ls-tree", "--full-tree", "--name-only", "-r", "HEAD"]
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-        (out, _) = proc.communicate()
+        out, _ = proc.communicate()
         assert proc.returncode == 0, f'{" ".join(cmd)} errored: {out}'
         file_list = out.decode("utf-8").split("\n")
 

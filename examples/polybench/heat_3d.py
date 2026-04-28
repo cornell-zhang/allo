@@ -32,9 +32,9 @@ def heat_3d_np(A, B, TSTEPS, N):
     return A, B
 
 
-def kernel_heat_3d[
-    T: (float32, int32), TSTEPS: int32, N: int32
-](A: "T[N, N, N]", B: "T[N, N, N]"):
+def kernel_heat_3d[T: (float32, int32), TSTEPS: int32, N: int32](
+    A: "T[N, N, N]", B: "T[N, N, N]"
+):
     const0: float32 = 0.125
     const1: float32 = 2.0
 

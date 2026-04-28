@@ -21,7 +21,6 @@ import allo.dataflow as df
 import allo.backend.hls as hls
 import numpy as np
 
-
 PS = 0  # Pass
 AR = 1  # Add Right
 AL = 2  # Add Left

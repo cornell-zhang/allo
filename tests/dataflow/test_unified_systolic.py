@@ -10,7 +10,6 @@ import allo.dataflow as df
 import allo.backend.hls as hls
 import numpy as np
 
-
 U = 4  # Require for same size in two dimension if not tiling
 M, N, K = U, 4, U
 P0, P1 = U + 2, U + 2

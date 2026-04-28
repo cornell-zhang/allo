@@ -10,7 +10,6 @@ import allo.dataflow as df
 import allo.backend.hls as hls
 import numpy as np
 
-
 # M, N, K = 512, 512, 512
 # Mt, Nt = 16, 16
 M, N, K = 16, 16, 16

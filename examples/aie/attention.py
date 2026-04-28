@@ -10,7 +10,6 @@ import numpy as np
 from ml_dtypes import bfloat16 as np_bfloat16
 from allo.library.aie.modules.flash_attn import FA
 
-
 # ################################################################
 # Flash Attention
 # ################################################################

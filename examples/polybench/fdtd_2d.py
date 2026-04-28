@@ -31,9 +31,12 @@ def fdtd_2d_np(ex, ey, hz, fict):
     return ex, ey, hz, fict
 
 
-def kernel_fdtd_2d[
-    T: (float32, int32), Nx: int32, Ny: int32, Tmax: int32
-](ex: "T[Nx, Ny]", ey: "T[Nx, Ny]", hz: "T[Nx, Ny]", fict: "T[Tmax]",):
+def kernel_fdtd_2d[T: (float32, int32), Nx: int32, Ny: int32, Tmax: int32](
+    ex: "T[Nx, Ny]",
+    ey: "T[Nx, Ny]",
+    hz: "T[Nx, Ny]",
+    fict: "T[Tmax]",
+):
     for m in allo.grid(Tmax):
         for j in allo.grid(Ny):
             ey[0, j] = fict[m]

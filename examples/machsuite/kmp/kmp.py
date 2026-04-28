@@ -40,9 +40,9 @@ def python_kmp(pattern, input):
 
 ### allo implementation ###
 def kmp(concrete_type, s, p):
-    def kmp_kernal[
-        T: (uint8, int32), S: uint8, P: uint8
-    ](pattern: "T[P]", input_str: "T[S]", kmp_next: "T[P]", matches: "T[1]"):
+    def kmp_kernal[T: (uint8, int32), S: uint8, P: uint8](
+        pattern: "T[P]", input_str: "T[S]", kmp_next: "T[P]", matches: "T[1]"
+    ):
 
         k: index = 0
         x: index = 1

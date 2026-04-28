@@ -47,9 +47,9 @@ def correlation_np(data, mean, stddev, corr, M, N, N_float, epsilon):
     return data, mean, stddev, corr
 
 
-def compute_mean[
-    T: (float32, int32), M: int32, N: int32
-](data: "T[N, M]", mean: "T[M]"):
+def compute_mean[T: (float32, int32), M: int32, N: int32](
+    data: "T[N, M]", mean: "T[M]"
+):
     for x in allo.grid(M):
         total: T = 0.0
         for k in allo.grid(N):
@@ -57,9 +57,9 @@ def compute_mean[
         mean[x] = total / N
 
 
-def compute_stddev[
-    T: (float32, int32), M: int32, N: int32
-](data: "T[N, M]", mean: "T[M]", mean_passed_on: "T[M]", stddev: "T[M]"):
+def compute_stddev[T: (float32, int32), M: int32, N: int32](
+    data: "T[N, M]", mean: "T[M]", mean_passed_on: "T[M]", stddev: "T[M]"
+):
     for x in allo.grid(M):
         variance: T = 0.0
         for m in allo.grid(N):
@@ -71,9 +71,9 @@ def compute_stddev[
             stddev[x] = 1.0
 
 
-def center_reduce[
-    T: (float32, int32), M: int32, N: int32
-](data: "T[N, M]", data_out: "T[N, M]", mean: "T[M]", stddev: "T[M]"):
+def center_reduce[T: (float32, int32), M: int32, N: int32](
+    data: "T[N, M]", data_out: "T[N, M]", mean: "T[M]", stddev: "T[M]"
+):
     for x in allo.grid(N):
         for y in allo.grid(M):
             d: T = data[x, y]
@@ -82,9 +82,9 @@ def center_reduce[
             data_out[x, y] = d
 
 
-def compute_corr[
-    T: (float32, int32), M: int32, N: int32
-](data: "T[N, M]", corr: "T[M, M]"):
+def compute_corr[T: (float32, int32), M: int32, N: int32](
+    data: "T[N, M]", corr: "T[M, M]"
+):
     for i in range(M - 1):
         corr[i, i] = 1.0
         for j in range(M):
@@ -98,9 +98,7 @@ def compute_corr[
     corr[M - 1, M - 1] = 1.0
 
 
-def kernel_correlation[
-    T: (float32, int32), M: int32, N: int32
-](
+def kernel_correlation[T: (float32, int32), M: int32, N: int32](
     data_mean: "T[N, M]",
     data_stddev: "T[N, M]",
     data_for_center: "T[N, M]",

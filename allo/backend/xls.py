@@ -272,8 +272,7 @@ def _gen_textproto(mems):
             write_resp = f"{name}_write_response"
 
         # Generate rewrite configuration (only difference is to_config kind)
-        lines.append(
-            f"""rewrites {{
+        lines.append(f"""rewrites {{
   from_config {{ kind: RAM_ABSTRACT depth: {depth} }}
   to_config {{ kind: {xls_ram_kind} depth: {depth} }}
   from_channels_logical_to_physical: {{ key: "abstract_read_req" value: "{read_req}" }}
@@ -282,8 +281,7 @@ def _gen_textproto(mems):
   from_channels_logical_to_physical: {{ key: "write_completion" value: "{write_resp}" }}
   to_name_prefix: "{name}_"
 }}
-"""
-        )
+""")
     return "\n".join(lines)
 
 

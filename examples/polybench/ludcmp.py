@@ -38,9 +38,9 @@ def ludcmp_np(A, b, x, y):
     return A, b, x, y
 
 
-def kernel_ludcmp[
-    T: (float32, int32), N: int32
-](A: "T[N, N]", b: "T[N]", x: "T[N]", y: "T[N]"):
+def kernel_ludcmp[T: (float32, int32), N: int32](
+    A: "T[N, N]", b: "T[N]", x: "T[N]", y: "T[N]"
+):
     # LU decomposition of A
     for i in range(N):
         for j in range(i):
