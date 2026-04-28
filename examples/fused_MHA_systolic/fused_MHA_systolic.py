@@ -2,10 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import allo
-import numpy as np
 from allo.ir.types import float32, Int, Stream
 import allo.dataflow as df
-import allo.backend.hls as hls
 
 int8 = Int(8)
 int32 = Int(32)
@@ -78,7 +76,7 @@ def get_systolic_top(
                 for tr in range(0, CONTEXT_LENGTH, BLOCK_T):
 
                     # ── Q: fold 1/√d, per-vector INT8 quantization ────────
-                    for i in range(BLOCK_T):
+                    with allo.meta_for(BLOCK_T) as i:
                         q_scaled: float32[HEAD_DIM] = 0
                         q_abs_max: float32 = 1e-8
                         t_q = tr + i
@@ -107,21 +105,11 @@ def get_systolic_top(
                             # Allo sees target is int8, inserts cast from float16
                             q_int8[jj] = q_scaled[jj] / delta_Q
 
-                        if i == 0:
-                            fifo_in_Q[0].put(q_int8)
-                            fifo_in_dQ[0].put(delta_Q)
-                        elif i == 1:
-                            fifo_in_Q[1].put(q_int8)
-                            fifo_in_dQ[1].put(delta_Q)
-                        elif i == 2:
-                            fifo_in_Q[2].put(q_int8)
-                            fifo_in_dQ[2].put(delta_Q)
-                        elif i == 3:
-                            fifo_in_Q[3].put(q_int8)
-                            fifo_in_dQ[3].put(delta_Q)
+                        fifo_in_Q[i].put(q_int8)
+                        fifo_in_dQ[i].put(delta_Q)
 
                     # ── K: smooth + per-block INT8 quantization ───────────
-                    for tc_b in range(NUM_TC):
+                    with allo.meta_for(NUM_TC) as tc_b:
 
                         k_block: float32[BLOCK_T, HEAD_DIM] = 0
                         k_abs_max: float32 = 1e-8
@@ -146,14 +134,7 @@ def get_systolic_top(
                         inv127k: float32 = 1.0 / 127.0
                         delta_K: float32 = k_abs_max * inv127k
 
-                        if tc_b == 0:
-                            fifo_in_dK[0].put(delta_K)
-                        elif tc_b == 1:
-                            fifo_in_dK[1].put(delta_K)
-                        elif tc_b == 2:
-                            fifo_in_dK[2].put(delta_K)
-                        elif tc_b == 3:
-                            fifo_in_dK[3].put(delta_K)
+                        fifo_in_dK[tc_b].put(delta_K)
 
                         for i in range(BLOCK_T):
                             # ── implicit float16→int8 via typed target ─────
@@ -173,18 +154,8 @@ def get_systolic_top(
                                 )
                                 v_vec[jj] = input_d[v_idx]
 
-                            if tc_b == 0:
-                                fifo_in_K[0].put(k_int8)
-                                fifo_in_V[0].put(v_vec)
-                            elif tc_b == 1:
-                                fifo_in_K[1].put(k_int8)
-                                fifo_in_V[1].put(v_vec)
-                            elif tc_b == 2:
-                                fifo_in_K[2].put(k_int8)
-                                fifo_in_V[2].put(v_vec)
-                            elif tc_b == 3:
-                                fifo_in_K[3].put(k_int8)
-                                fifo_in_V[3].put(v_vec)
+                            fifo_in_K[tc_b].put(k_int8)
+                            fifo_in_V[tc_b].put(v_vec)
 
         @df.kernel(mapping=[P0, P1], args=[])
         def pe():
@@ -298,34 +269,12 @@ def get_systolic_top(
         def store(global_mem: float32[OUT_ELEMS]):
             for b, h in allo.grid(BATCH_SIZE, NUM_HEADS):
                 for tr in range(0, CONTEXT_LENGTH, BLOCK_T):
-                    for i in range(BLOCK_T):
-                        if i == 0:
-                            o0: float32[HEAD_DIM] = fifo_out[0].get()
-                            for jj in range(HEAD_DIM):
-                                idx = (
-                                    (b * CONTEXT_LENGTH + (tr + i)) * NUM_HEADS + h
-                                ) * HEAD_DIM + jj
-                                global_mem[idx] = o0[jj]
-                        elif i == 1:
-                            o1: float32[HEAD_DIM] = fifo_out[1].get()
-                            for jj in range(HEAD_DIM):
-                                idx = (
-                                    (b * CONTEXT_LENGTH + (tr + i)) * NUM_HEADS + h
-                                ) * HEAD_DIM + jj
-                                global_mem[idx] = o1[jj]
-                        elif i == 2:
-                            o2: float32[HEAD_DIM] = fifo_out[2].get()
-                            for jj in range(HEAD_DIM):
-                                idx = (
-                                    (b * CONTEXT_LENGTH + (tr + i)) * NUM_HEADS + h
-                                ) * HEAD_DIM + jj
-                                global_mem[idx] = o2[jj]
-                        elif i == 3:
-                            o3: float32[HEAD_DIM] = fifo_out[3].get()
-                            for jj in range(HEAD_DIM):
-                                idx = (
-                                    (b * CONTEXT_LENGTH + (tr + i)) * NUM_HEADS + h
-                                ) * HEAD_DIM + jj
-                                global_mem[idx] = o3[jj]
+                    with allo.meta_for(BLOCK_T) as i:
+                        o: float32[HEAD_DIM] = fifo_out[i].get()
+                        for jj in range(HEAD_DIM):
+                            idx = (
+                                (b * CONTEXT_LENGTH + (tr + i)) * NUM_HEADS + h
+                            ) * HEAD_DIM + jj
+                            global_mem[idx] = o[jj]
 
     return top

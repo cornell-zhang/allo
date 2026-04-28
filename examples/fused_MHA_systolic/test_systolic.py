@@ -61,7 +61,7 @@ def run_test_with_params(BATCH_SIZE, CONTEXT_LENGTH, HIDDEN_SIZE, NUM_HEADS, BLO
     )
     with tempfile.TemporaryDirectory() as sim_dir:
         print("Running Software Simulator for numerical correctness...")
-        sim_mod = df.build(s, project=sim_dir)
+        sim_mod = df.build(s, target="simulator", project=sim_dir)
         sim_mod(A, B_out)
 
     try:
