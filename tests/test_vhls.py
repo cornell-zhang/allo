@@ -5,7 +5,7 @@ import tempfile
 
 import pytest
 import allo
-from allo.ir.types import bool, int32, float32
+from allo.ir.types import bool, int32, float16, float32
 from allo.memory import Memory
 import numpy as np
 import allo.backend.hls as hls
@@ -637,6 +637,22 @@ def test_floordiv():
         print(hls_code)
         # Check if the division operator is used for FloorDivSIOp
         assert " / " in hls_code
+
+
+def test_fp16_half_type_and_hls_math():
+    def kernel(A: float16[8]) -> float16[8]:
+        B: float16[8]
+        for i in range(8):
+            B[i] = allo.exp(A[i]) + allo.sqrt(A[i])
+        return B
+
+    s = allo.customize(kernel)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        mod = s.build(target="vitis_hls", mode="sw_emu", project=tmpdir)
+        hls_code = mod.hls_code
+        assert "half" in hls_code
+        assert "hls::exp" in hls_code
+        assert "hls::sqrt" in hls_code
 
 
 if __name__ == "__main__":

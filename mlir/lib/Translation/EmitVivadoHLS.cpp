@@ -528,49 +528,28 @@ public:
   }
 
   /// Unary expressions.
-  // For half (Float16Type) operands, unqualified math calls are ambiguous
-  // between C double and C++ float overloads.  hls_math.h declares these
-  // inside namespace hls, so we use the hls:: prefix to select the half
-  // overload unambiguously.
-  static bool isHalf(Operation *op) {
-    return llvm::isa<Float16Type>(op->getOperand(0).getType());
-  }
-  bool visitOp(math::AbsFOp op) {
-    return emitter.emitUnary(op, isHalf(op) ? "hls::abs" : "abs"), true;
-  }
+  // hls_math.h declares math functions inside namespace `hls` and provides
+  // overloads for half / float / double / ap_fixed.  Using the `hls::` prefix
+  // unconditionally avoids ambiguity for half (where unqualified `sin` etc.
+  // resolve to C `<math.h>` doubles) and is also the form recommended by
+  // Vitis HLS for the other supported FP types.
+  bool visitOp(math::AbsFOp op) { return emitter.emitUnary(op, "hls::abs"), true; }
   bool visitOp(math::AbsIOp op) { return emitter.emitUnary(op, "abs"), true; }
-  bool visitOp(math::CeilOp op) { return emitter.emitUnary(op, "ceil"), true; }
-  bool visitOp(math::CosOp op) {
-    return emitter.emitUnary(op, isHalf(op) ? "hls::cos" : "cos"), true;
-  }
-  bool visitOp(math::SinOp op) {
-    return emitter.emitUnary(op, isHalf(op) ? "hls::sin" : "sin"), true;
-  }
-  bool visitOp(math::TanhOp op) {
-    return emitter.emitUnary(op, isHalf(op) ? "hls::tanh" : "tanh"), true;
-  }
-  bool visitOp(math::SqrtOp op) {
-    return emitter.emitUnary(op, isHalf(op) ? "hls::sqrt" : "sqrt"), true;
-  }
+  bool visitOp(math::CeilOp op) { return emitter.emitUnary(op, "hls::ceil"), true; }
+  bool visitOp(math::CosOp op) { return emitter.emitUnary(op, "hls::cos"), true; }
+  bool visitOp(math::SinOp op) { return emitter.emitUnary(op, "hls::sin"), true; }
+  bool visitOp(math::TanhOp op) { return emitter.emitUnary(op, "hls::tanh"), true; }
+  bool visitOp(math::SqrtOp op) { return emitter.emitUnary(op, "hls::sqrt"), true; }
   bool visitOp(math::RsqrtOp op) {
-    return emitter.emitUnary(op, isHalf(op) ? "1.0 / hls::sqrt" : "1.0 / sqrt"),
-           true;
+    return emitter.emitUnary(op, "1.0 / hls::sqrt"), true;
   }
-  bool visitOp(math::ExpOp op) {
-    return emitter.emitUnary(op, isHalf(op) ? "hls::exp" : "exp"), true;
-  }
-  bool visitOp(math::Exp2Op op) {
-    return emitter.emitUnary(op, isHalf(op) ? "hls::exp2" : "exp2"), true;
-  }
+  bool visitOp(math::ExpOp op) { return emitter.emitUnary(op, "hls::exp"), true; }
+  bool visitOp(math::Exp2Op op) { return emitter.emitUnary(op, "hls::exp2"), true; }
   bool visitOp(math::PowFOp op) { return emitter.emitPower(op), true; }
-  bool visitOp(math::LogOp op) {
-    return emitter.emitUnary(op, isHalf(op) ? "hls::log" : "log"), true;
-  }
-  bool visitOp(math::Log2Op op) {
-    return emitter.emitUnary(op, isHalf(op) ? "hls::log2" : "log2"), true;
-  }
+  bool visitOp(math::LogOp op) { return emitter.emitUnary(op, "hls::log"), true; }
+  bool visitOp(math::Log2Op op) { return emitter.emitUnary(op, "hls::log2"), true; }
   bool visitOp(math::Log10Op op) {
-    return emitter.emitUnary(op, isHalf(op) ? "hls::log10" : "log10"), true;
+    return emitter.emitUnary(op, "hls::log10"), true;
   }
   bool visitOp(arith::NegFOp op) { return emitter.emitUnary(op, "-"), true; }
 
