@@ -79,7 +79,7 @@ def _process_function_streams(
     module: Module,
     func: func_d.FuncOp,
     processed_funcs: set,
-    all_pe_calls_by_func: dict = None,
+    all_pe_calls_by_func: dict,
 ):
     """
     Process streams and PE calls within a single function.
@@ -769,7 +769,7 @@ def _process_function_streams(
         op.operation.erase()
 
     # Accumulate PE calls keyed by function for recursive OMP injection
-    if all_pe_calls_by_func is not None and pe_call_define_ops:
+    if pe_call_define_ops:
         all_pe_calls_by_func[func_name] = pe_call_define_ops
 
     return (

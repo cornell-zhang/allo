@@ -1990,8 +1990,6 @@ class ASTTransformer(ASTBuilder):
 
     @staticmethod
     def build_FunctionDef(ctx: ASTContext, node: ast.FunctionDef):
-        if not hasattr(ctx, "global_op_cache"):
-            ctx.global_op_cache = {}
         func_name = node.name if ctx.func_id is None else f"{node.name}_{ctx.func_id}"
         # pylint: disable=too-many-nested-blocks
         if ctx.top_func is not None:

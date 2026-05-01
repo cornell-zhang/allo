@@ -3177,22 +3177,9 @@ using namespace std;
       }
     }
 
-    // Third pass: emit forward declarations for all functions
-    for (auto &op : *module.getBody()) {
-      if (auto func = dyn_cast<func::FuncOp>(op)) {
-        if (!func->hasAttr("top") && !func.getBlocks().empty()) {
-          emitFunctionSignature(func);
-          os << "\n);\n\n";
-        }
-      }
-    }
-
-    // Clear nameTable and nameConflictCnt to ensure that Pass 4 can re-emit
-    // function signatures with full types.
-    state.nameTable.clear();
-    state.nameConflictCnt.clear();
-
-    // Fourth pass: emit functions and non-stateful globals
+    // Third pass: emit function definitions and non-stateful globals
+    // (Forward declarations for forward-referenced callees are already emitted
+    // by emitFunctionDeclaration() in the second pass; see PR #557.)
     for (auto &op : *module.getBody()) {
       if (auto func = dyn_cast<func::FuncOp>(op)) {
         emitFunction(func);
