@@ -756,6 +756,15 @@ class TypeInferer(ASTVisitor):
                             ), f"Invalid @df.kernel decorator on function '{node.name}': 'args' length mismatch (expected {len(node.args.args)}, got {len(kernel_args)})."
                             for top_arg_name, arg in zip(kernel_args, node.args.args):
                                 top_arg = ctx.get_symbol(name=top_arg_name.id)
+                                if top_arg.shape == ():
+                                    raise ValueError(
+                                        f"Scalar '{top_arg_name.id}' cannot appear in "
+                                        f"`args=[...]` on @df.kernel '{node.name}'. "
+                                        f"Scalars are captured from the enclosing region "
+                                        f"scope automatically; remove it from args, or use "
+                                        f"a 1-element array ({top_arg_name.id}: "
+                                        f"{top_arg.dtype}[1]) instead."
+                                    )
                                 dtype, shape, _ = TypeInferer.visit_type_hint(
                                     ctx, arg.annotation
                                 )
