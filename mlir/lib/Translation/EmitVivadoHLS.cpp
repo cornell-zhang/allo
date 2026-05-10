@@ -2727,7 +2727,7 @@ allo::hls::VhlsModuleEmitter::emitFunctionSignature(func::FuncOp func) {
   os << "void " << func.getName() << "(\n";
   addIndent();
 
-  // This vector records all ports of the function (args + return operands).
+  // This vector is to record all ports of the function.
   SmallVector<Value, 8> portList;
 
   // Emit input arguments.
@@ -2754,7 +2754,6 @@ allo::hls::VhlsModuleEmitter::emitFunctionSignature(func::FuncOp func) {
       itypes += "x";
   }
   for (auto &arg : func.getArguments()) {
-    portList.push_back(arg);
     indent();
     fixUnsignedType(arg, itypes[argIdx] == 'u');
     if (llvm::isa<ShapedType>(arg.getType())) {
@@ -2782,6 +2781,7 @@ allo::hls::VhlsModuleEmitter::emitFunctionSignature(func::FuncOp func) {
       }
     }
 
+    portList.push_back(arg);
     if (argIdx++ != func.getNumArguments() - 1)
       os << ",\n";
   }
@@ -2801,7 +2801,6 @@ allo::hls::VhlsModuleEmitter::emitFunctionSignature(func::FuncOp func) {
     unsigned idx = 0;
     for (auto result : funcReturn.getOperands()) {
       if (std::find(args.begin(), args.end(), result) == args.end()) {
-        portList.push_back(result);
         if (func.getArguments().size() > 0)
           os << ",\n";
         indent();
@@ -2821,6 +2820,8 @@ allo::hls::VhlsModuleEmitter::emitFunctionSignature(func::FuncOp func) {
           else
             emitValue(result, /*rank=*/0, /*isPtr=*/true, output_names);
         }
+
+        portList.push_back(result);
       }
       idx += 1;
     }
@@ -3178,8 +3179,6 @@ using namespace std;
     }
 
     // Third pass: emit function definitions and non-stateful globals
-    // (Forward declarations for forward-referenced callees are already emitted
-    // by emitFunctionDeclaration() in the second pass; see PR #557.)
     for (auto &op : *module.getBody()) {
       if (auto func = dyn_cast<func::FuncOp>(op)) {
         emitFunction(func);
