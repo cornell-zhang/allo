@@ -533,21 +533,41 @@ public:
   // unconditionally avoids ambiguity for half (where unqualified `sin` etc.
   // resolve to C `<math.h>` doubles) and is also the form recommended by
   // Vitis HLS for the other supported FP types.
-  bool visitOp(math::AbsFOp op) { return emitter.emitUnary(op, "hls::abs"), true; }
+  bool visitOp(math::AbsFOp op) {
+    return emitter.emitUnary(op, "hls::abs"), true;
+  }
   bool visitOp(math::AbsIOp op) { return emitter.emitUnary(op, "abs"), true; }
-  bool visitOp(math::CeilOp op) { return emitter.emitUnary(op, "hls::ceil"), true; }
-  bool visitOp(math::CosOp op) { return emitter.emitUnary(op, "hls::cos"), true; }
-  bool visitOp(math::SinOp op) { return emitter.emitUnary(op, "hls::sin"), true; }
-  bool visitOp(math::TanhOp op) { return emitter.emitUnary(op, "hls::tanh"), true; }
-  bool visitOp(math::SqrtOp op) { return emitter.emitUnary(op, "hls::sqrt"), true; }
+  bool visitOp(math::CeilOp op) {
+    return emitter.emitUnary(op, "hls::ceil"), true;
+  }
+  bool visitOp(math::CosOp op) {
+    return emitter.emitUnary(op, "hls::cos"), true;
+  }
+  bool visitOp(math::SinOp op) {
+    return emitter.emitUnary(op, "hls::sin"), true;
+  }
+  bool visitOp(math::TanhOp op) {
+    return emitter.emitUnary(op, "hls::tanh"), true;
+  }
+  bool visitOp(math::SqrtOp op) {
+    return emitter.emitUnary(op, "hls::sqrt"), true;
+  }
   bool visitOp(math::RsqrtOp op) {
     return emitter.emitUnary(op, "1.0 / hls::sqrt"), true;
   }
-  bool visitOp(math::ExpOp op) { return emitter.emitUnary(op, "hls::exp"), true; }
-  bool visitOp(math::Exp2Op op) { return emitter.emitUnary(op, "hls::exp2"), true; }
+  bool visitOp(math::ExpOp op) {
+    return emitter.emitUnary(op, "hls::exp"), true;
+  }
+  bool visitOp(math::Exp2Op op) {
+    return emitter.emitUnary(op, "hls::exp2"), true;
+  }
   bool visitOp(math::PowFOp op) { return emitter.emitPower(op), true; }
-  bool visitOp(math::LogOp op) { return emitter.emitUnary(op, "hls::log"), true; }
-  bool visitOp(math::Log2Op op) { return emitter.emitUnary(op, "hls::log2"), true; }
+  bool visitOp(math::LogOp op) {
+    return emitter.emitUnary(op, "hls::log"), true;
+  }
+  bool visitOp(math::Log2Op op) {
+    return emitter.emitUnary(op, "hls::log2"), true;
+  }
   bool visitOp(math::Log10Op op) {
     return emitter.emitUnary(op, "hls::log10"), true;
   }
