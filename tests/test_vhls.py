@@ -640,13 +640,13 @@ def test_floordiv():
 
 
 def test_fp16_half_type_and_hls_math():
-    def kernel(A: float16[8]) -> float16[8]:
+    def top(A: float16[8]) -> float16[8]:
         B: float16[8]
         for i in range(8):
             B[i] = allo.exp(A[i]) + allo.sqrt(A[i])
         return B
 
-    s = allo.customize(kernel)
+    s = allo.customize(top)
     with tempfile.TemporaryDirectory() as tmpdir:
         mod = s.build(target="vitis_hls", mode="sw_emu", project=tmpdir)
         hls_code = mod.hls_code
