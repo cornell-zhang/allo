@@ -726,7 +726,7 @@ class TypeInferer(ASTVisitor):
 
     @staticmethod
     def visit_FunctionDef(ctx: ASTContext, node: ast.FunctionDef):
-        # pylint: disable=too-many-nested-blocks
+        # pylint: disable=too-many-nested-blocks,too-many-branches
         if ctx.top_func is not None:
             # Nested function def
             # Create a new context to avoid name collision
