@@ -1992,8 +1992,6 @@ class ASTTransformer(ASTBuilder):
 
     @staticmethod
     def build_FunctionDef(ctx: ASTContext, node: ast.FunctionDef):
-        if not hasattr(ctx, "global_op_cache"):
-            ctx.global_op_cache = {}
         func_name = node.name if ctx.func_id is None else f"{node.name}_{ctx.func_id}"
         # pylint: disable=too-many-nested-blocks
         if ctx.top_func is not None:
@@ -2731,6 +2729,7 @@ class ASTTransformer(ASTBuilder):
                     new_ctx.func_suffix = inst_suffix
 
             func_op = ASTTransformer.build_FunctionDef(new_ctx, func_def)
+            func_op.attributes["dataflow"] = UnitAttr.get()
 
             # Now insert the call
             # Parse arguments
@@ -2738,6 +2737,7 @@ class ASTTransformer(ASTBuilder):
             arg_values = [
                 ASTTransformer.get_mlir_op_result(ctx, arg) for arg in new_args
             ]
+
             call_op = func_d.CallOp(
                 [],
                 FlatSymbolRefAttr.get(func_def.name),
