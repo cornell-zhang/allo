@@ -161,7 +161,7 @@ def FA(SEQ_LEN, HEAD_DIM, Q_tile_size, q_chunk_size, kv_chunk_size):
                 ("chain", [f"send_q_{idx}_0", f"cal_attn_score_{idx}_0"])
             )
             sub_graphs.append((f"send_q_{idx}_0-cal_attn_score_{idx}_0",))
-    col_num = 4
+    col_num = 8 if os.getenv("NPU2") == "1" else 4
     if iteration > col_num:
         for idx in range(col_num):
             nodes = [sub_graphs[idx + i * col_num] for i in range(iteration // col_num)]
