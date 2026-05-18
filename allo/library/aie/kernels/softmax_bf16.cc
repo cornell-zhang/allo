@@ -613,6 +613,65 @@ void init_softmax(bfloat16 *__restrict max_logit,
   }
 }
 
+// Numerically-stable 1D softmax of length N.
+//  Pass 1: m = max_i x_i
+//  Pass 2: write (x_i - m) into the output buffer (buffer intermediate results)
+//  Pass 3: in-place LUT-based exp via fa_exp_bf16, returning S = sum exp.
+//  Pass 4: y_i = exp_i / S.
+template <int N>
+void softmax_simple_bf16(bfloat16 *__restrict input_vector,
+                         bfloat16 *__restrict output_vector) {
+  constexpr int VecLen = 16;
+  static_assert(N % VecLen == 0);
+
+  // Pass 1: global max of the input.
+  uint16 neg_inf_u16 = (uint16)0xff80;
+  bfloat16 *bf_neg_inf = (bfloat16 *)&neg_inf_u16;
+  aie::vector<bfloat16, VecLen> max_vec =
+      aie::broadcast<bfloat16, VecLen>(*bf_neg_inf);
+  bfloat16 *pScan = input_vector;
+  for (int i = 0; i < N / VecLen; i++)
+    chess_prepare_for_pipelining chess_loop_range(4, ) {
+      aie::vector<bfloat16, VecLen> v = aie::load_v<VecLen>(pScan);
+      pScan += VecLen;
+      max_vec = aie::max(max_vec, v);
+    }
+  bfloat16 max_val = aie::reduce_max(max_vec);
+  aie::vector<bfloat16, VecLen> max_bcast = aie::broadcast<bfloat16, VecLen>(max_val);
+
+  // Pass 2: store (input - max) into the output buffer (scratch).
+  aie::accum<accfloat, VecLen> max_acc;
+  max_acc.from_vector(max_bcast, 0);
+  bfloat16 *pIn = input_vector;
+  bfloat16 *pShift = output_vector;
+  for (int i = 0; i < N / VecLen; i++)
+    chess_prepare_for_pipelining chess_loop_range(4, ) {
+      aie::vector<bfloat16, VecLen> v = aie::load_v<VecLen>(pIn);
+      pIn += VecLen;
+      aie::accum<accfloat, VecLen> v_acc, diff_acc;
+      v_acc.from_vector(v, 0);
+      diff_acc = sub(v_acc, max_acc);
+      aie::store_v(pShift, diff_acc.template to_vector<bfloat16>());
+      pShift += VecLen;
+    }
+
+  // Pass 3: in-place LUT exp on the shifted values, returns sum.
+  const bfloat16 *__restrict pExpIn = output_vector;
+  bfloat16 *__restrict pExpOut = output_vector;
+  float accum_exp_val = fa_exp_bf16<VecLen>(N, pExpIn, pExpOut);
+
+  // Pass 4: scale by 1 / sum.
+  bfloat16 accum_inv = compute_inv_as_bf16(accum_exp_val);
+  bfloat16 *pOut = output_vector;
+  for (int i = 0; i < N / VecLen; i++)
+    chess_prepare_for_pipelining chess_loop_range(4, ) {
+      aie::vector<bfloat16, VecLen> v = aie::load_v<VecLen>(pOut);
+      aie::accum<accfloat, VecLen> scaled = aie::mul(v, accum_inv);
+      aie::store_v(pOut, scaled.template to_vector<bfloat16>());
+      pOut += VecLen;
+    }
+}
+
 extern "C" {
 
 void init_softmax(bfloat16 max_logit[32], bfloat16 sum_exp[32]) {
@@ -684,4 +743,9 @@ void softmax_bf16(const bfloat16 in[4][1024], bfloat16 out[4][1024]) {
       }
   }
 }
+
+void vector_softmax_bf16(bfloat16 a_in[1024], bfloat16 c_out[1024]) {
+  softmax_simple_bf16<1024>(a_in, c_out);
+}
+
 }
