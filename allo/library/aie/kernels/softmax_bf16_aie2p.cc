@@ -116,6 +116,27 @@ void softmax_simple_bf16(bfloat16 *restrict input_vector,
   return;
 }
 
+template <int L>
+void init_softmax(bfloat16 *__restrict max_logit,
+                  bfloat16 *__restrict sum_exp) {
+  // max_logit = np.full((L, 1), -np.inf)
+  // sum_exp = np.zeros((L, 1))
+  constexpr int vec_factor =
+      256 / (sizeof(bfloat16) * 8); // one 256 bit store unit
+  static_assert(L % vec_factor == 0);
+  const bfloat16 neg_inf = bfloat16(-std::numeric_limits<float>::infinity());
+  const aie::vector<bfloat16, vec_factor> neg_infs =
+      aie::broadcast<bfloat16, vec_factor>(neg_inf);
+  const aie::vector<bfloat16, vec_factor> zeros =
+      aie::zeros<bfloat16, vec_factor>();
+  for (int iter = 0; iter < L; iter += vec_factor) {
+    aie::store_v(max_logit, neg_infs);
+    max_logit += vec_factor;
+    aie::store_v(sum_exp, zeros);
+    sum_exp += vec_factor;
+  }
+}
+
 extern "C" {
 
 void exp_bf16(bfloat16 a_in[1024], bfloat16 c_out[1024]) {
@@ -124,6 +145,68 @@ void exp_bf16(bfloat16 a_in[1024], bfloat16 c_out[1024]) {
 
 void vector_softmax_bf16(bfloat16 a_in[1024], bfloat16 c_out[1024]) {
   softmax_simple_bf16<1024>(a_in, c_out);
+}
+
+void init_softmax(bfloat16 max_logit[32], bfloat16 sum_exp[32]) {
+  init_softmax<32>(max_logit, sum_exp);
+}
+
+void online_softmax(bfloat16 attention_score[32][32],
+                    bfloat16 prev_max_logit[32], bfloat16 prev_sum_exp[32],
+                    bfloat16 attention_weight[32][32], bfloat16 scale_exp[32],
+                    bfloat16 new_max_logit[32], bfloat16 new_sum_exp[32]) {
+  constexpr int ROW = 32;
+  constexpr int COL = 32; // == VEC_LEN, one row per vector
+  const bfloat16 scale = bfloat16(0.125f);
+  aie::vector<bfloat16, VEC_LEN> log2e_vec =
+      aie::broadcast<bfloat16, VEC_LEN>((bfloat16)log2e);
+
+  alignas(aie::vector_decl_align) bfloat16 tmp_max_logit[ROW];
+
+  // Pass 1: row max + write (scores * 0.125 - row_max) back into
+  // attention_score
+  for (int r = 0; r < ROW; r++) {
+    bfloat16 *row_ptr = &attention_score[r][0];
+    aie::vector<bfloat16, COL> scores = aie::load_v<COL>(row_ptr);
+    aie::accum<accfloat, COL> scaled = aie::mul(scores, scale);
+    aie::vector<bfloat16, COL> scaled_vec =
+        scaled.template to_vector<bfloat16>();
+    bfloat16 row_max = std::max(prev_max_logit[r], aie::reduce_max(scaled_vec));
+
+    tmp_max_logit[r] = bfloat16(prev_max_logit[r] - row_max);
+    new_max_logit[r] = row_max;
+
+    aie::vector<bfloat16, COL> row_max_vec =
+        aie::broadcast<bfloat16, COL>(row_max);
+    aie::accum<accfloat, COL> shifted = aie::sub(scaled, row_max_vec);
+    aie::store_v(row_ptr, shifted.template to_vector<bfloat16>());
+  }
+
+  // Pass 2: scale_exp[0..32) = exp(tmp_max_logit) via 2^(log2e * x)
+  {
+    aie::vector<bfloat16, COL> v = aie::load_v<COL>(&tmp_max_logit[0]);
+    aie::accum<accfloat, COL> z = aie::mul(v, log2e_vec);
+    aie::vector<bfloat16, COL> e =
+        aie::exp2<bfloat16>(z.template to_vector<float>());
+    aie::store_v(&scale_exp[0], e);
+  }
+
+  // Pass 3: per-row exp, sum, and new_sum_exp update
+  for (int r = 0; r < ROW; r++) {
+    aie::vector<bfloat16, COL> shifted =
+        aie::load_v<COL>(&attention_score[r][0]);
+    aie::accum<accfloat, COL> z = aie::mul(shifted, log2e_vec);
+    aie::vector<bfloat16, COL> exp_val =
+        aie::exp2<bfloat16>(z.template to_vector<float>());
+    aie::store_v(&attention_weight[r][0], exp_val);
+
+    aie::accum<accfloat, COL> sum_acc;
+    sum_acc.from_vector(exp_val, 0);
+    float accum_exp_val = aie::reduce_add(sum_acc.template to_vector<float>());
+
+    new_sum_exp[r] =
+        bfloat16(prev_sum_exp[r] * scale_exp[r] + bfloat16(accum_exp_val));
+  }
 }
 
 } // extern "C"
