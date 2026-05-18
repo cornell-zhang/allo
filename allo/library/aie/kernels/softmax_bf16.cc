@@ -637,7 +637,8 @@ void softmax_simple_bf16(bfloat16 *__restrict input_vector,
       max_vec = aie::max(max_vec, v);
     }
   bfloat16 max_val = aie::reduce_max(max_vec);
-  aie::vector<bfloat16, VecLen> max_bcast = aie::broadcast<bfloat16, VecLen>(max_val);
+  aie::vector<bfloat16, VecLen> max_bcast =
+      aie::broadcast<bfloat16, VecLen>(max_val);
 
   // Pass 2: store (input - max) into the output buffer (scratch).
   aie::accum<accfloat, VecLen> max_acc;
@@ -747,5 +748,4 @@ void softmax_bf16(const bfloat16 in[4][1024], bfloat16 out[4][1024]) {
 void vector_softmax_bf16(bfloat16 a_in[1024], bfloat16 c_out[1024]) {
   softmax_simple_bf16<1024>(a_in, c_out);
 }
-
 }

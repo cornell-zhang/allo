@@ -296,12 +296,12 @@ matmul_external_kernel_config_map = {
     ("bf16", "bf16"): {
         "ctype": ("bfloat16", "bfloat16"),
         "aie2": (4, 8, 4),
-        "aie2p": (8, 8, 8),
+        "aie2p": (4, 8, 8),
     },
     ("bf16", "f32"): {
         "ctype": ("bfloat16", "bfloat"),
         "aie2": (4, 8, 4),
-        "aie2p": (8, 8, 8),
+        "aie2p": (4, 8, 8),
     },
 }
 
