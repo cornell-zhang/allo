@@ -24,7 +24,7 @@ Environment Setup
 Prerequisites
 -------------
 
-Before proceeding with the Allo installation, please follow the instructions on the `MLIR-AIE website <https://github.com/Xilinx/mlir-aie/tree/main?tab=readme-ov-file#getting-started-for-amd-ryzen-ai---linux-quick-setup-instructions>`_ to install the required `Vitis <https://www.amd.com/en/products/software/adaptive-socs-and-fpgas/vitis.html>`_ and XRT environment. Stop when you reach the "Install IRON for AMD Ryzen™ AI AIE Application" section as we need a separate process to install MLIR-AIE under the Allo environment.
+Before proceeding with the Allo installation, please follow the instructions on the `MLIR-AIE website <https://github.com/Xilinx/mlir-aie/tree/main?tab=readme-ov-file#install-the-xdna-driver-and-xrt>`_ to install the required `Vitis <https://www.amd.com/en/products/software/adaptive-socs-and-fpgas/vitis.html>`_ and XRT environment. Stop when you reach the "Install IRON for AMD Ryzen™ AI AIE Application" section as we need a separate process to install MLIR-AIE under the Allo environment.
 
 
 Install from Source
@@ -141,10 +141,30 @@ Lastly, you can verify the AIE backend by running the following command under Al
 
 .. _internal_install:
 
-Internal Installation (Cornell)
--------------------------------
+Internal Setup (Cornell)
+------------------------
 
-For Zhang Group students, please set up environment variables in :ref:`step3` with the following commands.
+For Zhang Group students, an internal shared setup is available.
+
+For Users
+~~~~~~~~~
+
+If you only need to use Allo (not develop it), you can skip the installation steps above and use the pre-configured shared environment by activating it directly:
+
+.. code-block:: console
+
+   conda activate /opt/anaconda3/envs/allo-base
+
+To verify, run the following command under Allo's root directory:
+
+.. code-block:: console
+
+   python3 tests/dataflow/aie/test_vector.py
+
+For Developers
+~~~~~~~~~~~~~~
+
+If you need to build Allo from source, set up environment variables in :ref:`step3` with the following commands.
 
 .. code-block:: console
 
@@ -155,8 +175,7 @@ And set up Vitis and XRT in :ref:`step4` by running the following commands.
 
 .. code-block:: console
 
-   source /opt/common/setupVitis.sh
-   source /opt/common/setupXRT.sh
+   source /opt/common/setup.sh
 
 
 Lastly, to verify the installation, you can run the following command:

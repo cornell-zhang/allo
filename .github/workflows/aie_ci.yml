@@ -43,7 +43,6 @@ jobs:
         export LD_LIBRARY_PATH=${MLIR_AIE_INSTALL_DIR}/lib:${LD_LIBRARY_PATH}
         export INSTALL_PY_MAIN="$MLIR_AIE_INSTALL_DIR/python/aie/compiler/aiecc/main.py"
         cp /ryzers/mlir-aie/python/compiler/aiecc/main.py "$INSTALL_PY_MAIN"
-        source /opt/xilinx/xrt/setup.sh
         xrt-smi examine
         export MLIR_AIE_EXTERNAL_KERNEL_DIR=/ryzers/mlir-aie/aie_kernels/
         export RUNTIME_LIB_DIR=/ryzers/mlir-aie/runtime_lib/
