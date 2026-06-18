@@ -60,8 +60,8 @@ jobs:
         path: docs/build/html/
     - name: Deploy docs
       uses: JamesIves/github-pages-deploy-action@v4
-      if: github.event_name == 'push'
+      # if: github.event_name == 'push'
       with:
-        ACCESS_TOKEN: ${{ secrets.DEPLOY_ACCESS_TOKEN }}
-        BRANCH: gh-pages
-        FOLDER: docs/build/html/
+        token: ${{ secrets.DEPLOY_ACCESS_TOKEN }}
+        branch: gh-pages
+        folder: docs/build/html/
