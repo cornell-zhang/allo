@@ -62,6 +62,6 @@ jobs:
       uses: JamesIves/github-pages-deploy-action@v4
       # if: github.event_name == 'push'
       with:
-        token: ${{ secrets.DEPLOY_ACCESS_TOKEN }}
+        token: ${{ secrets.PAGE_DEPLOYMENT }}
         branch: gh-pages
         folder: docs/build/html/
