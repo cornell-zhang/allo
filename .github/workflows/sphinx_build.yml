@@ -37,6 +37,7 @@ jobs:
       with:
         ref: ${{ github.ref }}
         fetch-depth: 0
+        persist-credentials: false
     - name: Build Allo
       shell: bash
       run: |
