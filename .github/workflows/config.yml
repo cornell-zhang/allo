@@ -84,3 +84,10 @@ jobs:
         python3 -m pip install torch==2.5.1
         python3 examples/torch/toy.py
         python3 examples/torch/mlp.py
+    - name: flashAttention
+      shell: bash
+      run: |
+        source activate allo
+        export PATH=/root/llvm-project/build/bin:${PATH}
+        export LLVM_BUILD_DIR=/root/llvm-project/build
+        python3 examples/flashattention/test_flash.py
