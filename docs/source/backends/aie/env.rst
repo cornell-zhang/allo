@@ -112,10 +112,11 @@ To build and install Allo, you may want to set up environment variables first to
    export PATH=/opt/cmake-3.31.5-linux-x86_64/bin:/opt/llvm-project/build/bin:$PATH
    export LLVM_BUILD_DIR=/opt/llvm-project/build
 
-Next, enter Allo's root directory and install by running the following commands
+Next, enter Allo's root directory, pull dependencies, and install by running the following commands
 
 .. code-block:: bash
 
+   git submodule update --init externals/mlir-python-extra
    python3 -m pip install -v -e .
 
 .. note::

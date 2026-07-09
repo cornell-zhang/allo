@@ -313,3 +313,12 @@ class MockScalar(MockOp):
     @property
     def results(self):
         return [self.result]
+
+
+class MockCallResultTuple(MockOp):
+    def __init__(self, results):
+        self.res = results
+
+    @property
+    def results(self):
+        return self.res

@@ -35,12 +35,31 @@ class Layout:
     class Shard:
         axis: int
 
+        def __repr__(self):
+            return f"S({self.axis})"
+
     @dataclass(frozen=True)
     class Replicate:
-        pass
+        def __repr__(self):
+            return "R"
 
     def __init__(self, partitions: list[Replicate | Shard]):
         self.partitions = partitions
+
+    def shard(self, shape: list[int], grid: list[int]):
+        local_shape = []
+        for dim, partition in zip(shape, self.partitions):
+            if isinstance(partition, Layout.Shard):
+                shard_size = grid[partition.axis]
+                if dim % shard_size != 0:
+                    raise ValueError(
+                        f"Cannot shard dimension of size {dim} over {shard_size} devices "
+                        f"along axis {partition.axis}: dimension is not evenly divisible."
+                    )
+                local_shape.append(dim // shard_size)
+            else:
+                local_shape.append(dim)
+        return local_shape
 
     def get_placement(self, mesh_dims: list[int]):
         """
@@ -77,6 +96,15 @@ class Layout:
             # Convert to tuples for final output
             result[tensor_id] = [tuple(coord) for coord in coords]
         return result
+
+    def __repr__(self):
+        inner = ", ".join(
+            repr(p) if isinstance(p, Layout.Shard) else "R" for p in self.partitions
+        )
+        return f"[{inner}]"
+
+    def __str__(self):
+        return self.__repr__()
 
 
 class Memory:
@@ -266,8 +294,16 @@ class DTensor:
     Distributed tensor.
     """
 
-    def __init__(self, rank, mapping, shape, dtype, spec, name=None, top_name=None):
-        self.rank = rank
+    def __init__(
+        self,
+        mapping,
+        shape,
+        dtype,
+        spec_list,
+        name=None,
+        top_name=None,
+        id_=None,
+    ):
         self.mapping = mapping  # mesh dims
         self.shape = shape  # tensor shape
         self.dtype = dtype
@@ -277,41 +313,26 @@ class DTensor:
         # Handle spec: can be Layout, Memory, or None
         self.layout: Layout = None
         self.memory: Memory = None
-
-        if isinstance(spec, Layout):
-            self.layout = spec
-        elif isinstance(spec, Memory):
-            self.memory = spec
-        elif spec is not None:
-            # For backward compatibility, treat as layout if it has placement attr
-            if hasattr(spec, "placement"):
+        for spec in spec_list:
+            if isinstance(spec, Layout):
                 self.layout = spec
-            elif hasattr(spec, "resource"):
+            elif isinstance(spec, Memory):
                 self.memory = spec
+            else:
+                raise RuntimeError(f"Fail to resolve spec {spec}")
 
         if self.layout is not None and mapping is not None:
             # tensor tile ID -> PE tile IDs
             self.global_placement: dict[
                 tuple[int | str, ...], list[tuple[int, ...]]
             ] = self.layout.get_placement(mapping)
+            self.tile_shape = tuple(self.layout.shard(shape, mapping))
+        else:
+            self.tile_shape = tuple(shape)
         self.access_pattern_set = False
-        self.global_id: int = None
+        self.global_id: int = id_
         self.is_input: bool = None
         self.type_as_param: list = None
-
-    def get_local_shape(self):
-        """
-        Get the local shape of the tensor.
-        """
-        if self.layout is None:
-            return self.shape
-        local_shape = []
-        for shape, partition in zip(self.shape, self.layout.partitions):
-            if isinstance(partition, Layout.Shard):
-                local_shape.append(shape // self.mapping[partition.axis])
-            else:
-                local_shape.append(shape)
-        return tuple(local_shape)
 
     def set_global_info(self, global_id: int, is_input: bool):
         self.global_id = global_id
@@ -429,8 +450,7 @@ class DTensor:
         parts.extend(
             [
                 f"mapping={self.mapping}",
-                f"rank={self.rank}",
-                f"local_shape={self.get_local_shape()}",
+                f"local_shape={self.tile_shape}",
             ]
         )
         return f"DTensor({', '.join(parts)})"

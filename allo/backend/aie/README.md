@@ -28,6 +28,7 @@ python3 -m pip install https://github.com/Xilinx/llvm-aie/releases/download/nigh
 Then, install Allo as usual:
 ```bash
 git clone https://github.com/cornell-zhang/allo.git && cd allo
+git submodule update --init externals/mlir-python-extra
 python3 -m pip install -v -e .
 ```
 
@@ -77,6 +78,7 @@ Below are the exact commands to set up the environment:
    ```bash
    git clone https://github.com/cornell-zhang/allo.git
    cd allo
+   git submodule update --init externals/mlir-python-extra
    python3 -m pip install -v -e .
    ```
 
