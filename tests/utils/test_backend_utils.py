@@ -4,64 +4,69 @@
 """Unit tests for backend utility functions that do not require Vitis/Catapult HLS.
 
 Covers:
-  - postprocess_hls_code: stripping MLIR SSA %identifiers from generated C++
+  - analyze_use_def name derivation: SSA sigils ("%") must not leak into the
+    "name" attribute or the emitted HLS C++
+  - postprocess_hls_code: it must never mangle the C++ modulo operator
   - resolve_nb_type: mapping HLS ap_int<N>/ap_uint<N> to nanobind-compatible stdint types
   - parse_cpp_function: parsing C++ function signatures including ap_int parameter types
 """
 
 import os
+import re
 import tempfile
 import pytest
+import allo
+from allo.ir.types import int8, int16
 from allo.backend.ip import resolve_nb_type, parse_cpp_function, IPModule
 from allo.backend.vitis import postprocess_hls_code
 
 
 # ---------------------------------------------------------------------------
-# postprocess_hls_code: %alloc stripping
+# analyze_use_def name derivation: no stray SSA sigils in emitted HLS
 # ---------------------------------------------------------------------------
 
 
-def test_postprocess_strips_percent_alloc():
-    """MLIR SSA names like %alloc must be stripped to plain identifiers."""
-    hls_code = "int %alloc;\nfloat %alloc1;\n"
-    result = postprocess_hls_code(hls_code, top=None, pragma=False)
-    assert "%alloc" not in result
-    assert "alloc" in result
-    assert "%alloc1" not in result
-    assert "alloc1" in result
+def test_no_ssa_sigil_in_emitted_hls_code():
+    """Names derived from textual SSA ids must not leak "%" into HLS C++.
+
+    Mirrors tests/test_systolic_array.py::test_three_level_systolic_csim up to
+    HLS code emission (buffer_at + partition give an alloc a textual-SSA-derived
+    name). This exercises the analyze_use_def naming path via the vhls backend
+    and is Vitis-free and fast.
+    """
+    M, N, K = 4, 4, 4
+
+    def gemm(A: int8[M, K], B: int8[K, N], C: int16[M, N]):
+        for i, j in allo.grid(M, N, name="PE"):
+            for k in range(K):
+                C[i, j] += A[i, k] * B[k, j]
+
+    s = allo.customize(gemm)
+    buf_A = s.buffer_at(s.A, "i")
+    buf_B = s.buffer_at(s.B, "j")
+    pe = s.unfold("PE", [0, 1])
+    s.partition(s.C, dim=0)
+    s.partition(s.A, dim=1)
+    s.partition(s.B, dim=2)
+    s.to(buf_A, pe, axis=1, depth=M + 1)
+    s.to(buf_B, pe, axis=0, depth=N + 1)
+
+    code = str(s.build(target="vhls"))
+    # "%" followed by a word char is exclusively the MLIR SSA sigil; it is
+    # illegal in C++ and must never survive into the emitted kernel.
+    assert not re.findall(r"%\w+", code)
 
 
-def test_postprocess_strips_generic_percent_ident():
-    """Any %word pattern should be stripped."""
-    hls_code = "return %result;\n"
-    result = postprocess_hls_code(hls_code, top=None, pragma=False)
-    assert "%" not in result
-    assert "result" in result
+# ---------------------------------------------------------------------------
+# postprocess_hls_code: must not mangle the C++ modulo operator
+# ---------------------------------------------------------------------------
 
 
 def test_postprocess_preserves_modulo_operator():
-    """The C++ modulo operator (% followed by non-word char) must not be touched."""
-    # 'x % 4' — space after %, not a word char, should be left alone
+    """The C++ modulo operator must survive postprocess_hls_code untouched."""
     hls_code = "int y = x % 4;\n"
     result = postprocess_hls_code(hls_code, top=None, pragma=False)
     assert "x % 4" in result
-
-
-def test_postprocess_realistic_mlir_snippet():
-    """Realistic MLIR-emitted snippet: %alloc stripped, C++ modulo preserved."""
-    # Reproduces the exact pattern that caused g++ to fail in test_three_level_systolic_csim
-    hls_code = (
-        "void top(int16_t %alloc[4][4]) {\n"
-        "  int16_t %alloc1 = 0;\n"
-        "  int idx = i % 4;\n"  # C++ modulo — must be preserved
-        "}\n"
-    )
-    result = postprocess_hls_code(hls_code, top=None, pragma=False)
-    assert "%alloc" not in result
-    assert "%alloc1" not in result
-    assert "alloc[4][4]" in result
-    assert "alloc1" in result
-    assert "i % 4" in result  # C++ modulo untouched
 
 
 # ---------------------------------------------------------------------------
