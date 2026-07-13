@@ -73,3 +73,29 @@ Similar to other Allo kernels, we can also change the build target to invoke the
 
     mod = s.build(target="vitis_hls", mode="csyn", project="vadd.prj")
     mod()
+
+Supported data types
+====================
+
+The element types allowed in the C++ IP signature are the standard C arithmetic types (``int``, ``float``, ``double``, and the fixed-width ``stdint`` types such as ``int8_t``/``uint16_t``), as well as the arbitrary-precision HLS integer types ``ap_int<N>`` and ``ap_uint<N>``. Because ``ap_int``/``ap_uint`` are provided by the Vitis HLS headers, an IP module that uses them must be created with ``link_hls=True``.
+
+At the Python boundary, ``ap_int<N>`` and ``ap_uint<N>`` are mapped to the matching fixed-width integer type (e.g., ``ap_int<8>`` behaves like ``int8_t`` and ``ap_uint<16>`` like ``uint16_t``), so callers simply pass NumPy arrays of the corresponding ``dtype``. For example, given the following kernel in ``vadd_ap_int.cpp``:
+
+.. code-block:: cpp
+
+    #include <ap_int.h>
+    void vadd_ap_int(ap_int<8> A[32], ap_int<8> B[32], ap_int<16> C[32]) {
+        for (int i = 0; i < 32; ++i)
+            C[i] = A[i] + B[i];
+    }
+
+it can be wrapped and invoked with NumPy arrays whose dtypes match the ``ap_int`` widths:
+
+.. code-block:: python
+
+    vadd_ap_int = allo.IPModule(top="vadd_ap_int", impl="vadd_ap_int.cpp", link_hls=True)
+    np_A = np.random.randint(-64, 64, (32,)).astype(np.int8)
+    np_B = np.random.randint(-64, 64, (32,)).astype(np.int8)
+    np_C = np.zeros((32,), dtype=np.int16)
+    vadd_ap_int(np_A, np_B, np_C)
+    np.testing.assert_allclose(np_A.astype(np.int16) + np_B.astype(np.int16), np_C, atol=1e-6)
