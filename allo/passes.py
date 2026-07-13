@@ -746,7 +746,11 @@ def analyze_use_def(mod):
                 elif " = " in str(op):
                     if "from" in op.attributes:
                         continue
-                    op_name = str(op).split(" = ", maxsplit=1)[0]
+                    # Strip the SSA sigil ("%") once so the derived name is used
+                    # consistently for both the buffer key and the stored "name"
+                    # attribute. Keeping the sigil leaks "%"-prefixed identifiers
+                    # into the C++ emitted by the HLS backends.
+                    op_name = str(op).split(" = ", maxsplit=1)[0].lstrip("%")
                     buf_name = f"{func_name}:{op_name}"
                     op.attributes["name"] = StringAttr.get(op_name, context=mod.context)
                 else:
