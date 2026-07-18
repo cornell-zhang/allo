@@ -15,7 +15,7 @@ jobs:
     # This job runs on Linux
     runs-on: [aie, xdna1]
     container:
-      image: shihanfang/allo-ci:test
+      image: shihanfang/allo-ci:aie
       options: "--device /dev/accel/accel0:/dev/accel/accel0 --ulimit memlock=-1"
     steps:
     # https://github.com/actions/checkout/issues/363#issuecomment-1915075699
