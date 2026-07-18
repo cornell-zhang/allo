@@ -1,7 +1,7 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-name: "Allo AIE Test"
+name: "Allo AIE (XDNA1) Weekly Test"
 on:
   schedule:
     - cron: '0 8 * * 0' # Sunday 08:00 UTC 
@@ -9,9 +9,9 @@ on:
 jobs:
   aie_test:
     # This job runs on Linux
-    runs-on: [zhang-ryzen2]
+    runs-on: [aie, xdna1]
     container:
-      image: shihanfang/allo-ci:test
+      image: shihanfang/allo-ci:aie
       options: "--device /dev/accel/accel0:/dev/accel/accel0 --ulimit memlock=-1"
     steps:
     # https://github.com/actions/checkout/issues/363#issuecomment-1915075699
@@ -47,9 +47,7 @@ jobs:
         export MLIR_AIE_EXTERNAL_KERNEL_DIR=/ryzers/mlir-aie/aie_kernels/
         export RUNTIME_LIB_DIR=/ryzers/mlir-aie/runtime_lib/
         export PATH=/root/llvm-project/build/bin:${PATH}
-        export NPU2=1
         export LLVM_BUILD_DIR=/root/llvm-project/build
         export OMP_NUM_THREADS=128
         python3 -m pytest --ignore=tests/dataflow/aie/gpt2 tests/dataflow/aie -v
         unset OMP_NUM_THREADS
-
