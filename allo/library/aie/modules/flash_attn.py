@@ -15,17 +15,20 @@ R = Layout.Replicate
 def FA(SEQ_LEN, HEAD_DIM, Q_tile_size, q_chunk_size, kv_chunk_size):
     KERNEL_LIB_PATH = os.getenv("ALLO_EXTERNAL_KERNEL_DIR")
     iteration = Q_tile_size // q_chunk_size
+    softmax_microkernel = (
+        "softmax_bf16_aie2p.cc" if os.getenv("NPU2") == "1" else "softmax_bf16.cc"
+    )
 
     init_softmax = ExternalModule(
         top="init_softmax",
-        impl_path=KERNEL_LIB_PATH + "softmax_bf16.cc",
+        impl_path=KERNEL_LIB_PATH + softmax_microkernel,
         input_idx=[],
         output_idx=[0, 1],
     )
 
     online_softmax = ExternalModule(
         top="online_softmax",
-        impl_path=KERNEL_LIB_PATH + "softmax_bf16.cc",
+        impl_path=KERNEL_LIB_PATH + softmax_microkernel,
         input_idx=[0, 1, 2],
         output_idx=[3, 4, 5, 6],
     )
@@ -158,7 +161,7 @@ def FA(SEQ_LEN, HEAD_DIM, Q_tile_size, q_chunk_size, kv_chunk_size):
                 ("chain", [f"send_q_{idx}_0", f"cal_attn_score_{idx}_0"])
             )
             sub_graphs.append((f"send_q_{idx}_0-cal_attn_score_{idx}_0",))
-    col_num = 4
+    col_num = 8 if os.getenv("NPU2") == "1" else 4
     if iteration > col_num:
         for idx in range(col_num):
             nodes = [sub_graphs[idx + i * col_num] for i in range(iteration // col_num)]
