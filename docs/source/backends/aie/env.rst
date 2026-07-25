@@ -53,6 +53,11 @@ We depend on the `MLIR-AIE <https://github.com/Xilinx/mlir-aie>`_ project to com
    # Install Peano from a llvm-aie wheel
    python3 -m pip install https://github.com/Xilinx/llvm-aie/releases/download/nightly/llvm_aie-19.0.0.2025041501+b2a279c1-py3-none-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
 
+.. warning::
+
+   The pinned ``llvm_aie`` nightly wheel above no longer exists, so the ``pip install`` command will fail. 
+   For a working MLIR-AIE v1.0 environment, use :ref:`docker`.
+
 
 .. warning::
 
@@ -135,6 +140,46 @@ Setup Vitis and XRT.
 Lastly, you can verify the AIE backend by running the following command under Allo's root directory.
 
 .. code-block:: console
+
+   python3 tests/dataflow/aie/test_vector.py
+
+
+.. _docker:
+
+Docker Setup for MLIR-AIE v1.0
+------------------------------
+
+The ``shihanfang/allo-ci:aie-v1.0`` image provides a working MLIR-AIE v1.0 environment and is also used by the weekly AIE CI workflow. 
+After installing the required XDNA driver and XRT, run the following commands at the root directory of your cloned Allo repository:
+
+.. code-block:: bash
+
+   docker pull shihanfang/allo-ci:aie-v1.0
+   docker run --rm -it \
+      --device /dev/accel/accel0:/dev/accel/accel0 \
+      --ulimit memlock=-1 \
+      -v "$(pwd):/ryzers/allo" \
+      -w /ryzers/allo \
+      shihanfang/allo-ci:aie-v1.0 bash
+
+The cloned Allo repository will be mounted to `/ryzers/allo` inside the container.
+
+Inside the container, enter `/ryzers/allo` and then activate the pre-configured environment and install Allo:
+
+.. code-block:: bash
+
+   source activate allo
+   python3 -m pip install -v -e .
+
+Verify that XRT can access the NPU:
+
+.. code-block:: bash
+
+   xrt-smi examine
+
+Lastly, you can verify the AIE backend by running the following command under Allo's root directory.
+
+.. code-block:: bash
 
    python3 tests/dataflow/aie/test_vector.py
 
