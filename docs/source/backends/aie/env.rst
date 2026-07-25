@@ -150,17 +150,17 @@ Docker Setup for MLIR-AIE v1.0
 ------------------------------
 
 The ``shihanfang/allo-ci:aie-v1.0`` image provides a working MLIR-AIE v1.0 environment and is also used by the weekly AIE CI workflow. 
-After installing the required XDNA driver and XRT, run the following commands the root directory of your cloned Allo repository:
+After installing the required XDNA driver and XRT, run the following commands at the root directory of your cloned Allo repository:
 
 .. code-block:: bash
 
    docker pull shihanfang/allo-ci:aie-v1.0
    docker run --rm -it \
-     --device /dev/accel/accel0:/dev/accel/accel0 \
-     --ulimit memlock=-1 \
-     -v "$(pwd):/ryzers/allo" \
-     -w /ryzers/allo \
-     shihanfang/allo-ci:aie-v1.0 bash
+      --device /dev/accel/accel0:/dev/accel/accel0 \
+      --ulimit memlock=-1 \
+      -v "$(pwd):/ryzers/allo" \
+      -w /ryzers/allo \
+      shihanfang/allo-ci:aie-v1.0 bash
 
 The cloned Allo repository will be mounted to `/ryzers/allo` inside the container.
 
