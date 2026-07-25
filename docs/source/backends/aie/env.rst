@@ -149,18 +149,18 @@ Lastly, you can verify the AIE backend by running the following command under Al
 Docker Setup for MLIR-AIE v1.0
 ------------------------------
 
-The ``shihanfang/allo-ci:aie`` image provides a working MLIR-AIE v1.0 environment and is also used by the weekly AIE CI workflow. 
+The ``shihanfang/allo-ci:aie-v1.0`` image provides a working MLIR-AIE v1.0 environment and is also used by the weekly AIE CI workflow. 
 After installing the required XDNA driver and XRT, run the following commands the root directory of your cloned Allo repository:
 
 .. code-block:: bash
 
-   docker pull shihanfang/allo-ci:aie
+   docker pull shihanfang/allo-ci:aie-v1.0
    docker run --rm -it \
      --device /dev/accel/accel0:/dev/accel/accel0 \
      --ulimit memlock=-1 \
      -v "$(pwd):/ryzers/allo" \
      -w /ryzers/allo \
-     shihanfang/allo-ci:aie bash
+     shihanfang/allo-ci:aie-v1.0 bash
 
 The cloned Allo repository will be mounted to `/ryzers/allo` inside the container.
 
@@ -169,26 +169,7 @@ Inside the container, enter `/ryzers/allo` and then activate the pre-configured 
 .. code-block:: bash
 
    source activate allo
-   export LLVM_BUILD_DIR=/root/llvm-project/build
    python3 -m pip install -v -e .
-
-Configure the MLIR-AIE v1.0 environment:
-
-.. code-block:: bash
-
-   python3 -m pip install -r /ryzers/mlir-aie/python/requirements.txt
-   HOST_MLIR_PYTHON_PACKAGE_PREFIX=aie \
-     python3 -m pip install -r /ryzers/mlir-aie/python/requirements_extras.txt
-   python3 -m pip install -r /ryzers/mlir-aie/python/requirements_ml.txt
-   export MLIR_AIE_INSTALL_DIR="$(pip show mlir_aie 2>/dev/null | grep ^Location: | awk '{print $2}')/mlir_aie"
-   export PEANO_INSTALL_DIR="$(pip show llvm-aie 2>/dev/null | grep ^Location: | awk '{print $2}')/llvm-aie"
-   export PATH="${MLIR_AIE_INSTALL_DIR}/bin:/root/llvm-project/build/bin:${PATH}"
-   export PYTHONPATH="${MLIR_AIE_INSTALL_DIR}/python:${PYTHONPATH}"
-   export LD_LIBRARY_PATH="${MLIR_AIE_INSTALL_DIR}/lib:${LD_LIBRARY_PATH}"
-   export MLIR_AIE_EXTERNAL_KERNEL_DIR=/ryzers/mlir-aie/aie_kernels/
-   export RUNTIME_LIB_DIR=/ryzers/mlir-aie/runtime_lib/
-   export INSTALL_PY_MAIN="${MLIR_AIE_INSTALL_DIR}/python/aie/compiler/aiecc/main.py"
-   cp /ryzers/mlir-aie/python/compiler/aiecc/main.py "${INSTALL_PY_MAIN}"
 
 Verify that XRT can access the NPU:
 

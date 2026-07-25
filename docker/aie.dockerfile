@@ -60,8 +60,33 @@ RUN eval "$(/root/miniconda/bin/conda shell.bash hook)" && \
     python3 -m pip install mlir_aie -f https://github.com/Xilinx/mlir-aie/releases/expanded_assets/v1.0 && \
     python3 -m pip install https://github.com/Xilinx/llvm-aie/releases/download/nightly/llvm_aie-19.0.0.2025041501+b2a279c1-py3-none-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
 
-
 RUN git clone https://github.com/Xilinx/mlir-aie.git "/ryzers/mlir-aie" && \
     cd "/ryzers/mlir-aie" && \
     git checkout 07320d6 && \
     patch -p1 < "$PATCH_FILE"
+
+RUN eval "$(/root/miniconda/bin/conda shell.bash hook)" && \
+    conda activate allo && \
+    python3 -m pip install \
+      -r /ryzers/mlir-aie/python/requirements.txt && \
+    HOST_MLIR_PYTHON_PACKAGE_PREFIX=aie \
+      python3 -m pip install \
+      -r /ryzers/mlir-aie/python/requirements_extras.txt && \
+    python3 -m pip install \
+      -r /ryzers/mlir-aie/python/requirements_ml.txt && \
+    MLIR_AIE_LOCATION="$(python3 -m pip show mlir_aie | awk '/^Location:/{print $2}')" && \
+    LLVM_AIE_LOCATION="$(python3 -m pip show llvm-aie | awk '/^Location:/{print $2}')" && \
+    ln -s "${MLIR_AIE_LOCATION}/mlir_aie" /opt/mlir-aie && \
+    ln -s "${LLVM_AIE_LOCATION}/llvm-aie" /opt/llvm-aie && \
+    cp /ryzers/mlir-aie/python/compiler/aiecc/main.py \
+      /opt/mlir-aie/python/aie/compiler/aiecc/main.py
+
+ENV MLIR_AIE_INSTALL_DIR=/opt/mlir-aie
+ENV PEANO_INSTALL_DIR=/opt/llvm-aie
+ENV MLIR_AIE_EXTERNAL_KERNEL_DIR=/ryzers/mlir-aie/aie_kernels/
+ENV RUNTIME_LIB_DIR=/ryzers/mlir-aie/runtime_lib/
+ENV LLVM_BUILD_DIR=/root/llvm-project/build
+
+ENV PATH="/root/miniconda/envs/allo/bin:/opt/mlir-aie/bin:/root/llvm-project/build/bin:${PATH}"
+ENV PYTHONPATH="/opt/mlir-aie/python"
+ENV LD_LIBRARY_PATH="/opt/mlir-aie/lib"
