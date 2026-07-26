@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import allo
-from allo.ir.types import int16, int32
+from allo.ir.types import int16, int32, Stream
 import allo.dataflow as df
 import numpy as np
 from allo.memory import Layout
@@ -185,12 +185,57 @@ def test_gemm_2D_mixed():
         print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 
 
+def test_gemm_atb():
+    Ty = int16
+    M, N, K = 16, 16, 16
+    P0 = 2
+    Ma = M // P0
+
+    @df.region()
+    def top1(A0: Ty[Ma, K], A1: Ty[Ma, K], B: Ty[K, N], C: Ty[M, N]):
+        pipeB: Stream[Ty[K, N], 1][P0]
+        pipeC: Stream[Ty[Ma, N], 1][P0]
+
+        @df.kernel(mapping=[1], args=[B])
+        def loadB(local_B: Ty[K, N]):
+            b = local_B
+            pipeB[0].put(b)
+            pipeB[1].put(b)
+
+        @df.kernel(mapping=[1], args=[A0])
+        def gemm0(local_A: Ty[Ma, K]):
+            c0 = allo.matmul(local_A, pipeB[0].get())
+            pipeC[0].put(c0)
+
+        @df.kernel(mapping=[1], args=[A1])
+        def gemm1(local_A: Ty[Ma, K]):
+            c1 = allo.matmul(local_A, pipeB[1].get())
+            pipeC[1].put(c1)
+
+        @df.kernel(mapping=[1], args=[C])
+        def store(local_C: Ty[M, N]):
+            local_C[:Ma, :] = pipeC[0].get()
+            local_C[Ma:, :] = pipeC[1].get()
+
+    A = np.random.randint(0, 64, (M, K)).astype(np.int16)
+    B = np.random.randint(0, 64, (K, N)).astype(np.int16)
+    C = np.zeros((M, N)).astype(np.int16)
+    if is_available():
+        mod = df.build(top, target="aie")
+        mod(A[:Ma, :], A[Ma:, :], B, C)
+        np.testing.assert_allclose(C, A @ B, atol=1e-5)
+        print("PASSED!")
+    else:
+        print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
+
+
 if __name__ == "__main__":
     test_matrix_scalar_add()
     test_matrix_matrix_add()
     test_gemm_1D_mixed()
     test_gemm_2D_mixed()
     test_gemm_1D()
+    test_gemm_atb()
 
     # Allo flow
     test_gemm_2D()

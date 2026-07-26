@@ -107,8 +107,61 @@ def test_const_arrays_arithmetic():
     print("Dataflow Simulator (Arithmetic) Passed!")
 
 
+def test_arg_mapping():
+    @df.region()
+    def top1(a: int32[4], b: int32[4]):
+        @df.kernel(mapping=[1], args=[a])
+        def k_a(x: int32[4]):  # local param name "x"
+            for i in range(4):
+                x[i] = 1
+
+        @df.kernel(mapping=[1], args=[b])
+        def k_b(x: int32[4]):  # SAME local param name "x"
+            for i in range(4):
+                x[i] = 2
+
+    mod = df.build(top1, target="simulator")
+    a = np.zeros(4).astype(np.int32)
+    b = np.zeros(4).astype(np.int32)
+    mod(a, b)
+    np.testing.assert_allclose(
+        a,
+        np.array([1, 1, 1, 1], dtype=np.int32),
+    )
+    np.testing.assert_allclose(
+        b,
+        np.array([2, 2, 2, 2], dtype=np.int32),
+    )
+
+    @df.region()
+    def top2(a: int32[4], b: int32[4]):
+        @df.kernel(mapping=[1], args=[b])
+        def k_b(x: int32[4]):  # local param name "x"
+            for i in range(4):
+                x[i] = 1
+
+        @df.kernel(mapping=[1], args=[a])
+        def k_a(x: int32[4]):  # SAME local param name "x"
+            for i in range(4):
+                x[i] = 2
+
+    mod = df.build(top2, target="simulator")
+    a = np.zeros(4).astype(np.int32)
+    b = np.zeros(4).astype(np.int32)
+    mod(a, b)
+    np.testing.assert_allclose(
+        a,
+        np.array([2, 2, 2, 2], dtype=np.int32),
+    )
+    np.testing.assert_allclose(
+        b,
+        np.array([1, 1, 1, 1], dtype=np.int32),
+    )
+
+
 if __name__ == "__main__":
     test_uint()
     test_func_index()
     test_const_arrays()
     test_const_arrays_arithmetic()
+    test_arg_mapping()
