@@ -160,8 +160,8 @@ def test_arg_mapping():
 
 
 if __name__ == "__main__":
-    # test_uint()
-    # test_func_index()
-    # test_const_arrays()
-    # test_const_arrays_arithmetic()
+    test_uint()
+    test_func_index()
+    test_const_arrays()
+    test_const_arrays_arithmetic()
     test_arg_mapping()
