@@ -449,6 +449,8 @@ class CodeGenerator:
                     uses.extend(uses_)
                 if isinstance(fifo, tuple):
                     fifo = fifo[0 if is_put else 1]
+
+                # optimization to reduce memcpy
                 if len(uses) == 1:
                     op = uses[0].owner
                     if is_put:
