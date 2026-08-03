@@ -192,7 +192,7 @@ def test_gemm_atb():
     Ma = M // P0
 
     @df.region()
-    def top1(A0: Ty[Ma, K], A1: Ty[Ma, K], B: Ty[K, N], C: Ty[M, N]):
+    def top(A0: Ty[Ma, K], A1: Ty[Ma, K], B: Ty[K, N], C: Ty[M, N]):
         pipeB: Stream[Ty[K, N], 1][P0]
         pipeC: Stream[Ty[Ma, N], 1][P0]
 

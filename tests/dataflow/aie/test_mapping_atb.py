@@ -2,18 +2,18 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import os
+import pytest
 import allo
 import allo.dataflow as df
 from allo.backend.aie import is_available
 from allo.ir.types import int16, Stream
 import numpy as np
 
-Ty = int16
-M, N, K = 64, 16, 16
-RHO_VALUES = [1, 2, 4, 8]  # Change rho value here
 
-
-def make_atb_top(rho):
+@pytest.mark.parametrize("rho", [1, 2, 4])
+def test_atb(rho):
+    Ty = int16
+    M, N, K = 64, 16, 16
     assert M % rho == 0
     Ma = M // rho
 
@@ -45,11 +45,6 @@ def make_atb_top(rho):
             with allo.meta_for(rho) as i:
                 local_C[i * Ma : (i + 1) * Ma, :] = pipe_c[i].get()
 
-    return top
-
-
-def run_atb(rho):
-    top = make_atb_top(rho)
     mapping_primitives = None
     if rho > 1:
         mapping_primitives = [("bundle", [f"compute_{i}" for i in range(rho)])]
@@ -70,5 +65,6 @@ def run_atb(rho):
 
 
 if __name__ == "__main__":
+    RHO_VALUES = [1, 2, 4, 8]  # Change rho value here
     for rho in RHO_VALUES:
-        run_atb(rho)
+        test_atb(rho)
