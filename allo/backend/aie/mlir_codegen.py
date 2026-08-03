@@ -442,14 +442,13 @@ class CodeGenerator:
             for fifo_name, args in inter_ct_fifo.items():
                 fifo = self.fifo_map[fifo_name]
                 uses = []
-                is_put, is_tensor = None, None
                 for arg in args:
                     uses_ = list(arg.uses)
-                    if is_put is None:
-                        is_put, is_tensor = check_stream_op_type(arg, uses_[0].owner)
+                    is_put, is_tensor = check_stream_op_type(arg, uses_[0].owner)
                     uses.extend(uses_)
                 for use_ in uses:
                     op = use_.owner
+                    # TODO: add optimization to reduce memcpy
                     with aie_ir.InsertionPoint(op.operation):
                         if isinstance(fifo, tuple):
                             fifo = fifo[0 if is_put else 1]
