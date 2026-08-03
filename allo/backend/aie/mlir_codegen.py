@@ -364,8 +364,7 @@ class CodeGenerator:
                     # TODO: add guard to ensure that in this case fifo won't be reused
                     for use_ in argument.uses:
                         op = use_.owner
-                        # get loop nests
-                        loop_nests = {}
+                        loop_nests = {}  # get loop nests
                         parent = op.parent
                         while parent is not None and not isinstance(
                             parent, aie_func_d.FuncOp
@@ -467,7 +466,7 @@ class CodeGenerator:
                                     old.replace_all_uses_with(new)
                             fifo.release(1, 1)
                     op.erase()
- 
+
             for fifo_name, (is_input, region) in reused_fifo_info.items():
                 with aie_ir.InsertionPoint.at_block_terminator(region):
                     self.fifo_map[fifo_name].release(1 if is_input else 0, 1)
