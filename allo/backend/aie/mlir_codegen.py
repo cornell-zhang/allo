@@ -276,6 +276,7 @@ class CodeGenerator:
         func_body = func_core.regions[0]
         entry_block = aie_ir.Block.create_at_start(func_body)
 
+        # pylint: disable=unsupported-binary-operation
         def check_stream_op_type(argument, op) -> tuple[bool | None, bool | None]:
             is_put, is_tensor = None, None
             if getattr(op, "name", None) == "memref.store" or (
