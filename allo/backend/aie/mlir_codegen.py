@@ -276,7 +276,7 @@ class CodeGenerator:
         func_body = func_core.regions[0]
         entry_block = aie_ir.Block.create_at_start(func_body)
 
-        def check_stream_op_type(argument, op) -> tuple[bool, bool]:
+        def check_stream_op_type(argument, op) -> tuple[bool | None, bool | None]:
             is_put, is_tensor = None, None
             if getattr(op, "name", None) == "memref.store" or (
                 getattr(op, "name", None) == "memref.copy"
@@ -446,12 +446,36 @@ class CodeGenerator:
                     uses_ = list(arg.uses)
                     is_put, is_tensor = check_stream_op_type(arg, uses_[0].owner)
                     uses.extend(uses_)
+                if isinstance(fifo, tuple):
+                    fifo = fifo[0 if is_put else 1]
+                if len(uses) == 1:
+                    op = uses[0].owner
+                    if is_put:
+                        alloc_op = op.operands[0].owner
+                        if getattr(alloc_op, "name", None) == "memref.alloc":
+                            with aie_ir.InsertionPoint(alloc_op.operation):
+                                acquired = fifo.acquire(0, 1)
+                            op.operands[0].replace_all_uses_with(acquired)
+                            with aie_ir.InsertionPoint(op.operation):
+                                fifo.release(0, 1)
+                            op.erase()
+                            alloc_op.erase()
+                            continue
+                    elif is_tensor and len(list(op.operands[0].uses)) == 1:
+                        # get tensor once
+                        with aie_ir.InsertionPoint(op):
+                            acquired = fifo.acquire(1, 1)
+                        op.operands[1].replace_all_uses_with(acquired)
+                        op.erase()
+                        acquired_uses = list(acquired.uses)
+                        assert len(acquired_uses) == 1, "To be implemented..."
+                        with aie_ir.InsertionPoint(acquired_uses[0].owner.operation):
+                            fifo.release(1, 1)
+                        continue
+
                 for use_ in uses:
                     op = use_.owner
-                    # TODO: add optimization to reduce memcpy
                     with aie_ir.InsertionPoint(op.operation):
-                        if isinstance(fifo, tuple):
-                            fifo = fifo[0 if is_put else 1]
                         if is_put:
                             op.operands[1] = fifo.acquire(0, 1)
                             new_op = op.clone()  # no use, no need to replace
