@@ -275,6 +275,22 @@ class CodeGenerator:
         assert not parsed_function is None
         func_body = func_core.regions[0]
         entry_block = aie_ir.Block.create_at_start(func_body)
+
+        def check_stream_op_type(argument, op) -> tuple[bool, bool]:
+            is_put, is_tensor = None, None
+            if getattr(op, "name", None) == "memref.store" or (
+                getattr(op, "name", None) == "memref.copy"
+                and argument == op.operands[1]
+            ):  # allo.stream_put
+                is_put = True
+            elif (
+                getattr(op, "name", None) == "memref.load"
+            ):  # allo.stream_get, non-tensor
+                is_put, is_tensor = False, False
+            elif getattr(op, "name", None) == "memref.copy":  # allo.stream_get, tensor
+                is_put, is_tensor = False, True
+            return is_put, is_tensor
+
         with aie_ir.InsertionPoint(entry_block):
             index_type = aie_ir.IndexType.get()
             # compute core wrapper: fake while(1)
@@ -284,6 +300,8 @@ class CodeGenerator:
             # scf.for %arg0 = %c0 to %cmax step %c1
             loop = aie_scf_d.ForOp(lower_bound=c0, upper_bound=cmax, step=c1)
             reused_fifo_info: dict[str, tuple[bool, Any]] = {}
+            # fifo name -> argument placeholders
+            inter_ct_fifo: dict[str, list] = defaultdict(list)
             for i, argument in enumerate(parsed_function.arguments):
                 if not i in func_args:
                     continue
@@ -332,12 +350,18 @@ class CodeGenerator:
                 else:
                     fifo_list = []
                     if isinstance(arg_info[0], Argument):
+                        stream = arg_info[0].stream
                         fifo_list.append(self.fifo_map[arg_info[0].stream.name])
                     else:
+                        stream = arg_info[0][0].stream
                         for stream_arg in arg_info[0]:
                             fifo_list.append(self.fifo_map[stream_arg.stream.name])
-                    compact_flag = len(fifo_list) == 1 or len(set(fifo_list)) == 1
-                    fifo = fifo_list[0]
+                    if (
+                        len(fifo_list) == 1 or len(set(fifo_list)) == 1
+                    ):  # no need to use 'switch'
+                        inter_ct_fifo[stream.name].append(argument)
+                        continue
+                    # TODO: add guard to ensure that in this case fifo won't be reused
                     for use_ in argument.uses:
                         op = use_.owner
                         # get loop nests
@@ -353,104 +377,97 @@ class CodeGenerator:
                                 loop_nests[parent.attributes["op_name"].value] = parent
                             parent = parent.parent
                         with aie_ir.InsertionPoint(op.operation):
-                            is_put, is_tensor = None, None
-                            if getattr(op, "name", None) == "memref.store" or (
-                                getattr(op, "name", None) == "memref.copy"
-                                and argument == op.operands[1]
-                            ):  # allo.stream_put
-                                is_put = True
-                            elif (
-                                getattr(op, "name", None) == "memref.load"
-                            ):  # allo.stream_get, non-tensor
-                                is_put, is_tensor = False, False
-                            elif (
-                                getattr(op, "name", None) == "memref.copy"
-                            ):  # allo.stream_get, tensor
-                                is_put, is_tensor = False, True
-                            else:
+                            is_put, is_tensor = check_stream_op_type(argument, op)
+                            if is_put is None:
                                 continue
-                            if compact_flag:
+                            assert len(loop_nests) == 1, "To be implemented..."
+                            loop_name = list(loop_nests.keys())[0]
+                            cases = []
+                            case_val = []
+                            for fifo, stream_arg in zip(fifo_list, arg_info[0]):
+                                if is_put:
+                                    cases.append(
+                                        stream_arg.stream.src_related_iter_info[
+                                            loop_name
+                                        ]
+                                    )
+                                else:
+                                    cases.append(
+                                        stream_arg.stream.dst_related_iter_info[
+                                            loop_name
+                                        ]
+                                    )
                                 if isinstance(fifo, tuple):
-                                    fifo = fifo[0 if is_put else 1]
-                                if is_put:
-                                    op.operands[1] = fifo.acquire(0, 1)
-                                    new_op = op.clone()  # no use, no need to replace
-                                    fifo.release(0, 1)
+                                    case_val.append(fifo[0 if is_put else 1])
                                 else:
-                                    acquired = fifo.acquire(1, 1)
-                                    op.operands[0] = acquired
-                                    new_op = op.clone()
-                                    if not is_tensor:
-                                        for old, new in zip(op.results, new_op.results):
-                                            old.replace_all_uses_with(new)
-                                    fifo.release(1, 1)
+                                    case_val.append(fifo)
+                            switch_op = aie_scf_d.IndexSwitchOp(
+                                [op.operands[1].type],
+                                loop_nests[loop_name].regions[0].blocks[0].arguments[0],
+                                cases[1:],
+                                len(cases[1:]),
+                            )
+                            cnt = 0
+                            for region in switch_op.caseRegions:
+                                block = region.blocks.append()
+                                with aie_ir.InsertionPoint(block):
+                                    acquired = case_val[cnt].acquire(
+                                        0 if is_put else 1, 1
+                                    )
+                                    aie_scf_d.YieldOp([acquired])
+                                    cnt += 1
+                            if is_put:
+                                op.operands[1] = switch_op.result
+                                new_op = op.clone()  # no use, no need to replace
                             else:
-                                assert len(loop_nests) == 1, "To be implemented..."
-                                loop_name = list(loop_nests.keys())[0]
-                                cases = []
-                                case_val = []
-                                for fifo, stream_arg in zip(fifo_list, arg_info[0]):
-                                    if is_put:
-                                        cases.append(
-                                            stream_arg.stream.src_related_iter_info[
-                                                loop_name
-                                            ]
-                                        )
-                                    else:
-                                        cases.append(
-                                            stream_arg.stream.dst_related_iter_info[
-                                                loop_name
-                                            ]
-                                        )
-                                    if isinstance(fifo, tuple):
-                                        case_val.append(fifo[0 if is_put else 1])
-                                    else:
-                                        case_val.append(fifo)
-                                switch_op = aie_scf_d.IndexSwitchOp(
-                                    [op.operands[1].type],
-                                    loop_nests[loop_name]
-                                    .regions[0]
-                                    .blocks[0]
-                                    .arguments[0],
-                                    cases[1:],
-                                    len(cases[1:]),
-                                )
-                                cnt = 0
-                                for region in switch_op.caseRegions:
-                                    block = region.blocks.append()
-                                    with aie_ir.InsertionPoint(block):
-                                        acquired = case_val[cnt].acquire(
-                                            0 if is_put else 1, 1
-                                        )
-                                        aie_scf_d.YieldOp([acquired])
-                                        cnt += 1
-                                if is_put:
-                                    op.operands[1] = switch_op.result
-                                    new_op = op.clone()  # no use, no need to replace
-                                else:
-                                    op.operands[0] = switch_op.result
-                                    new_op = op.clone()
-                                    if not is_tensor:
-                                        for old, new in zip(op.results, new_op.results):
-                                            old.replace_all_uses_with(new)
-                                switch_op = aie_scf_d.IndexSwitchOp(
-                                    [],
-                                    loop_nests[loop_name]
-                                    .regions[0]
-                                    .blocks[0]
-                                    .arguments[0],
-                                    cases[1:],
-                                    len(cases[1:]),
-                                )
-                                cnt = 0
-                                for region in switch_op.caseRegions:
-                                    block = region.blocks.append()
-                                    with aie_ir.InsertionPoint(block):
-                                        case_val[cnt].release(0 if is_put else 1, 1)
-                                        aie_scf_d.YieldOp([])
-                                        cnt += 1
+                                op.operands[0] = switch_op.result
+                                new_op = op.clone()
+                                if not is_tensor:
+                                    for old, new in zip(op.results, new_op.results):
+                                        old.replace_all_uses_with(new)
+                            switch_op = aie_scf_d.IndexSwitchOp(
+                                [],
+                                loop_nests[loop_name].regions[0].blocks[0].arguments[0],
+                                cases[1:],
+                                len(cases[1:]),
+                            )
+                            cnt = 0
+                            for region in switch_op.caseRegions:
+                                block = region.blocks.append()
+                                with aie_ir.InsertionPoint(block):
+                                    case_val[cnt].release(0 if is_put else 1, 1)
+                                    aie_scf_d.YieldOp([])
+                                    cnt += 1
                             op.erase()
 
+            for fifo_name, args in inter_ct_fifo.items():
+                fifo = self.fifo_map[fifo_name]
+                uses = []
+                is_put, is_tensor = None, None
+                for arg in args:
+                    uses_ = list(arg.uses)
+                    if is_put is None:
+                        is_put, is_tensor = check_stream_op_type(arg, uses_[0].owner)
+                    uses.extend(uses_)
+                for use_ in uses:
+                    op = use_.owner
+                    with aie_ir.InsertionPoint(op.operation):
+                        if isinstance(fifo, tuple):
+                            fifo = fifo[0 if is_put else 1]
+                        if is_put:
+                            op.operands[1] = fifo.acquire(0, 1)
+                            new_op = op.clone()  # no use, no need to replace
+                            fifo.release(0, 1)
+                        else:
+                            acquired = fifo.acquire(1, 1)
+                            op.operands[0] = acquired
+                            new_op = op.clone()
+                            if not is_tensor:
+                                for old, new in zip(op.results, new_op.results):
+                                    old.replace_all_uses_with(new)
+                            fifo.release(1, 1)
+                    op.erase()
+ 
             for fifo_name, (is_input, region) in reused_fifo_info.items():
                 with aie_ir.InsertionPoint.at_block_terminator(region):
                     self.fifo_map[fifo_name].release(1 if is_input else 0, 1)
