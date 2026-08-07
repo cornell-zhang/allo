@@ -472,8 +472,11 @@ class CodeGenerator:
                         op.erase()
                         acquired_uses = list(acquired.uses)
                         assert len(acquired_uses) == 1, "To be implemented..."
-                        with aie_ir.InsertionPoint(acquired_uses[0].owner.operation):
+                        use_op = acquired_uses[0].owner.operation
+                        with aie_ir.InsertionPoint(use_op):
+                            use_op.clone()  # ensure 'release' happens after use
                             fifo.release(1, 1)
+                        use_op.erase()
                         continue
 
                 for use_ in uses:

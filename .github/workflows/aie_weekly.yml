@@ -3,8 +3,9 @@
 
 name: "Allo AIE (XDNA1) Weekly Test"
 on:
-  schedule:
-    - cron: '0 8 * * 0' # Sunday 08:00 UTC 
+  pull_request:
+    branches:
+      - main
 
 jobs:
   aie_test:
