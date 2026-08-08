@@ -472,7 +472,7 @@ class CodeGenerator:
                             if not use.owner == op
                         ]
                         # Due to MLIR Python binding limitations, the last use cannot be reliably determined. Restrict to the single-use case.
-                        if len(result_uses) == 1 and result_uses[0].parent is op.parent:
+                        if len(result_uses) == 1 and result_uses[0].parent == op.parent:
                             with aie_ir.InsertionPoint(op):
                                 acquired = fifo.acquire(1, 1)
                             op.operands[1].replace_all_uses_with(acquired)
