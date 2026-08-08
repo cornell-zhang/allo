@@ -22,7 +22,6 @@ jobs:
         git config --global --add safe.directory "$GITHUB_WORKSPACE"
     - uses: actions/checkout@v4
       with:
-        ref: main 
         fetch-depth: 0
     - name: Build Allo
       shell: bash
