@@ -464,20 +464,29 @@ class CodeGenerator:
                             op.erase()
                             alloc_op.erase()
                             continue
+                    # get tensor once
                     elif is_tensor and len(list(op.operands[0].uses)) == 1:
-                        # get tensor once
-                        with aie_ir.InsertionPoint(op):
-                            acquired = fifo.acquire(1, 1)
-                        op.operands[1].replace_all_uses_with(acquired)
-                        op.erase()
-                        acquired_uses = list(acquired.uses)
-                        assert len(acquired_uses) == 1, "To be implemented..."
-                        use_op = acquired_uses[0].owner.operation
-                        with aie_ir.InsertionPoint(use_op):
-                            use_op.clone()  # ensure 'release' happens after use
-                            fifo.release(1, 1)
-                        use_op.erase()
-                        continue
+                        result_uses = [
+                            use.owner
+                            for use in op.operands[1].uses
+                            if not use.owner == op
+                        ]
+                        # Due to MLIR Python binding limitations, the last use cannot be reliably determined. Restrict to the single-use case.
+                        if len(result_uses) == 1 and result_uses[0].parent is op.parent:
+                            with aie_ir.InsertionPoint(op):
+                                acquired = fifo.acquire(1, 1)
+                            op.operands[1].replace_all_uses_with(acquired)
+                            op.erase()
+                            acquired_uses = list(acquired.uses)
+                            use_op = acquired_uses[0].owner.operation
+                            # ensure 'release' happens after use
+                            with aie_ir.InsertionPoint(use_op):
+                                cloned = use_op.clone()
+                                for old, new in zip(use_op.results, cloned.results):
+                                    old.replace_all_uses_with(new)
+                                fifo.release(1, 1)
+                            use_op.erase()
+                            continue
 
                 for use_ in uses:
                     op = use_.owner
