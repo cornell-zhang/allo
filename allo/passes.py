@@ -412,7 +412,26 @@ def decompose_library_function(module):
     with module.context, Location.unknown():
         # get all functions from origin module and find the function to replace
         body_op_to_remove = []
+
+        def rewrite_clampf_in_block(block):
+            for body_op in list(block.operations):
+                for region in body_op.regions:
+                    for sub_block in region.blocks:
+                        rewrite_clampf_in_block(sub_block)
+
+                if body_op.operation.name == "math.clampf":
+                    x = body_op.operands[0]
+                    lo = body_op.operands[1]
+                    hi = body_op.operands[2]
+                    with InsertionPoint(body_op.operation):
+                        t0 = arith_d.MaximumFOp(x, lo).result
+                        t1 = arith_d.MinimumFOp(t0, hi).result
+                    body_op.result.replace_all_uses_with(t1)
+                    body_op_to_remove.append(body_op)
+
         for op in module.body.operations:
+            if isinstance(op, func_d.FuncOp) and not op.is_external:
+                rewrite_clampf_in_block(op.entry_block)
             if isinstance(op, func_d.FuncOp) and not op.is_external:
                 for body_op in op.entry_block.operations:
                     # put function into the module

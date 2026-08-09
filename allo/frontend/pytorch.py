@@ -121,6 +121,13 @@ def get_var_name(node):
     return node.name if isinstance(node, fx.Node) else node
 
 
+class _ShimNode:
+    def __init__(self, args, kwargs=None, meta=None):
+        self.args = tuple(args)
+        self.kwargs = {} if kwargs is None else dict(kwargs)
+        self.meta = {} if meta is None else dict(meta)
+
+
 class TorchBuilder:
     def __init__(
         self,
@@ -143,6 +150,7 @@ class TorchBuilder:
         self.output = []
         self.composition = []
         self.unique_id = {}
+        self.tmp_id = {}
         # operator dtype preferences; values can be strings (e.g., "float16") or AlloType objects (e.g., types.int8)
         self.op_dtypes = op_dtypes or {}
         # mapping from parameter/buffer var name (underscored) to dtype name string used in code
@@ -151,6 +159,14 @@ class TorchBuilder:
         self.extra_types = {}
         # whether to pass weights as function arguments instead of global constants
         self.weights_as_args = weights_as_args
+
+    def _emit_shim_call(self, opcls: str, args, parent_node):
+        shim = _ShimNode(
+            args=args,
+            kwargs={},
+            meta=getattr(parent_node, "meta", {}),
+        )
+        return getattr(self, f"build_{opcls}")(shim)
 
     def _find_types_module_symbol(self, dtype_obj):
         # Try to find a public symbol name in allo.ir.types that references this object
@@ -415,6 +431,99 @@ class TorchBuilder:
             res += f'  # shape: {str(tuple(node.meta["tensor_meta"].shape))}'
         return res
 
+    def _new_tmp_name(self, base: str) -> str:
+        i = self.tmp_id.get(base, 0)
+        self.tmp_id[base] = i + 1
+        return f"{base}_{i}"
+
+    def build_roundeven(self, node):
+        x = get_var_name(node.args[0])
+        return f"{node.name} = roundeven({x})"
+
+    def _resolve_fx_scalar(self, x):
+        """Resolve a scalar from Python value, scalar tensor, or FX node."""
+        # Python scalar
+        if isinstance(x, (int, float)):
+            return x
+        # Torch scalar tensor
+        if isinstance(x, torch.Tensor):
+            if x.numel() != 1:
+                raise NotImplementedError(
+                    f"Expected scalar tensor, got shape {tuple(x.shape)}"
+                )
+            return x.item()
+        # FX node
+        if isinstance(x, fx.Node):
+            if x.op == "get_attr":
+                target_atoms = x.target.split(".")
+                attr_itr = self.gm
+                for atom in target_atoms:
+                    attr_itr = getattr(attr_itr, atom)
+                if isinstance(attr_itr, torch.Tensor):
+                    if attr_itr.numel() != 1:
+                        raise NotImplementedError(
+                            f"Expected scalar attr tensor for {x.target}, "
+                            f"got shape {tuple(attr_itr.shape)}"
+                        )
+                    return attr_itr.item()
+                if isinstance(attr_itr, (int, float)):
+                    return attr_itr
+                raise NotImplementedError(
+                    f"Unsupported get_attr scalar type for {x.target}: {type(attr_itr)}"
+                )
+            # Sometimes constant-like info may be carried in meta/val
+            if "val" in x.meta:
+                val = x.meta["val"]
+                if isinstance(val, torch.Tensor):
+                    if val.numel() != 1:
+                        raise NotImplementedError(
+                            f"Expected scalar meta tensor, got shape {tuple(val.shape)}"
+                        )
+                    return val.item()
+                if isinstance(val, (int, float)):
+                    return val
+            raise NotImplementedError(
+                f"Unable to resolve scalar from FX node: {x.format_node()}"
+            )
+        raise NotImplementedError(f"Unsupported scalar source: {type(x)}")
+
+    def build_quantize_per_tensor(self, node):
+        # Lower quantize_per_tensor into float-domain fake-quant math.
+        x = get_var_name(node.args[0])
+
+        scale_src = node.kwargs["scale"] if "scale" in node.kwargs else node.args[1]
+        zp_src = (
+            node.kwargs["zero_point"] if "zero_point" in node.kwargs else node.args[2]
+        )
+        qdtype = node.kwargs.get("dtype", node.args[3] if len(node.args) > 3 else None)
+
+        scale = float(self._resolve_fx_scalar(scale_src))
+        zp = int(self._resolve_fx_scalar(zp_src))
+
+        if qdtype == torch.qint8:
+            qmin, qmax = -128.0, 127.0
+        elif qdtype == torch.quint8:
+            qmin, qmax = 0.0, 255.0
+        else:
+            raise RuntimeError(f"Unsupported quant dtype: {qdtype}")
+
+        t0 = self._new_tmp_name("qdq_div")
+        t1 = self._new_tmp_name("qdq_round")
+        t2 = self._new_tmp_name("qdq_addz")
+        t3a = self._new_tmp_name("qdq_max")
+        t3 = self._new_tmp_name("qdq_min")
+        t4 = self._new_tmp_name("qdq_subz")
+        t5 = self._new_tmp_name("qdq_mul")
+
+        self.code.append(f"{t0} = {x} / {scale}")
+        self.code.append(f"{t1} = roundeven({t0})")
+        self.code.append(f"{t2} = {t1} + {float(zp)}")
+        self.code.append(f"{t3a} = max({t2}, {qmin})")
+        self.code.append(f"{t3} = min({t3a}, {qmax})")
+        self.code.append(f"{t4} = {t3} - {float(zp)}")
+        self.code.append(f"{t5} = {t4} * {scale}")
+        return f"{node.name} = {t5}"
+
     def build_call_function(self, node):
         opcls = {
             operator.add: "add",
@@ -425,6 +534,7 @@ class TorchBuilder:
             torch.matmul: "matmul",
             torch.ones: "ones",
             torch.zeros: "zeros",
+            torch.quantize_per_tensor: "quantize_per_tensor",
             math.sqrt: "sqrt",
             F.softmax: "softmax",
             F.log_softmax: "log_softmax",
@@ -444,7 +554,7 @@ class TorchBuilder:
         return None
 
     def build_call_method(self, node):
-        if node.target == "contiguous":
+        if node.target in {"contiguous", "dequantize"}:
             return self.build_identity(node)
         # Only nodes with shape need to be built.
         return (
