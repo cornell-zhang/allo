@@ -84,3 +84,12 @@ jobs:
         python3 -m pip install torch==2.5.1
         python3 examples/torch/toy.py
         python3 examples/torch/mlp.py
+    - name: fused_MHA_systolic
+      shell: bash
+      run: |
+        source activate allo
+        export PATH=/root/llvm-project/build/bin:${PATH}
+        export LLVM_BUILD_DIR=/root/llvm-project/build
+        export OMP_NUM_THREADS=128
+        python3 examples/fused_MHA_systolic/test_systolic.py
+        unset OMP_NUM_THREADS
