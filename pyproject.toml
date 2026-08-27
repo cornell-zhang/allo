@@ -7,7 +7,7 @@ requires = [
     "wheel",
     "cmake>=3.20",
     "ninja",
-    "nanobind>=2.9",
+    "nanobind>=2.9,<3.0",
 ]
 build-backend = "setuptools.build_meta"
 
