@@ -208,7 +208,7 @@ Importantly, as the native Python interpreter does not support Allo’s type dec
 Otherwise, it will raise a type error.</p>
 <p>In the following, we define a simple addition function that adds 1 to each element of the input array.
 To invoke the kernel with a specific data type, we can use the <code class="docutils literal notranslate"><span class="pre">instantiate</span></code> argument in the <code class="docutils literal notranslate"><span class="pre">allo.customize</span></code> function.</p>
-<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">kernel</span><span class="p">[</span><span class="n">T</span><span class="p">](</span><span class="n">A</span><span class="p">:</span> <span class="s2">&quot;T[10]&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;T[10]&quot;</span><span class="p">:</span>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">kernel</span><span class="p">[</span><span class="n">T</span><span class="p">](</span><span class="n">A</span><span class="p">:</span> <span class="s2">"T[10]"</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">"T[10]"</span><span class="p">:</span>
     <span class="n">B</span><span class="p">:</span> <span class="n">T</span><span class="p">[</span><span class="mi">10</span><span class="p">]</span>
     <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">10</span><span class="p">):</span>
         <span class="n">B</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">A</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">+</span> <span class="mi">1</span>
@@ -220,18 +220,18 @@ To invoke the kernel with a specific data type, we can use the <code class="docu
 </pre></div>
 </div>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>module {
-  func.func @kernel(%arg0: memref&lt;10xi32&gt;) -&gt; memref&lt;10xi32&gt; attributes {itypes = &quot;s&quot;, otypes = &quot;s&quot;} {
-    %alloc = memref.alloc() {name = &quot;B&quot;} : memref&lt;10xi32&gt;
+  func.func @kernel(%arg0: memref&lt;10xi32&gt;) -&gt; memref&lt;10xi32&gt; attributes {itypes = "s", otypes = "s"} {
+    %alloc = memref.alloc() {name = "B"} : memref&lt;10xi32&gt;
     affine.for %arg1 = 0 to 10 {
-      %0 = affine.load %arg0[%arg1] {from = &quot;A&quot;} : memref&lt;10xi32&gt;
+      %0 = affine.load %arg0[%arg1] {from = "A"} : memref&lt;10xi32&gt;
       %1 = arith.extsi %0 : i32 to i33
       %c1_i32 = arith.constant 1 : i32
       %c1_i32_0 = arith.constant 1 : i32
       %2 = arith.extsi %c1_i32_0 : i32 to i33
       %3 = arith.addi %1, %2 : i33
       %4 = arith.trunci %3 : i33 to i32
-      affine.store %4, %alloc[%arg1] {to = &quot;B&quot;} : memref&lt;10xi32&gt;
-    } {loop_name = &quot;i&quot;, op_name = &quot;S_i_0&quot;}
+      affine.store %4, %alloc[%arg1] {to = "B"} : memref&lt;10xi32&gt;
+    } {loop_name = "i", op_name = "S_i_0"}
     return %alloc : memref&lt;10xi32&gt;
   }
 }
@@ -244,16 +244,16 @@ Similarly, we can directly declare a new kernel by specifying <code class="docut
 </pre></div>
 </div>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>module {
-  func.func @kernel(%arg0: memref&lt;10xf32&gt;) -&gt; memref&lt;10xf32&gt; attributes {itypes = &quot;_&quot;, otypes = &quot;_&quot;} {
-    %alloc = memref.alloc() {name = &quot;B&quot;} : memref&lt;10xf32&gt;
+  func.func @kernel(%arg0: memref&lt;10xf32&gt;) -&gt; memref&lt;10xf32&gt; attributes {itypes = "_", otypes = "_"} {
+    %alloc = memref.alloc() {name = "B"} : memref&lt;10xf32&gt;
     affine.for %arg1 = 0 to 10 {
-      %0 = affine.load %arg0[%arg1] {from = &quot;A&quot;} : memref&lt;10xf32&gt;
+      %0 = affine.load %arg0[%arg1] {from = "A"} : memref&lt;10xf32&gt;
       %c1_i32 = arith.constant 1 : i32
       %c1_i32_0 = arith.constant 1 : i32
       %1 = arith.sitofp %c1_i32_0 : i32 to f32
       %2 = arith.addf %0, %1 : f32
-      affine.store %2, %alloc[%arg1] {to = &quot;B&quot;} : memref&lt;10xf32&gt;
-    } {loop_name = &quot;i&quot;, op_name = &quot;S_i_0&quot;}
+      affine.store %2, %alloc[%arg1] {to = "B"} : memref&lt;10xf32&gt;
+    } {loop_name = "i", op_name = "S_i_0"}
     return %alloc : memref&lt;10xf32&gt;
   }
 }
@@ -261,7 +261,7 @@ Similarly, we can directly declare a new kernel by specifying <code class="docut
 </div>
 <p>If we not only want to specialize the data type but also the shape of the array, we can provide another type variable, and pass it to the <code class="docutils literal notranslate"><span class="pre">instantiate</span></code> argument.
 Note that here we also use the <code class="docutils literal notranslate"><span class="pre">&lt;type_var&gt;:</span> <span class="pre">base_type</span></code> notation to constrain the type of the type variable. Here we constrain the type variable <code class="docutils literal notranslate"><span class="pre">M</span></code> to be an integer.</p>
-<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">kernel2</span><span class="p">[</span><span class="n">T</span><span class="p">,</span> <span class="n">M</span><span class="p">:</span> <span class="n">int32</span><span class="p">](</span><span class="n">A</span><span class="p">:</span> <span class="s2">&quot;T[M]&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;T[M]&quot;</span><span class="p">:</span>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">kernel2</span><span class="p">[</span><span class="n">T</span><span class="p">,</span> <span class="n">M</span><span class="p">:</span> <span class="n">int32</span><span class="p">](</span><span class="n">A</span><span class="p">:</span> <span class="s2">"T[M]"</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">"T[M]"</span><span class="p">:</span>
     <span class="n">B</span><span class="p">:</span> <span class="n">T</span><span class="p">[</span><span class="n">M</span><span class="p">]</span>
     <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">M</span><span class="p">):</span>
         <span class="n">B</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">A</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">+</span> <span class="mi">1</span>
@@ -273,18 +273,18 @@ Note that here we also use the <code class="docutils literal notranslate"><span 
 </pre></div>
 </div>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>module {
-  func.func @kernel2(%arg0: memref&lt;20xi32&gt;) -&gt; memref&lt;20xi32&gt; attributes {itypes = &quot;s&quot;, otypes = &quot;s&quot;} {
-    %alloc = memref.alloc() {name = &quot;B&quot;} : memref&lt;20xi32&gt;
+  func.func @kernel2(%arg0: memref&lt;20xi32&gt;) -&gt; memref&lt;20xi32&gt; attributes {itypes = "s", otypes = "s"} {
+    %alloc = memref.alloc() {name = "B"} : memref&lt;20xi32&gt;
     affine.for %arg1 = 0 to 20 {
-      %0 = affine.load %arg0[%arg1] {from = &quot;A&quot;} : memref&lt;20xi32&gt;
+      %0 = affine.load %arg0[%arg1] {from = "A"} : memref&lt;20xi32&gt;
       %1 = arith.extsi %0 : i32 to i33
       %c1_i32 = arith.constant 1 : i32
       %c1_i32_0 = arith.constant 1 : i32
       %2 = arith.extsi %c1_i32_0 : i32 to i33
       %3 = arith.addi %1, %2 : i33
       %4 = arith.trunci %3 : i33 to i32
-      affine.store %4, %alloc[%arg1] {to = &quot;B&quot;} : memref&lt;20xi32&gt;
-    } {loop_name = &quot;i&quot;, op_name = &quot;S_i_0&quot;}
+      affine.store %4, %alloc[%arg1] {to = "B"} : memref&lt;20xi32&gt;
+    } {loop_name = "i", op_name = "S_i_0"}
     return %alloc : memref&lt;20xi32&gt;
   }
 }
@@ -293,7 +293,7 @@ Note that here we also use the <code class="docutils literal notranslate"><span 
 <p>Furthermore, Allo’s template also enables metaprogramming that can evaluate type variables at compile time.
 Specifically, we can use the <code class="docutils literal notranslate"><span class="pre">allo.meta_if</span></code>, <code class="docutils literal notranslate"><span class="pre">allo.meta_elif</span></code>, and <code class="docutils literal notranslate"><span class="pre">allo.meta_else</span></code> to conditionally generate code based on the type variables.
 Just to make sure the conditions can be determined at compile time.</p>
-<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">kernel3</span><span class="p">[</span><span class="n">T</span><span class="p">,</span> <span class="n">M</span><span class="p">:</span> <span class="n">int32</span><span class="p">](</span><span class="n">A</span><span class="p">:</span> <span class="s2">&quot;T[M]&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;T[M]&quot;</span><span class="p">:</span>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">kernel3</span><span class="p">[</span><span class="n">T</span><span class="p">,</span> <span class="n">M</span><span class="p">:</span> <span class="n">int32</span><span class="p">](</span><span class="n">A</span><span class="p">:</span> <span class="s2">"T[M]"</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">"T[M]"</span><span class="p">:</span>
     <span class="n">B</span><span class="p">:</span> <span class="n">T</span><span class="p">[</span><span class="n">M</span><span class="p">]</span>
     <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">M</span><span class="p">):</span>
         <span class="k">with</span> <span class="n">allo</span><span class="o">.</span><span class="n">meta_if</span><span class="p">(</span><span class="n">T</span> <span class="o">==</span> <span class="n">int32</span><span class="p">):</span>
@@ -311,39 +311,39 @@ Just to make sure the conditions can be determined at compile time.</p>
 </pre></div>
 </div>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>module {
-  func.func @kernel3(%arg0: memref&lt;20xi32&gt;) -&gt; memref&lt;20xi32&gt; attributes {itypes = &quot;s&quot;, otypes = &quot;s&quot;} {
-    %alloc = memref.alloc() {name = &quot;B&quot;} : memref&lt;20xi32&gt;
+  func.func @kernel3(%arg0: memref&lt;20xi32&gt;) -&gt; memref&lt;20xi32&gt; attributes {itypes = "s", otypes = "s"} {
+    %alloc = memref.alloc() {name = "B"} : memref&lt;20xi32&gt;
     affine.for %arg1 = 0 to 20 {
-      %0 = affine.load %arg0[%arg1] {from = &quot;A&quot;} : memref&lt;20xi32&gt;
+      %0 = affine.load %arg0[%arg1] {from = "A"} : memref&lt;20xi32&gt;
       %1 = arith.extsi %0 : i32 to i33
       %c1_i32 = arith.constant 1 : i32
       %c1_i32_0 = arith.constant 1 : i32
       %2 = arith.extsi %c1_i32_0 : i32 to i33
       %3 = arith.addi %1, %2 : i33
       %4 = arith.trunci %3 : i33 to i32
-      affine.store %4, %alloc[%arg1] {to = &quot;B&quot;} : memref&lt;20xi32&gt;
-    } {loop_name = &quot;i&quot;, op_name = &quot;S_i_0&quot;}
+      affine.store %4, %alloc[%arg1] {to = "B"} : memref&lt;20xi32&gt;
+    } {loop_name = "i", op_name = "S_i_0"}
     return %alloc : memref&lt;20xi32&gt;
   }
 }
 
 module {
-  func.func @kernel3(%arg0: memref&lt;20xf32&gt;) -&gt; memref&lt;20xf32&gt; attributes {itypes = &quot;_&quot;, otypes = &quot;_&quot;} {
-    %alloc = memref.alloc() {name = &quot;B&quot;} : memref&lt;20xf32&gt;
+  func.func @kernel3(%arg0: memref&lt;20xf32&gt;) -&gt; memref&lt;20xf32&gt; attributes {itypes = "_", otypes = "_"} {
+    %alloc = memref.alloc() {name = "B"} : memref&lt;20xf32&gt;
     affine.for %arg1 = 0 to 20 {
-      %0 = affine.load %arg0[%arg1] {from = &quot;A&quot;} : memref&lt;20xf32&gt;
+      %0 = affine.load %arg0[%arg1] {from = "A"} : memref&lt;20xf32&gt;
       %c1_i32 = arith.constant 1 : i32
       %c1_i32_0 = arith.constant 1 : i32
       %1 = arith.sitofp %c1_i32_0 : i32 to f32
       %2 = arith.subf %0, %1 : f32
-      affine.store %2, %alloc[%arg1] {to = &quot;B&quot;} : memref&lt;20xf32&gt;
-    } {loop_name = &quot;i&quot;, op_name = &quot;S_i_0&quot;}
+      affine.store %2, %alloc[%arg1] {to = "B"} : memref&lt;20xf32&gt;
+    } {loop_name = "i", op_name = "S_i_0"}
     return %alloc : memref&lt;20xf32&gt;
   }
 }
 </pre></div>
 </div>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 0.319 seconds)</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 0.322 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-gallery-dive-02-template-py">
 <div class="sphx-glr-download sphx-glr-download-jupyter docutils container">
 <p><a class="reference download internal" download="" href="../_downloads/de72dcd3242a3c85b41c9c54a3424409/dive_02_template.ipynb"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Jupyter</span> <span class="pre">notebook:</span> <span class="pre">dive_02_template.ipynb</span></code></a></p>

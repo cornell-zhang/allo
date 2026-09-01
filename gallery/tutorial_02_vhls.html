@@ -255,27 +255,27 @@ paper from Torsten Hoefler’s group.</p>
 </div>
 <p>We first reorder the inner reduction loop with the middle loop.
 This is used to change the computation order of matrix multiplication.</p>
-<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="n">s</span><span class="o">.</span><span class="n">reorder</span><span class="p">(</span><span class="s2">&quot;k&quot;</span><span class="p">,</span> <span class="s2">&quot;j&quot;</span><span class="p">)</span>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="n">s</span><span class="o">.</span><span class="n">reorder</span><span class="p">(</span><span class="s2">"k"</span><span class="p">,</span> <span class="s2">"j"</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">module</span><span class="p">)</span>
 </pre></div>
 </div>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>module {
-  func.func @gemm(%arg0: memref&lt;32x32xf32&gt;, %arg1: memref&lt;32x32xf32&gt;) -&gt; memref&lt;32x32xf32&gt; attributes {itypes = &quot;__&quot;, otypes = &quot;_&quot;} {
-    %alloc = memref.alloc() {name = &quot;C&quot;} : memref&lt;32x32xf32&gt;
+  func.func @gemm(%arg0: memref&lt;32x32xf32&gt;, %arg1: memref&lt;32x32xf32&gt;) -&gt; memref&lt;32x32xf32&gt; attributes {itypes = "__", otypes = "_"} {
+    %alloc = memref.alloc() {name = "C"} : memref&lt;32x32xf32&gt;
     %cst = arith.constant 0.000000e+00 : f32
     linalg.fill ins(%cst : f32) outs(%alloc : memref&lt;32x32xf32&gt;)
     affine.for %arg2 = 0 to 32 {
       affine.for %arg3 = 0 to 32 {
         affine.for %arg4 = 0 to 32 {
-          %0 = affine.load %arg0[%arg2, %arg3] {from = &quot;A&quot;} : memref&lt;32x32xf32&gt;
-          %1 = affine.load %arg1[%arg3, %arg4] {from = &quot;B&quot;} : memref&lt;32x32xf32&gt;
+          %0 = affine.load %arg0[%arg2, %arg3] {from = "A"} : memref&lt;32x32xf32&gt;
+          %1 = affine.load %arg1[%arg3, %arg4] {from = "B"} : memref&lt;32x32xf32&gt;
           %2 = arith.mulf %0, %1 : f32
-          %3 = affine.load %alloc[%arg2, %arg4] {from = &quot;C&quot;} : memref&lt;32x32xf32&gt;
+          %3 = affine.load %alloc[%arg2, %arg4] {from = "C"} : memref&lt;32x32xf32&gt;
           %4 = arith.addf %3, %2 : f32
-          affine.store %4, %alloc[%arg2, %arg4] {to = &quot;C&quot;} : memref&lt;32x32xf32&gt;
-        } {loop_name = &quot;j&quot;}
-      } {loop_name = &quot;k&quot;, op_name = &quot;S_k_0&quot;, reduction}
-    } {loop_name = &quot;i&quot;, op_name = &quot;S_i_j_0&quot;}
+          affine.store %4, %alloc[%arg2, %arg4] {to = "C"} : memref&lt;32x32xf32&gt;
+        } {loop_name = "j"}
+      } {loop_name = "k", op_name = "S_k_0", reduction}
+    } {loop_name = "i", op_name = "S_i_j_0"}
     return %alloc : memref&lt;32x32xf32&gt;
   }
 }
@@ -292,35 +292,35 @@ loops.</p>
 We provide a <code class="docutils literal notranslate"><span class="pre">.buffer_at()</span></code> primitive for users to quickly create a new buffer
 along a specific axis. Since Allo has attached all the tensors to the function,
 we can directly use <code class="docutils literal notranslate"><span class="pre">&lt;schedule&gt;.&lt;tensor&gt;</span></code> to access a specific tensor in the schedule.</p>
-<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="n">s</span><span class="o">.</span><span class="n">buffer_at</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">C</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="s2">&quot;i&quot;</span><span class="p">)</span>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="n">s</span><span class="o">.</span><span class="n">buffer_at</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">C</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="s2">"i"</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">module</span><span class="p">)</span>
 </pre></div>
 </div>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>module {
-  func.func @gemm(%arg0: memref&lt;32x32xf32&gt;, %arg1: memref&lt;32x32xf32&gt;) -&gt; memref&lt;32x32xf32&gt; attributes {itypes = &quot;__&quot;, otypes = &quot;_&quot;} {
-    %alloc = memref.alloc() {name = &quot;C&quot;} : memref&lt;32x32xf32&gt;
+  func.func @gemm(%arg0: memref&lt;32x32xf32&gt;, %arg1: memref&lt;32x32xf32&gt;) -&gt; memref&lt;32x32xf32&gt; attributes {itypes = "__", otypes = "_"} {
+    %alloc = memref.alloc() {name = "C"} : memref&lt;32x32xf32&gt;
     %cst = arith.constant 0.000000e+00 : f32
     linalg.fill ins(%cst : f32) outs(%alloc : memref&lt;32x32xf32&gt;)
     affine.for %arg2 = 0 to 32 {
       %alloc_0 = memref.alloc() : memref&lt;32xf32&gt;
       affine.for %arg3 = 0 to 32 {
         affine.store %cst, %alloc_0[%arg3] : memref&lt;32xf32&gt;
-      } {buffer, loop_name = &quot;j_init&quot;, pipeline_ii = 1 : i32}
+      } {buffer, loop_name = "j_init", pipeline_ii = 1 : i32}
       affine.for %arg3 = 0 to 32 {
         affine.for %arg4 = 0 to 32 {
-          %0 = affine.load %arg0[%arg2, %arg3] {from = &quot;A&quot;} : memref&lt;32x32xf32&gt;
-          %1 = affine.load %arg1[%arg3, %arg4] {from = &quot;B&quot;} : memref&lt;32x32xf32&gt;
+          %0 = affine.load %arg0[%arg2, %arg3] {from = "A"} : memref&lt;32x32xf32&gt;
+          %1 = affine.load %arg1[%arg3, %arg4] {from = "B"} : memref&lt;32x32xf32&gt;
           %2 = arith.mulf %0, %1 : f32
           %3 = affine.load %alloc_0[%arg4] : memref&lt;32xf32&gt;
           %4 = arith.addf %3, %2 : f32
           affine.store %4, %alloc_0[%arg4] : memref&lt;32xf32&gt;
-        } {loop_name = &quot;j&quot;}
-      } {loop_name = &quot;k&quot;, op_name = &quot;S_k_0&quot;, reduction}
+        } {loop_name = "j"}
+      } {loop_name = "k", op_name = "S_k_0", reduction}
       affine.for %arg3 = 0 to 32 {
         %0 = affine.load %alloc_0[%arg3] : memref&lt;32xf32&gt;
         affine.store %0, %alloc[%arg2, %arg3] : memref&lt;32x32xf32&gt;
-      } {buffer, loop_name = &quot;j_back&quot;, pipeline_ii = 1 : i32}
-    } {loop_name = &quot;i&quot;, op_name = &quot;S_i_j_0&quot;}
+      } {buffer, loop_name = "j_back", pipeline_ii = 1 : i32}
+    } {loop_name = "i", op_name = "S_i_j_0"}
     return %alloc : memref&lt;32x32xf32&gt;
   }
 }
@@ -331,35 +331,35 @@ creates an intermediate buffer <code class="docutils literal notranslate"><span 
 Also two additional loop nested named <code class="docutils literal notranslate"><span class="pre">j_init</span></code> and <code class="docutils literal notranslate"><span class="pre">j_back</span></code> are created to
 initialize and write the intermediate buffer back to output tensor.</p>
 <p>Lastly, we pipeline the <code class="docutils literal notranslate"><span class="pre">j</span></code> loop in order to achieve the best performance.</p>
-<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="n">s</span><span class="o">.</span><span class="n">pipeline</span><span class="p">(</span><span class="s2">&quot;j&quot;</span><span class="p">)</span>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="n">s</span><span class="o">.</span><span class="n">pipeline</span><span class="p">(</span><span class="s2">"j"</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">module</span><span class="p">)</span>
 </pre></div>
 </div>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>module {
-  func.func @gemm(%arg0: memref&lt;32x32xf32&gt;, %arg1: memref&lt;32x32xf32&gt;) -&gt; memref&lt;32x32xf32&gt; attributes {itypes = &quot;__&quot;, otypes = &quot;_&quot;} {
-    %alloc = memref.alloc() {name = &quot;C&quot;} : memref&lt;32x32xf32&gt;
+  func.func @gemm(%arg0: memref&lt;32x32xf32&gt;, %arg1: memref&lt;32x32xf32&gt;) -&gt; memref&lt;32x32xf32&gt; attributes {itypes = "__", otypes = "_"} {
+    %alloc = memref.alloc() {name = "C"} : memref&lt;32x32xf32&gt;
     %cst = arith.constant 0.000000e+00 : f32
     linalg.fill ins(%cst : f32) outs(%alloc : memref&lt;32x32xf32&gt;)
     affine.for %arg2 = 0 to 32 {
       %alloc_0 = memref.alloc() : memref&lt;32xf32&gt;
       affine.for %arg3 = 0 to 32 {
         affine.store %cst, %alloc_0[%arg3] : memref&lt;32xf32&gt;
-      } {buffer, loop_name = &quot;j_init&quot;, pipeline_ii = 1 : i32}
+      } {buffer, loop_name = "j_init", pipeline_ii = 1 : i32}
       affine.for %arg3 = 0 to 32 {
         affine.for %arg4 = 0 to 32 {
-          %0 = affine.load %arg0[%arg2, %arg3] {from = &quot;A&quot;} : memref&lt;32x32xf32&gt;
-          %1 = affine.load %arg1[%arg3, %arg4] {from = &quot;B&quot;} : memref&lt;32x32xf32&gt;
+          %0 = affine.load %arg0[%arg2, %arg3] {from = "A"} : memref&lt;32x32xf32&gt;
+          %1 = affine.load %arg1[%arg3, %arg4] {from = "B"} : memref&lt;32x32xf32&gt;
           %2 = arith.mulf %0, %1 : f32
           %3 = affine.load %alloc_0[%arg4] : memref&lt;32xf32&gt;
           %4 = arith.addf %3, %2 : f32
           affine.store %4, %alloc_0[%arg4] : memref&lt;32xf32&gt;
-        } {loop_name = &quot;j&quot;, pipeline_ii = 1 : ui32}
-      } {loop_name = &quot;k&quot;, op_name = &quot;S_k_0&quot;, reduction}
+        } {loop_name = "j", pipeline_ii = 1 : ui32}
+      } {loop_name = "k", op_name = "S_k_0", reduction}
       affine.for %arg3 = 0 to 32 {
         %0 = affine.load %alloc_0[%arg3] : memref&lt;32xf32&gt;
         affine.store %0, %alloc[%arg2, %arg3] : memref&lt;32x32xf32&gt;
-      } {buffer, loop_name = &quot;j_back&quot;, pipeline_ii = 1 : i32}
-    } {loop_name = &quot;i&quot;, op_name = &quot;S_i_j_0&quot;}
+      } {buffer, loop_name = "j_back", pipeline_ii = 1 : i32}
+    } {loop_name = "i", op_name = "S_i_j_0"}
     return %alloc : memref&lt;32x32xf32&gt;
   }
 }
@@ -371,7 +371,7 @@ initialize and write the intermediate buffer back to output tensor.</p>
 <p>Similar to the CPU execution, we only need to change the target of the <code class="docutils literal notranslate"><span class="pre">.build()</span></code> function
 in order to target different backends. Here, we use <code class="docutils literal notranslate"><span class="pre">vhls</span></code> as the target to generate
 Vivado/Vitis HLS code, which will directly returns the generated code as a string.</p>
-<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="n">code</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">&quot;vhls&quot;</span><span class="p">)</span>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="n">code</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">"vhls"</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">code</span><span class="p">)</span>
 </pre></div>
 </div>
@@ -449,7 +449,7 @@ the HLS project and invoke the compiler to generate the RTL design.</p>
 <li><p><code class="docutils literal notranslate"><span class="pre">hw</span></code>: Hardware mode, which compiles the program into RTL design using HLS, goes through placement and routing, generates the bitstream, and finally executes on FPGA. This mode may take several hours to finish.</p></li>
 </ul>
 </div>
-<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="n">mod</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">&quot;vitis_hls&quot;</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;hw_emu&quot;</span><span class="p">,</span> <span class="n">project</span><span class="o">=</span><span class="s2">&quot;gemm.prj&quot;</span><span class="p">)</span>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="n">mod</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">"vitis_hls"</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">"hw_emu"</span><span class="p">,</span> <span class="n">project</span><span class="o">=</span><span class="s2">"gemm.prj"</span><span class="p">)</span>
 </pre></div>
 </div>
 <p>After running the above instruction, we can see a <code class="docutils literal notranslate"><span class="pre">gemm.prj</span></code> folder is generated in the current directory:</p>
@@ -508,7 +508,7 @@ we can push the generated RTL design to the backend synthesis flow to generate
 the bitstream for FPGA. In Allo, we can directly change the target to <code class="docutils literal notranslate"><span class="pre">hw</span></code>
 to launch the backend synthesis job. It may take several hours to generate the final
 bitstream, so it would be better to run it using <a class="reference external" href="https://github.com/tmux/tmux/wiki">tmux</a>.</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">mod</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">&quot;vitis_hls&quot;</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;hw&quot;</span><span class="p">,</span> <span class="n">project</span><span class="o">=</span><span class="s2">&quot;gemm.prj&quot;</span><span class="p">)</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">mod</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">"vitis_hls"</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">"hw"</span><span class="p">,</span> <span class="n">project</span><span class="o">=</span><span class="s2">"gemm.prj"</span><span class="p">)</span>
 <span class="n">mod</span><span class="p">(</span><span class="n">np_A</span><span class="p">,</span> <span class="n">np_B</span><span class="p">,</span> <span class="n">allo_C</span><span class="p">)</span>
 <span class="n">np</span><span class="o">.</span><span class="n">testing</span><span class="o">.</span><span class="n">assert_allclose</span><span class="p">(</span><span class="n">allo_C</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">matmul</span><span class="p">(</span><span class="n">np_A</span><span class="p">,</span> <span class="n">np_B</span><span class="p">),</span> <span class="n">rtol</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">,</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
 </pre></div>
@@ -533,7 +533,7 @@ you can check the following files:</p>
 <li><p><code class="docutils literal notranslate"><span class="pre">gemm.prj/_x.hw.xilinx_u280_gen3x16_xdma_1_202211_1/logs/gemm/gemm_vitis_hls.log</span></code>: The log file of the Vitis HLS.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">gemm.prj/_x.hw.xilinx_u280_gen3x16_xdma_1_202211_1/logs/link/v++.log</span></code>: The log file of the Vivado backend synthesis.</p></li>
 </ul>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 0.141 seconds)</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 0.135 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-gallery-tutorial-02-vhls-py">
 <div class="sphx-glr-download sphx-glr-download-jupyter docutils container">
 <p><a class="reference download internal" download="" href="../_downloads/861a23b0676093686f50a5f922fc6363/tutorial_02_vhls.ipynb"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Jupyter</span> <span class="pre">notebook:</span> <span class="pre">tutorial_02_vhls.ipynb</span></code></a></p>

@@ -49,11 +49,37 @@ Install from Source
 
 Please follow the instructions below to build the LLVM project from source. You can also refer to the `official guide <https://mlir.llvm.org/getting_started/>`_ for more details. As the LLVM/MLIR API changes a lot, if you are using a different LLVM version, the Allo package may not work properly. The LLVM version we used can be found in the `externals <https://github.com/cornell-zhang/allo/tree/main/externals>`_ folder.
 
+.. note::
+
+   The current source-installation dependencies target CPython 3.12 on Linux
+   x86-64. Use the Docker installation above on other platforms.
+
+Create and activate the Python environment before configuring LLVM. This makes
+LLVM and Allo use the same Python interpreter. Keep the repository root in
+``ALLO_ROOT`` because the LLVM build takes place several directories below it.
+
 .. code-block:: bash
 
     git clone --recursive https://github.com/cornell-zhang/allo.git
-    cd allo/externals/llvm-project
-    # Python 3.12 is required
+    cd allo
+    export ALLO_ROOT="$(pwd)"
+
+    # Python 3.12 is required by the current dependency set
+    conda create -n allo python=3.12
+    conda activate allo
+
+    python3 -m pip install --upgrade pip
+    python3 -m pip install cmake ninja "nanobind>=2.9,<3.0"
+
+    # Check the tools that will be used for the build
+    python3 --version
+    cmake --version
+    ninja --version
+    cc --version
+    c++ --version
+    python3 -m pip show nanobind
+
+    cd "$ALLO_ROOT/externals/llvm-project"
     mkdir -p build && cd build
     cmake -G Ninja ../llvm \
         -DLLVM_ENABLE_PROJECTS="clang;mlir;openmp" \
@@ -63,24 +89,22 @@ Please follow the instructions below to build the LLVM project from source. You 
         -DLLVM_ENABLE_ASSERTIONS=ON \
         -DLLVM_INSTALL_UTILS=ON \
         -DMLIR_ENABLE_BINDINGS_PYTHON=ON \
-        -DPython3_EXECUTABLE=`which python3`
+        -DPython3_EXECUTABLE="$(command -v python3)"
     ninja
-    # export environment variable
-    export LLVM_BUILD_DIR=$(pwd)
-    export PATH=$(pwd)/bin:$PATH
 
-We recommend creating a new conda environment for Allo. Since we are using the latest Python features, the minimum Python version is **3.12**.
-
-.. code-block:: console
-
-  $ conda create -n allo python=3.12
-  $ conda activate allo
+    # Export and verify the completed LLVM/MLIR build
+    export LLVM_BUILD_DIR="$(pwd)"
+    export PATH="$LLVM_BUILD_DIR/bin:$PATH"
+    test -x "$LLVM_BUILD_DIR/bin/llvm-config"
+    test -f "$LLVM_BUILD_DIR/lib/cmake/mlir/MLIRConfig.cmake"
+    "$LLVM_BUILD_DIR/bin/llvm-config" --version
 
 You can now install Allo by running the following commands.
 
-.. code-block:: console
+.. code-block:: bash
 
-  $ python3 -m pip install -v -e .
+    cd "$ALLO_ROOT"
+    python3 -m pip install -v -e .
 
 
 Testing
@@ -136,18 +160,11 @@ If you see no error messages, then the installation is successful. Otherwise, pl
 Troubleshooting
 ---------------
 
-If you encounter the following issue when building Allo, it is mostly because you source the Vitis environment at the same time, which may cause some library conflicts. Please disable it and try again.
+For source-build prerequisites, diagnostic commands, and common installation
+failures, see :doc:`troubleshooting`.
 
-.. code-block:: console
+.. toctree::
+   :maxdepth: 1
+   :hidden:
 
-  running build_ext
-    cmake: error while loading shared libraries: libidn.so.11: cannot open shared object file: No such file or directory
-
-
-If you are seeing the errors reported by the linker like this:
-
-.. code-block:: console
-
-  /opt/rh/devtoolset-9/root/usr/libexec/gcc/x86_64-redhat-linux/9/ld: cannot find /work/shared/common/llvm-project-main/build/lib/libMLIRLLVMToLLVMIRTranslation.a: Too many open files
-
-It means you have hit the limit of file descriptors that can be open at a time. You can fix this by :code:`ulimit -n 4096`, then try compiling Allo again.
+   troubleshooting

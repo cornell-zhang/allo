@@ -221,7 +221,7 @@ but we can still run the LLVM module with arbitrary shapes of NumPy arrays.</p>
 </pre></div>
 </div>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>module {
-  func.func @kernel(%arg0: memref&lt;?xf32&gt;, %arg1: memref&lt;?xf32&gt;, %arg2: i32) attributes {itypes = &quot;__s&quot;, otypes = &quot;&quot;} {
+  func.func @kernel(%arg0: memref&lt;?xf32&gt;, %arg1: memref&lt;?xf32&gt;, %arg2: i32) attributes {itypes = "__s", otypes = ""} {
     %c0_i32 = arith.constant 0 : i32
     %c0_i32_0 = arith.constant 0 : i32
     %0 = arith.index_cast %c0_i32_0 : i32 to index
@@ -230,16 +230,16 @@ but we can still run the LLVM module with arbitrary shapes of NumPy arrays.</p>
     %c1_i32_1 = arith.constant 1 : i32
     %2 = arith.index_cast %c1_i32_1 : i32 to index
     scf.for %arg3 = %0 to %1 step %2 {
-      %3 = memref.load %arg0[%arg3] {from = &quot;A&quot;} : memref&lt;?xf32&gt;
-      memref.store %3, %arg1[%arg3] {to = &quot;B&quot;} : memref&lt;?xf32&gt;
-    } {loop_name = &quot;i&quot;, op_name = &quot;S_i_0&quot;}
+      %3 = memref.load %arg0[%arg3] {from = "A"} : memref&lt;?xf32&gt;
+      memref.store %3, %arg1[%arg3] {to = "B"} : memref&lt;?xf32&gt;
+    } {loop_name = "i", op_name = "S_i_0"}
     return
   }
 }
 </pre></div>
 </div>
 <p>We can also check the generated HLS code that the arguments are declared as pointers.</p>
-<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="n">code</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">&quot;vhls&quot;</span><span class="p">)</span>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="n">code</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">"vhls"</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">code</span><span class="p">)</span>
 </pre></div>
 </div>
@@ -306,35 +306,35 @@ also supports this by explicitly specifying the return type as a tuple.</p>
 </pre></div>
 </div>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>module {
-  func.func @callee(%arg0: f32, %arg1: f32) -&gt; (f32, f32) attributes {itypes = &quot;__&quot;, otypes = &quot;__&quot;} {
+  func.func @callee(%arg0: f32, %arg1: f32) -&gt; (f32, f32) attributes {itypes = "__", otypes = "__"} {
     %0 = arith.addf %arg0, %arg1 : f32
-    %alloc = memref.alloc() {name = &quot;c&quot;} : memref&lt;f32&gt;
-    affine.store %0, %alloc[] {to = &quot;c&quot;} : memref&lt;f32&gt;
+    %alloc = memref.alloc() {name = "c"} : memref&lt;f32&gt;
+    affine.store %0, %alloc[] {to = "c"} : memref&lt;f32&gt;
     %1 = arith.subf %arg0, %arg1 : f32
-    %alloc_0 = memref.alloc() {name = &quot;d&quot;} : memref&lt;f32&gt;
-    affine.store %1, %alloc_0[] {to = &quot;d&quot;} : memref&lt;f32&gt;
-    %2 = affine.load %alloc[] {from = &quot;c&quot;} : memref&lt;f32&gt;
-    %3 = affine.load %alloc_0[] {from = &quot;d&quot;} : memref&lt;f32&gt;
+    %alloc_0 = memref.alloc() {name = "d"} : memref&lt;f32&gt;
+    affine.store %1, %alloc_0[] {to = "d"} : memref&lt;f32&gt;
+    %2 = affine.load %alloc[] {from = "c"} : memref&lt;f32&gt;
+    %3 = affine.load %alloc_0[] {from = "d"} : memref&lt;f32&gt;
     return %2, %3 : f32, f32
   }
-  func.func @kernel(%arg0: memref&lt;10xf32&gt;, %arg1: memref&lt;10xf32&gt;) -&gt; (memref&lt;10xf32&gt;, memref&lt;10xf32&gt;) attributes {itypes = &quot;__&quot;, otypes = &quot;__&quot;} {
+  func.func @kernel(%arg0: memref&lt;10xf32&gt;, %arg1: memref&lt;10xf32&gt;) -&gt; (memref&lt;10xf32&gt;, memref&lt;10xf32&gt;) attributes {itypes = "__", otypes = "__"} {
     %c0_i32 = arith.constant 0 : i32
     %c0_i32_0 = arith.constant 0 : i32
     %0 = arith.sitofp %c0_i32_0 : i32 to f32
-    %alloc = memref.alloc() {name = &quot;C&quot;} : memref&lt;10xf32&gt;
+    %alloc = memref.alloc() {name = "C"} : memref&lt;10xf32&gt;
     linalg.fill ins(%0 : f32) outs(%alloc : memref&lt;10xf32&gt;)
     %c0_i32_1 = arith.constant 0 : i32
     %c0_i32_2 = arith.constant 0 : i32
     %1 = arith.sitofp %c0_i32_2 : i32 to f32
-    %alloc_3 = memref.alloc() {name = &quot;D&quot;} : memref&lt;10xf32&gt;
+    %alloc_3 = memref.alloc() {name = "D"} : memref&lt;10xf32&gt;
     linalg.fill ins(%1 : f32) outs(%alloc_3 : memref&lt;10xf32&gt;)
     affine.for %arg2 = 0 to 10 {
-      %2 = affine.load %arg0[%arg2] {from = &quot;A&quot;} : memref&lt;10xf32&gt;
-      %3 = affine.load %arg1[%arg2] {from = &quot;B&quot;} : memref&lt;10xf32&gt;
+      %2 = affine.load %arg0[%arg2] {from = "A"} : memref&lt;10xf32&gt;
+      %3 = affine.load %arg1[%arg2] {from = "B"} : memref&lt;10xf32&gt;
       %4:2 = func.call @callee(%2, %3) : (f32, f32) -&gt; (f32, f32)
-      affine.store %4#0, %alloc[%arg2] {to = &quot;C&quot;} : memref&lt;10xf32&gt;
-      affine.store %4#1, %alloc_3[%arg2] {to = &quot;D&quot;} : memref&lt;10xf32&gt;
-    } {loop_name = &quot;i&quot;, op_name = &quot;S_i_0&quot;}
+      affine.store %4#0, %alloc[%arg2] {to = "C"} : memref&lt;10xf32&gt;
+      affine.store %4#1, %alloc_3[%arg2] {to = "D"} : memref&lt;10xf32&gt;
+    } {loop_name = "i", op_name = "S_i_0"}
     return %alloc, %alloc_3 : memref&lt;10xf32&gt;, memref&lt;10xf32&gt;
   }
 }
@@ -351,14 +351,14 @@ compile-time computations like computing coefficients or lookup indices.</p>
 
 <span class="c1"># Python helper functions - evaluated at compile time</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">compute_coefficient</span><span class="p">(</span><span class="n">i</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Compute a coefficient based on index.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""Compute a coefficient based on index."""</span>
     <span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
 
     <span class="k">return</span> <span class="n">math</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="mf">2.0</span> <span class="o">*</span> <span class="n">math</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="n">i</span> <span class="o">/</span> <span class="mi">8</span><span class="p">)</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">compute_index</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">offset</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Compute a transformed index.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""Compute a transformed index."""</span>
     <span class="k">return</span> <span class="p">(</span><span class="n">i</span> <span class="o">+</span> <span class="n">offset</span><span class="p">)</span> <span class="o">%</span> <span class="mi">8</span>
 
 
@@ -377,47 +377,47 @@ compile-time computations like computing coefficients or lookup indices.</p>
 </pre></div>
 </div>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>module {
-  func.func @kernel_with_constexpr(%arg0: memref&lt;8xf32&gt;, %arg1: memref&lt;8xf32&gt;) attributes {itypes = &quot;__&quot;, otypes = &quot;&quot;} {
-    %0 = affine.load %arg0[3] {from = &quot;A&quot;} : memref&lt;8xf32&gt;
+  func.func @kernel_with_constexpr(%arg0: memref&lt;8xf32&gt;, %arg1: memref&lt;8xf32&gt;) attributes {itypes = "__", otypes = ""} {
+    %0 = affine.load %arg0[3] {from = "A"} : memref&lt;8xf32&gt;
     %cst = arith.constant 1.000000e+00 : f32
     %cst_0 = arith.constant 1.000000e+00 : f32
     %1 = arith.mulf %0, %cst_0 : f32
-    affine.store %1, %arg1[0] {to = &quot;B&quot;} : memref&lt;8xf32&gt;
-    %2 = affine.load %arg0[4] {from = &quot;A&quot;} : memref&lt;8xf32&gt;
+    affine.store %1, %arg1[0] {to = "B"} : memref&lt;8xf32&gt;
+    %2 = affine.load %arg0[4] {from = "A"} : memref&lt;8xf32&gt;
     %cst_1 = arith.constant 0.707106769 : f32
     %cst_2 = arith.constant 0.707106769 : f32
     %3 = arith.mulf %2, %cst_2 : f32
-    affine.store %3, %arg1[1] {to = &quot;B&quot;} : memref&lt;8xf32&gt;
-    %4 = affine.load %arg0[5] {from = &quot;A&quot;} : memref&lt;8xf32&gt;
+    affine.store %3, %arg1[1] {to = "B"} : memref&lt;8xf32&gt;
+    %4 = affine.load %arg0[5] {from = "A"} : memref&lt;8xf32&gt;
     %cst_3 = arith.constant 6.12323426E-17 : f32
     %cst_4 = arith.constant 6.12323426E-17 : f32
     %5 = arith.mulf %4, %cst_4 : f32
-    affine.store %5, %arg1[2] {to = &quot;B&quot;} : memref&lt;8xf32&gt;
-    %6 = affine.load %arg0[6] {from = &quot;A&quot;} : memref&lt;8xf32&gt;
+    affine.store %5, %arg1[2] {to = "B"} : memref&lt;8xf32&gt;
+    %6 = affine.load %arg0[6] {from = "A"} : memref&lt;8xf32&gt;
     %cst_5 = arith.constant -0.707106769 : f32
     %cst_6 = arith.constant -0.707106769 : f32
     %7 = arith.mulf %6, %cst_6 : f32
-    affine.store %7, %arg1[3] {to = &quot;B&quot;} : memref&lt;8xf32&gt;
-    %8 = affine.load %arg0[7] {from = &quot;A&quot;} : memref&lt;8xf32&gt;
+    affine.store %7, %arg1[3] {to = "B"} : memref&lt;8xf32&gt;
+    %8 = affine.load %arg0[7] {from = "A"} : memref&lt;8xf32&gt;
     %cst_7 = arith.constant -1.000000e+00 : f32
     %cst_8 = arith.constant -1.000000e+00 : f32
     %9 = arith.mulf %8, %cst_8 : f32
-    affine.store %9, %arg1[4] {to = &quot;B&quot;} : memref&lt;8xf32&gt;
-    %10 = affine.load %arg0[0] {from = &quot;A&quot;} : memref&lt;8xf32&gt;
+    affine.store %9, %arg1[4] {to = "B"} : memref&lt;8xf32&gt;
+    %10 = affine.load %arg0[0] {from = "A"} : memref&lt;8xf32&gt;
     %cst_9 = arith.constant -0.707106769 : f32
     %cst_10 = arith.constant -0.707106769 : f32
     %11 = arith.mulf %10, %cst_10 : f32
-    affine.store %11, %arg1[5] {to = &quot;B&quot;} : memref&lt;8xf32&gt;
-    %12 = affine.load %arg0[1] {from = &quot;A&quot;} : memref&lt;8xf32&gt;
+    affine.store %11, %arg1[5] {to = "B"} : memref&lt;8xf32&gt;
+    %12 = affine.load %arg0[1] {from = "A"} : memref&lt;8xf32&gt;
     %cst_11 = arith.constant -1.83697015E-16 : f32
     %cst_12 = arith.constant -1.83697015E-16 : f32
     %13 = arith.mulf %12, %cst_12 : f32
-    affine.store %13, %arg1[6] {to = &quot;B&quot;} : memref&lt;8xf32&gt;
-    %14 = affine.load %arg0[2] {from = &quot;A&quot;} : memref&lt;8xf32&gt;
+    affine.store %13, %arg1[6] {to = "B"} : memref&lt;8xf32&gt;
+    %14 = affine.load %arg0[2] {from = "A"} : memref&lt;8xf32&gt;
     %cst_13 = arith.constant 0.707106769 : f32
     %cst_14 = arith.constant 0.707106769 : f32
     %15 = arith.mulf %14, %cst_14 : f32
-    affine.store %15, %arg1[7] {to = &quot;B&quot;} : memref&lt;8xf32&gt;
+    affine.store %15, %arg1[7] {to = "B"} : memref&lt;8xf32&gt;
     return
   }
 }
@@ -431,7 +431,7 @@ are embedded as constants in the code, not computed at runtime.</p>
 <li><p>You can use arbitrary Python functions (math, etc.)</p></li>
 <li><p>Use <code class="docutils literal notranslate"><span class="pre">ConstExpr[int32]</span></code> or <code class="docutils literal notranslate"><span class="pre">ConstExpr[float32]</span></code> for the type annotation</p></li>
 </ul>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 0.215 seconds)</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 0.211 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-gallery-dive-04-features-py">
 <div class="sphx-glr-download sphx-glr-download-jupyter docutils container">
 <p><a class="reference download internal" download="" href="../_downloads/90b883f891c63f481ffa4756cd7e0781/dive_04_features.ipynb"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Jupyter</span> <span class="pre">notebook:</span> <span class="pre">dive_04_features.ipynb</span></code></a></p>

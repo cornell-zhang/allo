@@ -215,7 +215,7 @@
 <li><p><strong>Direct HLS Code Generation</strong>:
 Set the target to <cite>“vhls”</cite> to produce HLS code as a string. This code includes the necessary headers and pragmas for Vitis HLS synthesis.</p>
 <blockquote>
-<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">code</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">&quot;vhls&quot;</span><span class="p">)</span>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">code</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">"vhls"</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">code</span><span class="p">)</span>
 </pre></div>
 </div>
@@ -229,7 +229,7 @@ Specify the target as <cite>“vitis_hls”</cite> along with a synthesis mode a
 <li><p><code class="docutils literal notranslate"><span class="pre">hw</span></code>: Full hardware synthesis mode, which compiles the program into RTL design using HLS, goes through placement and routing, generates the bitstream, and finally executes on FPGA. This mode may take several hours to finish.</p></li>
 </ul>
 <blockquote>
-<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">mod</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">&quot;vitis_hls&quot;</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;hw_emu&quot;</span><span class="p">,</span> <span class="n">project</span><span class="o">=</span><span class="s2">&quot;gemm.prj&quot;</span><span class="p">)</span>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">mod</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">"vitis_hls"</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">"hw_emu"</span><span class="p">,</span> <span class="n">project</span><span class="o">=</span><span class="s2">"gemm.prj"</span><span class="p">)</span>
 </pre></div>
 </div>
 </div></blockquote>
@@ -242,7 +242,7 @@ Set the target to <cite>“vivado_hls”</cite> to generate a legacy HLS project
 <li><p><code class="docutils literal notranslate"><span class="pre">cosim</span></code>: Co-simulation mode, using Vivado HLS compiler to synthesize the program and generate the RTL design, then runs the RTL with the test bench on the CPU.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">impl</span></code>: Implementation mode, using Vivado HLS compiler to synthesize the program, generate the RTL design, and go through placement and routing to the bitstream.</p></li>
 </ul>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">mod</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">&quot;vivado_hls&quot;</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;csim&quot;</span><span class="p">,</span> <span class="n">project</span><span class="o">=</span><span class="s2">&quot;gemm.prj&quot;</span><span class="p">)</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">mod</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">"vivado_hls"</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">"csim"</span><span class="p">,</span> <span class="n">project</span><span class="o">=</span><span class="s2">"gemm.prj"</span><span class="p">)</span>
 <span class="c1"># For csim</span>
 <span class="n">mod</span><span class="p">(</span><span class="n">np_A</span><span class="p">,</span> <span class="n">np_B</span><span class="p">,</span> <span class="n">allo_C</span><span class="p">)</span>
 <span class="c1"># For csyn</span>
@@ -294,16 +294,16 @@ Set the target to <cite>“vivado_hls”</cite> to generate a legacy HLS project
 
 <span class="c1"># Define HBM channel mapping using argument names</span>
 <span class="n">hbm_mapping</span> <span class="o">=</span> <span class="p">{</span>
-    <span class="s2">&quot;A&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>              <span class="c1"># Input A -&gt; HBM channel 0</span>
-    <span class="s2">&quot;B&quot;</span><span class="p">:</span> <span class="s2">&quot;HBM[1]&quot;</span><span class="p">,</span>       <span class="c1"># Input B -&gt; HBM channel 1</span>
-    <span class="s2">&quot;output_0&quot;</span><span class="p">:</span> <span class="s2">&quot;DDR[0]&quot;</span><span class="p">,</span> <span class="c1"># Return value -&gt; DDR bank 0</span>
+    <span class="s2">"A"</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>              <span class="c1"># Input A -&gt; HBM channel 0</span>
+    <span class="s2">"B"</span><span class="p">:</span> <span class="s2">"HBM[1]"</span><span class="p">,</span>       <span class="c1"># Input B -&gt; HBM channel 1</span>
+    <span class="s2">"output_0"</span><span class="p">:</span> <span class="s2">"DDR[0]"</span><span class="p">,</span> <span class="c1"># Return value -&gt; DDR bank 0</span>
 <span class="p">}</span>
 
 <span class="n">mod</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">build</span><span class="p">(</span>
-    <span class="n">target</span><span class="o">=</span><span class="s2">&quot;vitis_hls&quot;</span><span class="p">,</span>
-    <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;hw&quot;</span><span class="p">,</span>
-    <span class="n">project</span><span class="o">=</span><span class="s2">&quot;gemm.prj&quot;</span><span class="p">,</span>
-    <span class="n">configs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;hbm_mapping&quot;</span><span class="p">:</span> <span class="n">hbm_mapping</span><span class="p">},</span>
+    <span class="n">target</span><span class="o">=</span><span class="s2">"vitis_hls"</span><span class="p">,</span>
+    <span class="n">mode</span><span class="o">=</span><span class="s2">"hw"</span><span class="p">,</span>
+    <span class="n">project</span><span class="o">=</span><span class="s2">"gemm.prj"</span><span class="p">,</span>
+    <span class="n">configs</span><span class="o">=</span><span class="p">{</span><span class="s2">"hbm_mapping"</span><span class="p">:</span> <span class="n">hbm_mapping</span><span class="p">},</span>
 <span class="p">)</span>
 </pre></div>
 </div>
@@ -325,12 +325,12 @@ sp=gemm.v17:DDR[0]
 <p><strong>Complex Example with Multiple Arguments</strong></p>
 <p>For larger designs with many memory interfaces, you can specify different HBM channels for each argument:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">hbm_mapping</span> <span class="o">=</span> <span class="p">{</span>
-    <span class="s2">&quot;inp_0&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>           <span class="c1"># HBM[0]</span>
-    <span class="s2">&quot;inp_1&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>           <span class="c1"># HBM[0] - can share channels</span>
-    <span class="s2">&quot;weight_0&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>        <span class="c1"># HBM[1]</span>
-    <span class="s2">&quot;weight_1&quot;</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span>        <span class="c1"># HBM[2]</span>
-    <span class="s2">&quot;bias&quot;</span><span class="p">:</span> <span class="s2">&quot;HBM[3]&quot;</span><span class="p">,</span>     <span class="c1"># HBM[3]</span>
-    <span class="s2">&quot;output_0&quot;</span><span class="p">:</span> <span class="s2">&quot;DDR[0]&quot;</span><span class="p">,</span> <span class="c1"># DDR bank 0</span>
+    <span class="s2">"inp_0"</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>           <span class="c1"># HBM[0]</span>
+    <span class="s2">"inp_1"</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>           <span class="c1"># HBM[0] - can share channels</span>
+    <span class="s2">"weight_0"</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>        <span class="c1"># HBM[1]</span>
+    <span class="s2">"weight_1"</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span>        <span class="c1"># HBM[2]</span>
+    <span class="s2">"bias"</span><span class="p">:</span> <span class="s2">"HBM[3]"</span><span class="p">,</span>     <span class="c1"># HBM[3]</span>
+    <span class="s2">"output_0"</span><span class="p">:</span> <span class="s2">"DDR[0]"</span><span class="p">,</span> <span class="c1"># DDR bank 0</span>
 <span class="p">}</span>
 </pre></div>
 </div>
@@ -350,12 +350,12 @@ sp=gemm.v17:DDR[0]
 <span class="kn">from</span><span class="w"> </span><span class="nn">allo.ir.types</span><span class="w"> </span><span class="kn">import</span> <span class="n">int32</span><span class="p">,</span> <span class="n">float32</span>
 
 <span class="c1"># Define memory specifications</span>
-<span class="n">MemUram</span> <span class="o">=</span> <span class="n">Memory</span><span class="p">(</span><span class="n">resource</span><span class="o">=</span><span class="s2">&quot;URAM&quot;</span><span class="p">)</span>
-<span class="n">MemBram</span> <span class="o">=</span> <span class="n">Memory</span><span class="p">(</span><span class="n">resource</span><span class="o">=</span><span class="s2">&quot;BRAM&quot;</span><span class="p">,</span> <span class="n">storage_type</span><span class="o">=</span><span class="s2">&quot;RAM_2P&quot;</span><span class="p">)</span>
+<span class="n">MemUram</span> <span class="o">=</span> <span class="n">Memory</span><span class="p">(</span><span class="n">resource</span><span class="o">=</span><span class="s2">"URAM"</span><span class="p">)</span>
+<span class="n">MemBram</span> <span class="o">=</span> <span class="n">Memory</span><span class="p">(</span><span class="n">resource</span><span class="o">=</span><span class="s2">"BRAM"</span><span class="p">,</span> <span class="n">storage_type</span><span class="o">=</span><span class="s2">"RAM_2P"</span><span class="p">)</span>
 
 <span class="k">def</span><span class="w"> </span><span class="nf">kernel</span><span class="p">(</span><span class="n">a</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">]</span> <span class="o">@</span> <span class="n">MemUram</span><span class="p">,</span> <span class="n">b</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="mi">16</span><span class="p">,</span> <span class="mi">16</span><span class="p">]</span> <span class="o">@</span> <span class="n">MemBram</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">]:</span>
     <span class="c1"># Local variable with memory annotation</span>
-    <span class="n">buf</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">]</span> <span class="o">@</span> <span class="n">Memory</span><span class="p">(</span><span class="n">resource</span><span class="o">=</span><span class="s2">&quot;BRAM&quot;</span><span class="p">)</span>
+    <span class="n">buf</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">]</span> <span class="o">@</span> <span class="n">Memory</span><span class="p">(</span><span class="n">resource</span><span class="o">=</span><span class="s2">"BRAM"</span><span class="p">)</span>
     <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">32</span><span class="p">):</span>
         <span class="n">buf</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">a</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">*</span> <span class="mi">2</span>
     <span class="n">c</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">]</span>
@@ -364,7 +364,7 @@ sp=gemm.v17:DDR[0]
     <span class="k">return</span> <span class="n">c</span>
 
 <span class="n">s</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">customize</span><span class="p">(</span><span class="n">kernel</span><span class="p">)</span>
-<span class="n">mod</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">&quot;vhls&quot;</span><span class="p">)</span>
+<span class="n">mod</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">"vhls"</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">mod</span><span class="o">.</span><span class="n">hls_code</span><span class="p">)</span>
 </pre></div>
 </div>
@@ -410,7 +410,7 @@ sp=gemm.v17:DDR[0]
 <ol class="arabic">
 <li><p><strong>URAM for large buffers</strong>:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># URAM is ideal for large arrays on UltraScale+ FPGAs</span>
-<span class="n">LargeBuffer</span> <span class="o">=</span> <span class="n">Memory</span><span class="p">(</span><span class="n">resource</span><span class="o">=</span><span class="s2">&quot;URAM&quot;</span><span class="p">)</span>
+<span class="n">LargeBuffer</span> <span class="o">=</span> <span class="n">Memory</span><span class="p">(</span><span class="n">resource</span><span class="o">=</span><span class="s2">"URAM"</span><span class="p">)</span>
 
 <span class="k">def</span><span class="w"> </span><span class="nf">process</span><span class="p">(</span><span class="n">data</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="mi">1024</span><span class="p">,</span> <span class="mi">1024</span><span class="p">]</span> <span class="o">@</span> <span class="n">LargeBuffer</span><span class="p">):</span>
     <span class="o">...</span>
@@ -419,7 +419,7 @@ sp=gemm.v17:DDR[0]
 </li>
 <li><p><strong>Dual-port BRAM for concurrent access</strong>:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># RAM_2P allows simultaneous read and write</span>
-<span class="n">DualPort</span> <span class="o">=</span> <span class="n">Memory</span><span class="p">(</span><span class="n">resource</span><span class="o">=</span><span class="s2">&quot;BRAM&quot;</span><span class="p">,</span> <span class="n">storage_type</span><span class="o">=</span><span class="s2">&quot;RAM_2P&quot;</span><span class="p">)</span>
+<span class="n">DualPort</span> <span class="o">=</span> <span class="n">Memory</span><span class="p">(</span><span class="n">resource</span><span class="o">=</span><span class="s2">"BRAM"</span><span class="p">,</span> <span class="n">storage_type</span><span class="o">=</span><span class="s2">"RAM_2P"</span><span class="p">)</span>
 
 <span class="k">def</span><span class="w"> </span><span class="nf">pipeline</span><span class="p">(</span><span class="n">inp</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="mi">256</span><span class="p">]</span> <span class="o">@</span> <span class="n">DualPort</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">int32</span><span class="p">[</span><span class="mi">256</span><span class="p">]:</span>
     <span class="o">...</span>
@@ -428,7 +428,7 @@ sp=gemm.v17:DDR[0]
 </li>
 <li><p><strong>LUTRAM for small, fast buffers</strong>:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># LUTRAM is faster but uses more LUTs</span>
-<span class="n">FastBuffer</span> <span class="o">=</span> <span class="n">Memory</span><span class="p">(</span><span class="n">resource</span><span class="o">=</span><span class="s2">&quot;LUTRAM&quot;</span><span class="p">)</span>
+<span class="n">FastBuffer</span> <span class="o">=</span> <span class="n">Memory</span><span class="p">(</span><span class="n">resource</span><span class="o">=</span><span class="s2">"LUTRAM"</span><span class="p">)</span>
 
 <span class="k">def</span><span class="w"> </span><span class="nf">compute</span><span class="p">(</span><span class="n">weights</span><span class="p">:</span> <span class="n">int8</span><span class="p">[</span><span class="mi">64</span><span class="p">]</span> <span class="o">@</span> <span class="n">FastBuffer</span><span class="p">):</span>
     <span class="o">...</span>
@@ -436,9 +436,9 @@ sp=gemm.v17:DDR[0]
 </div>
 </li>
 <li><p><strong>Multiple memory types in one kernel</strong>:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">InputMem</span> <span class="o">=</span> <span class="n">Memory</span><span class="p">(</span><span class="n">resource</span><span class="o">=</span><span class="s2">&quot;BRAM&quot;</span><span class="p">,</span> <span class="n">storage_type</span><span class="o">=</span><span class="s2">&quot;RAM_1P&quot;</span><span class="p">)</span>
-<span class="n">WeightMem</span> <span class="o">=</span> <span class="n">Memory</span><span class="p">(</span><span class="n">resource</span><span class="o">=</span><span class="s2">&quot;URAM&quot;</span><span class="p">)</span>
-<span class="n">OutputMem</span> <span class="o">=</span> <span class="n">Memory</span><span class="p">(</span><span class="n">resource</span><span class="o">=</span><span class="s2">&quot;BRAM&quot;</span><span class="p">,</span> <span class="n">storage_type</span><span class="o">=</span><span class="s2">&quot;RAM_2P&quot;</span><span class="p">)</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">InputMem</span> <span class="o">=</span> <span class="n">Memory</span><span class="p">(</span><span class="n">resource</span><span class="o">=</span><span class="s2">"BRAM"</span><span class="p">,</span> <span class="n">storage_type</span><span class="o">=</span><span class="s2">"RAM_1P"</span><span class="p">)</span>
+<span class="n">WeightMem</span> <span class="o">=</span> <span class="n">Memory</span><span class="p">(</span><span class="n">resource</span><span class="o">=</span><span class="s2">"URAM"</span><span class="p">)</span>
+<span class="n">OutputMem</span> <span class="o">=</span> <span class="n">Memory</span><span class="p">(</span><span class="n">resource</span><span class="o">=</span><span class="s2">"BRAM"</span><span class="p">,</span> <span class="n">storage_type</span><span class="o">=</span><span class="s2">"RAM_2P"</span><span class="p">)</span>
 
 <span class="k">def</span><span class="w"> </span><span class="nf">neural_layer</span><span class="p">(</span>
     <span class="n">inp</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="mi">128</span><span class="p">]</span> <span class="o">@</span> <span class="n">InputMem</span><span class="p">,</span>
@@ -463,12 +463,12 @@ sp=gemm.v17:DDR[0]
 <h2>Device and Frequency Configuration<a class="headerlink" href="#device-and-frequency-configuration" title="Link to this heading"><span>¶</span></a></h2>
 <p>You can specify the target device and clock frequency through the <code class="docutils literal notranslate"><span class="pre">configs</span></code> dictionary:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">mod</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">build</span><span class="p">(</span>
-    <span class="n">target</span><span class="o">=</span><span class="s2">&quot;vitis_hls&quot;</span><span class="p">,</span>
-    <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;hw&quot;</span><span class="p">,</span>
-    <span class="n">project</span><span class="o">=</span><span class="s2">&quot;gemm.prj&quot;</span><span class="p">,</span>
+    <span class="n">target</span><span class="o">=</span><span class="s2">"vitis_hls"</span><span class="p">,</span>
+    <span class="n">mode</span><span class="o">=</span><span class="s2">"hw"</span><span class="p">,</span>
+    <span class="n">project</span><span class="o">=</span><span class="s2">"gemm.prj"</span><span class="p">,</span>
     <span class="n">configs</span><span class="o">=</span><span class="p">{</span>
-        <span class="s2">&quot;device&quot;</span><span class="p">:</span> <span class="s2">&quot;u280&quot;</span><span class="p">,</span>     <span class="c1"># Target device (default: &quot;u280&quot;)</span>
-        <span class="s2">&quot;frequency&quot;</span><span class="p">:</span> <span class="mi">300</span><span class="p">,</span>     <span class="c1"># Target frequency in MHz (default: 300)</span>
+        <span class="s2">"device"</span><span class="p">:</span> <span class="s2">"u280"</span><span class="p">,</span>     <span class="c1"># Target device (default: "u280")</span>
+        <span class="s2">"frequency"</span><span class="p">:</span> <span class="mi">300</span><span class="p">,</span>     <span class="c1"># Target frequency in MHz (default: 300)</span>
     <span class="p">},</span>
 <span class="p">)</span>
 </pre></div>

@@ -251,18 +251,18 @@ be installed through <code class="docutils literal notranslate"><span class="pre
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>Module(
   body=[
     FunctionDef(
-      name=&#39;matrix_add&#39;,
+      name='matrix_add',
       args=arguments(
         posonlyargs=[],
         args=[
           arg(
-            arg=&#39;A&#39;,
+            arg='A',
             annotation=Subscript(
-              value=Name(id=&#39;int32&#39;, ctx=Load()),
+              value=Name(id='int32', ctx=Load()),
               slice=Tuple(
                 elts=[
-                  Name(id=&#39;M&#39;, ctx=Load()),
-                  Name(id=&#39;N&#39;, ctx=Load()),
+                  Name(id='M', ctx=Load()),
+                  Name(id='N', ctx=Load()),
                 ],
                 ctx=Load(),
               ),
@@ -279,13 +279,13 @@ be installed through <code class="docutils literal notranslate"><span class="pre
       ),
       body=[
         AnnAssign(
-          target=Name(id=&#39;B&#39;, ctx=Store()),
+          target=Name(id='B', ctx=Store()),
           annotation=Subscript(
-            value=Name(id=&#39;int32&#39;, ctx=Load()),
+            value=Name(id='int32', ctx=Load()),
             slice=Tuple(
               elts=[
-                Name(id=&#39;M&#39;, ctx=Load()),
-                Name(id=&#39;N&#39;, ctx=Load()),
+                Name(id='M', ctx=Load()),
+                Name(id='N', ctx=Load()),
               ],
               ctx=Load(),
             ),
@@ -297,20 +297,20 @@ be installed through <code class="docutils literal notranslate"><span class="pre
         For(
           target=Tuple(
             elts=[
-              Name(id=&#39;i&#39;, ctx=Store()),
-              Name(id=&#39;j&#39;, ctx=Store()),
+              Name(id='i', ctx=Store()),
+              Name(id='j', ctx=Store()),
             ],
             ctx=Store(),
           ),
           iter=Call(
             func=Attribute(
-              value=Name(id=&#39;allo&#39;, ctx=Load()),
-              attr=&#39;grid&#39;,
+              value=Name(id='allo', ctx=Load()),
+              attr='grid',
               ctx=Load(),
             ),
             args=[
-              Name(id=&#39;M&#39;, ctx=Load()),
-              Name(id=&#39;N&#39;, ctx=Load()),
+              Name(id='M', ctx=Load()),
+              Name(id='N', ctx=Load()),
             ],
             keywords=[],
           ),
@@ -318,11 +318,11 @@ be installed through <code class="docutils literal notranslate"><span class="pre
             Assign(
               targets=[
                 Subscript(
-                  value=Name(id=&#39;B&#39;, ctx=Load()),
+                  value=Name(id='B', ctx=Load()),
                   slice=Tuple(
                     elts=[
-                      Name(id=&#39;i&#39;, ctx=Load()),
-                      Name(id=&#39;j&#39;, ctx=Load()),
+                      Name(id='i', ctx=Load()),
+                      Name(id='j', ctx=Load()),
                     ],
                     ctx=Load(),
                   ),
@@ -331,11 +331,11 @@ be installed through <code class="docutils literal notranslate"><span class="pre
               ],
               value=BinOp(
                 left=Subscript(
-                  value=Name(id=&#39;A&#39;, ctx=Load()),
+                  value=Name(id='A', ctx=Load()),
                   slice=Tuple(
                     elts=[
-                      Name(id=&#39;i&#39;, ctx=Load()),
-                      Name(id=&#39;j&#39;, ctx=Load()),
+                      Name(id='i', ctx=Load()),
+                      Name(id='j', ctx=Load()),
                     ],
                     ctx=Load(),
                   ),
@@ -351,16 +351,16 @@ be installed through <code class="docutils literal notranslate"><span class="pre
           type_comment=None,
         ),
         Return(
-          value=Name(id=&#39;B&#39;, ctx=Load()),
+          value=Name(id='B', ctx=Load()),
         ),
       ],
       decorator_list=[],
       returns=Subscript(
-        value=Name(id=&#39;int32&#39;, ctx=Load()),
+        value=Name(id='int32', ctx=Load()),
         slice=Tuple(
           elts=[
-            Name(id=&#39;M&#39;, ctx=Load()),
-            Name(id=&#39;N&#39;, ctx=Load()),
+            Name(id='M', ctx=Load()),
+            Name(id='N', ctx=Load()),
           ],
           ctx=Load(),
         ),
@@ -456,8 +456,8 @@ For example, the <code class="docutils literal notranslate"><span class="pre">in
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="nb">slice</span><span class="o">=</span><span class="n">Index</span><span class="p">(</span>
   <span class="n">value</span><span class="o">=</span><span class="n">Tuple</span><span class="p">(</span>
     <span class="n">elts</span><span class="o">=</span><span class="p">[</span>
-      <span class="n">Name</span><span class="p">(</span><span class="nb">id</span><span class="o">=</span><span class="s1">&#39;M&#39;</span><span class="p">,</span> <span class="n">ctx</span><span class="o">=</span><span class="n">Load</span><span class="p">()),</span>
-      <span class="n">Name</span><span class="p">(</span><span class="nb">id</span><span class="o">=</span><span class="s1">&#39;N&#39;</span><span class="p">,</span> <span class="n">ctx</span><span class="o">=</span><span class="n">Load</span><span class="p">()),</span>
+      <span class="n">Name</span><span class="p">(</span><span class="nb">id</span><span class="o">=</span><span class="s1">'M'</span><span class="p">,</span> <span class="n">ctx</span><span class="o">=</span><span class="n">Load</span><span class="p">()),</span>
+      <span class="n">Name</span><span class="p">(</span><span class="nb">id</span><span class="o">=</span><span class="s1">'N'</span><span class="p">,</span> <span class="n">ctx</span><span class="o">=</span><span class="n">Load</span><span class="p">()),</span>
     <span class="p">],</span>
     <span class="n">ctx</span><span class="o">=</span><span class="n">Load</span><span class="p">(),</span>
   <span class="p">),</span>

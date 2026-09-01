@@ -229,26 +229,26 @@ However, in real applications, we often need to compose multiple kernels togethe
 <p>Different teams or people can then work on different parts of the code and optimize each kernel.
 We first create a schedule for the <code class="docutils literal notranslate"><span class="pre">matrix_add</span></code> kernel, and add several optimizations.</p>
 <div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="n">s1</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">customize</span><span class="p">(</span><span class="n">matrix_add</span><span class="p">)</span>
-<span class="n">s1</span><span class="o">.</span><span class="n">pipeline</span><span class="p">(</span><span class="s2">&quot;j&quot;</span><span class="p">)</span>
+<span class="n">s1</span><span class="o">.</span><span class="n">pipeline</span><span class="p">(</span><span class="s2">"j"</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">s1</span><span class="o">.</span><span class="n">module</span><span class="p">)</span>
 </pre></div>
 </div>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>module {
-  func.func @matrix_add(%arg0: memref&lt;32x32xi32&gt;) -&gt; memref&lt;32x32xi32&gt; attributes {itypes = &quot;s&quot;, otypes = &quot;s&quot;} {
-    %alloc = memref.alloc() {name = &quot;B&quot;} : memref&lt;32x32xi32&gt;
+  func.func @matrix_add(%arg0: memref&lt;32x32xi32&gt;) -&gt; memref&lt;32x32xi32&gt; attributes {itypes = "s", otypes = "s"} {
+    %alloc = memref.alloc() {name = "B"} : memref&lt;32x32xi32&gt;
     %c0_i32 = arith.constant 0 : i32
     linalg.fill ins(%c0_i32 : i32) outs(%alloc : memref&lt;32x32xi32&gt;)
     affine.for %arg1 = 0 to 32 {
       affine.for %arg2 = 0 to 32 {
-        %0 = affine.load %arg0[%arg1, %arg2] {from = &quot;A&quot;} : memref&lt;32x32xi32&gt;
+        %0 = affine.load %arg0[%arg1, %arg2] {from = "A"} : memref&lt;32x32xi32&gt;
         %1 = arith.extsi %0 : i32 to i33
         %c1_i32 = arith.constant 1 : i32
         %2 = arith.extsi %c1_i32 : i32 to i33
         %3 = arith.addi %1, %2 : i33
         %4 = arith.trunci %3 : i33 to i32
-        affine.store %4, %alloc[%arg1, %arg2] {to = &quot;B&quot;} : memref&lt;32x32xi32&gt;
-      } {loop_name = &quot;j&quot;, pipeline_ii = 1 : ui32}
-    } {loop_name = &quot;i&quot;, op_name = &quot;S_i_j_0&quot;}
+        affine.store %4, %alloc[%arg1, %arg2] {to = "B"} : memref&lt;32x32xi32&gt;
+      } {loop_name = "j", pipeline_ii = 1 : ui32}
+    } {loop_name = "i", op_name = "S_i_j_0"}
     return %alloc : memref&lt;32x32xi32&gt;
   }
 }
@@ -256,26 +256,26 @@ We first create a schedule for the <code class="docutils literal notranslate"><s
 </div>
 <p>Then we create a schedule for the <code class="docutils literal notranslate"><span class="pre">gemm</span></code> kernel and optimize it.</p>
 <div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="n">s2</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">customize</span><span class="p">(</span><span class="n">gemm</span><span class="p">)</span>
-<span class="n">s2</span><span class="o">.</span><span class="n">reorder</span><span class="p">(</span><span class="s2">&quot;k&quot;</span><span class="p">,</span> <span class="s2">&quot;j&quot;</span><span class="p">)</span>
-<span class="n">s2</span><span class="o">.</span><span class="n">buffer_at</span><span class="p">(</span><span class="n">s2</span><span class="o">.</span><span class="n">C</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="s2">&quot;i&quot;</span><span class="p">)</span>
-<span class="n">s2</span><span class="o">.</span><span class="n">pipeline</span><span class="p">(</span><span class="s2">&quot;j&quot;</span><span class="p">)</span>
+<span class="n">s2</span><span class="o">.</span><span class="n">reorder</span><span class="p">(</span><span class="s2">"k"</span><span class="p">,</span> <span class="s2">"j"</span><span class="p">)</span>
+<span class="n">s2</span><span class="o">.</span><span class="n">buffer_at</span><span class="p">(</span><span class="n">s2</span><span class="o">.</span><span class="n">C</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="s2">"i"</span><span class="p">)</span>
+<span class="n">s2</span><span class="o">.</span><span class="n">pipeline</span><span class="p">(</span><span class="s2">"j"</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">s2</span><span class="o">.</span><span class="n">module</span><span class="p">)</span>
 </pre></div>
 </div>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>module {
-  func.func @gemm(%arg0: memref&lt;32x32xi32&gt;, %arg1: memref&lt;32x32xi32&gt;) -&gt; memref&lt;32x32xi32&gt; attributes {itypes = &quot;ss&quot;, otypes = &quot;s&quot;} {
-    %alloc = memref.alloc() {name = &quot;C&quot;} : memref&lt;32x32xi32&gt;
+  func.func @gemm(%arg0: memref&lt;32x32xi32&gt;, %arg1: memref&lt;32x32xi32&gt;) -&gt; memref&lt;32x32xi32&gt; attributes {itypes = "ss", otypes = "s"} {
+    %alloc = memref.alloc() {name = "C"} : memref&lt;32x32xi32&gt;
     %c0_i32 = arith.constant 0 : i32
     linalg.fill ins(%c0_i32 : i32) outs(%alloc : memref&lt;32x32xi32&gt;)
     affine.for %arg2 = 0 to 32 {
       %alloc_0 = memref.alloc() : memref&lt;32xi32&gt;
       affine.for %arg3 = 0 to 32 {
         affine.store %c0_i32, %alloc_0[%arg3] : memref&lt;32xi32&gt;
-      } {buffer, loop_name = &quot;j_init&quot;, pipeline_ii = 1 : i32}
+      } {buffer, loop_name = "j_init", pipeline_ii = 1 : i32}
       affine.for %arg3 = 0 to 32 {
         affine.for %arg4 = 0 to 32 {
-          %0 = affine.load %arg0[%arg2, %arg3] {from = &quot;A&quot;} : memref&lt;32x32xi32&gt;
-          %1 = affine.load %arg1[%arg3, %arg4] {from = &quot;B&quot;} : memref&lt;32x32xi32&gt;
+          %0 = affine.load %arg0[%arg2, %arg3] {from = "A"} : memref&lt;32x32xi32&gt;
+          %1 = affine.load %arg1[%arg3, %arg4] {from = "B"} : memref&lt;32x32xi32&gt;
           %2 = arith.extsi %0 : i32 to i64
           %3 = arith.extsi %1 : i32 to i64
           %4 = arith.muli %2, %3 : i64
@@ -285,13 +285,13 @@ We first create a schedule for the <code class="docutils literal notranslate"><s
           %8 = arith.addi %6, %7 : i65
           %9 = arith.trunci %8 : i65 to i32
           affine.store %9, %alloc_0[%arg4] : memref&lt;32xi32&gt;
-        } {loop_name = &quot;j&quot;, pipeline_ii = 1 : ui32}
-      } {loop_name = &quot;k&quot;, op_name = &quot;S_k_0&quot;, reduction}
+        } {loop_name = "j", pipeline_ii = 1 : ui32}
+      } {loop_name = "k", op_name = "S_k_0", reduction}
       affine.for %arg3 = 0 to 32 {
         %0 = affine.load %alloc_0[%arg3] : memref&lt;32xi32&gt;
         affine.store %0, %alloc[%arg2, %arg3] : memref&lt;32x32xi32&gt;
-      } {buffer, loop_name = &quot;j_back&quot;, pipeline_ii = 1 : i32}
-    } {loop_name = &quot;i&quot;, op_name = &quot;S_i_j_0&quot;}
+      } {buffer, loop_name = "j_back", pipeline_ii = 1 : i32}
+    } {loop_name = "i", op_name = "S_i_j_0"}
     return %alloc : memref&lt;32x32xi32&gt;
   }
 }
@@ -303,50 +303,50 @@ We first create a schedule for the <code class="docutils literal notranslate"><s
 </pre></div>
 </div>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>module {
-  func.func @gemm(%arg0: memref&lt;32x32xi32&gt;, %arg1: memref&lt;32x32xi32&gt;) -&gt; memref&lt;32x32xi32&gt; attributes {itypes = &quot;ss&quot;, otypes = &quot;s&quot;} {
-    %alloc = memref.alloc() {name = &quot;C&quot;} : memref&lt;32x32xi32&gt;
+  func.func @gemm(%arg0: memref&lt;32x32xi32&gt;, %arg1: memref&lt;32x32xi32&gt;) -&gt; memref&lt;32x32xi32&gt; attributes {itypes = "ss", otypes = "s"} {
+    %alloc = memref.alloc() {name = "C"} : memref&lt;32x32xi32&gt;
     %c0_i32 = arith.constant 0 : i32
     linalg.fill ins(%c0_i32 : i32) outs(%alloc : memref&lt;32x32xi32&gt;)
     affine.for %arg2 = 0 to 32 {
       affine.for %arg3 = 0 to 32 {
         affine.for %arg4 = 0 to 32 {
-          %0 = affine.load %arg0[%arg2, %arg4] {from = &quot;A&quot;} : memref&lt;32x32xi32&gt;
-          %1 = affine.load %arg1[%arg4, %arg3] {from = &quot;B&quot;} : memref&lt;32x32xi32&gt;
+          %0 = affine.load %arg0[%arg2, %arg4] {from = "A"} : memref&lt;32x32xi32&gt;
+          %1 = affine.load %arg1[%arg4, %arg3] {from = "B"} : memref&lt;32x32xi32&gt;
           %2 = arith.extsi %0 : i32 to i64
           %3 = arith.extsi %1 : i32 to i64
           %4 = arith.muli %2, %3 : i64
-          %5 = affine.load %alloc[%arg2, %arg3] {from = &quot;C&quot;} : memref&lt;32x32xi32&gt;
+          %5 = affine.load %alloc[%arg2, %arg3] {from = "C"} : memref&lt;32x32xi32&gt;
           %6 = arith.extsi %5 : i32 to i65
           %7 = arith.extsi %4 : i64 to i65
           %8 = arith.addi %6, %7 : i65
           %9 = arith.trunci %8 : i65 to i32
-          affine.store %9, %alloc[%arg2, %arg3] {to = &quot;C&quot;} : memref&lt;32x32xi32&gt;
-        } {loop_name = &quot;k&quot;, op_name = &quot;S_k_0&quot;, reduction}
-      } {loop_name = &quot;j&quot;}
-    } {loop_name = &quot;i&quot;, op_name = &quot;S_i_j_0&quot;}
+          affine.store %9, %alloc[%arg2, %arg3] {to = "C"} : memref&lt;32x32xi32&gt;
+        } {loop_name = "k", op_name = "S_k_0", reduction}
+      } {loop_name = "j"}
+    } {loop_name = "i", op_name = "S_i_j_0"}
     return %alloc : memref&lt;32x32xi32&gt;
   }
-  func.func @matrix_add(%arg0: memref&lt;32x32xi32&gt;) -&gt; memref&lt;32x32xi32&gt; attributes {itypes = &quot;s&quot;, otypes = &quot;s&quot;} {
-    %alloc = memref.alloc() {name = &quot;B&quot;} : memref&lt;32x32xi32&gt;
+  func.func @matrix_add(%arg0: memref&lt;32x32xi32&gt;) -&gt; memref&lt;32x32xi32&gt; attributes {itypes = "s", otypes = "s"} {
+    %alloc = memref.alloc() {name = "B"} : memref&lt;32x32xi32&gt;
     %c0_i32 = arith.constant 0 : i32
     linalg.fill ins(%c0_i32 : i32) outs(%alloc : memref&lt;32x32xi32&gt;)
     affine.for %arg1 = 0 to 32 {
       affine.for %arg2 = 0 to 32 {
-        %0 = affine.load %arg0[%arg1, %arg2] {from = &quot;A&quot;} : memref&lt;32x32xi32&gt;
+        %0 = affine.load %arg0[%arg1, %arg2] {from = "A"} : memref&lt;32x32xi32&gt;
         %1 = arith.extsi %0 : i32 to i33
         %c1_i32 = arith.constant 1 : i32
         %c1_i32_0 = arith.constant 1 : i32
         %2 = arith.extsi %c1_i32_0 : i32 to i33
         %3 = arith.addi %1, %2 : i33
         %4 = arith.trunci %3 : i33 to i32
-        affine.store %4, %alloc[%arg1, %arg2] {to = &quot;B&quot;} : memref&lt;32x32xi32&gt;
-      } {loop_name = &quot;j&quot;}
-    } {loop_name = &quot;i&quot;, op_name = &quot;S_i_j_0&quot;}
+        affine.store %4, %alloc[%arg1, %arg2] {to = "B"} : memref&lt;32x32xi32&gt;
+      } {loop_name = "j"}
+    } {loop_name = "i", op_name = "S_i_j_0"}
     return %alloc : memref&lt;32x32xi32&gt;
   }
-  func.func @top(%arg0: memref&lt;32x32xi32&gt;, %arg1: memref&lt;32x32xi32&gt;) -&gt; memref&lt;32x32xi32&gt; attributes {itypes = &quot;ss&quot;, otypes = &quot;s&quot;} {
-    %0 = call @gemm(%arg0, %arg1) {name = &quot;C&quot;} : (memref&lt;32x32xi32&gt;, memref&lt;32x32xi32&gt;) -&gt; memref&lt;32x32xi32&gt;
-    %1 = call @matrix_add(%0) {name = &quot;D&quot;} : (memref&lt;32x32xi32&gt;) -&gt; memref&lt;32x32xi32&gt;
+  func.func @top(%arg0: memref&lt;32x32xi32&gt;, %arg1: memref&lt;32x32xi32&gt;) -&gt; memref&lt;32x32xi32&gt; attributes {itypes = "ss", otypes = "s"} {
+    %0 = call @gemm(%arg0, %arg1) {name = "C"} : (memref&lt;32x32xi32&gt;, memref&lt;32x32xi32&gt;) -&gt; memref&lt;32x32xi32&gt;
+    %1 = call @matrix_add(%0) {name = "D"} : (memref&lt;32x32xi32&gt;) -&gt; memref&lt;32x32xi32&gt;
     return %1 : memref&lt;32x32xi32&gt;
   }
 }
@@ -359,19 +359,19 @@ In Allo, we can use the <code class="docutils literal notranslate"><span class="
 </pre></div>
 </div>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>module {
-  func.func @gemm(%arg0: memref&lt;32x32xi32&gt;, %arg1: memref&lt;32x32xi32&gt;) -&gt; memref&lt;32x32xi32&gt; attributes {itypes = &quot;ss&quot;, otypes = &quot;s&quot;} {
-    %alloc = memref.alloc() {name = &quot;C&quot;} : memref&lt;32x32xi32&gt;
+  func.func @gemm(%arg0: memref&lt;32x32xi32&gt;, %arg1: memref&lt;32x32xi32&gt;) -&gt; memref&lt;32x32xi32&gt; attributes {itypes = "ss", otypes = "s"} {
+    %alloc = memref.alloc() {name = "C"} : memref&lt;32x32xi32&gt;
     %c0_i32 = arith.constant 0 : i32
     linalg.fill ins(%c0_i32 : i32) outs(%alloc : memref&lt;32x32xi32&gt;)
     affine.for %arg2 = 0 to 32 {
       %alloc_0 = memref.alloc() : memref&lt;32xi32&gt;
       affine.for %arg3 = 0 to 32 {
         affine.store %c0_i32, %alloc_0[%arg3] : memref&lt;32xi32&gt;
-      } {buffer, loop_name = &quot;j_init&quot;, pipeline_ii = 1 : i32}
+      } {buffer, loop_name = "j_init", pipeline_ii = 1 : i32}
       affine.for %arg3 = 0 to 32 {
         affine.for %arg4 = 0 to 32 {
-          %0 = affine.load %arg0[%arg2, %arg3] {from = &quot;A&quot;} : memref&lt;32x32xi32&gt;
-          %1 = affine.load %arg1[%arg3, %arg4] {from = &quot;B&quot;} : memref&lt;32x32xi32&gt;
+          %0 = affine.load %arg0[%arg2, %arg3] {from = "A"} : memref&lt;32x32xi32&gt;
+          %1 = affine.load %arg1[%arg3, %arg4] {from = "B"} : memref&lt;32x32xi32&gt;
           %2 = arith.extsi %0 : i32 to i64
           %3 = arith.extsi %1 : i32 to i64
           %4 = arith.muli %2, %3 : i64
@@ -381,35 +381,35 @@ In Allo, we can use the <code class="docutils literal notranslate"><span class="
           %8 = arith.addi %6, %7 : i65
           %9 = arith.trunci %8 : i65 to i32
           affine.store %9, %alloc_0[%arg4] : memref&lt;32xi32&gt;
-        } {loop_name = &quot;j&quot;, pipeline_ii = 1 : ui32}
-      } {loop_name = &quot;k&quot;, op_name = &quot;S_k_0&quot;, reduction}
+        } {loop_name = "j", pipeline_ii = 1 : ui32}
+      } {loop_name = "k", op_name = "S_k_0", reduction}
       affine.for %arg3 = 0 to 32 {
         %0 = affine.load %alloc_0[%arg3] : memref&lt;32xi32&gt;
         affine.store %0, %alloc[%arg2, %arg3] : memref&lt;32x32xi32&gt;
-      } {buffer, loop_name = &quot;j_back&quot;, pipeline_ii = 1 : i32}
-    } {loop_name = &quot;i&quot;, op_name = &quot;S_i_j_0&quot;}
+      } {buffer, loop_name = "j_back", pipeline_ii = 1 : i32}
+    } {loop_name = "i", op_name = "S_i_j_0"}
     return %alloc : memref&lt;32x32xi32&gt;
   }
-  func.func @matrix_add(%arg0: memref&lt;32x32xi32&gt;) -&gt; memref&lt;32x32xi32&gt; attributes {itypes = &quot;s&quot;, otypes = &quot;s&quot;} {
-    %alloc = memref.alloc() {name = &quot;B&quot;} : memref&lt;32x32xi32&gt;
+  func.func @matrix_add(%arg0: memref&lt;32x32xi32&gt;) -&gt; memref&lt;32x32xi32&gt; attributes {itypes = "s", otypes = "s"} {
+    %alloc = memref.alloc() {name = "B"} : memref&lt;32x32xi32&gt;
     %c0_i32 = arith.constant 0 : i32
     linalg.fill ins(%c0_i32 : i32) outs(%alloc : memref&lt;32x32xi32&gt;)
     affine.for %arg1 = 0 to 32 {
       affine.for %arg2 = 0 to 32 {
-        %0 = affine.load %arg0[%arg1, %arg2] {from = &quot;A&quot;} : memref&lt;32x32xi32&gt;
+        %0 = affine.load %arg0[%arg1, %arg2] {from = "A"} : memref&lt;32x32xi32&gt;
         %1 = arith.extsi %0 : i32 to i33
         %c1_i32 = arith.constant 1 : i32
         %2 = arith.extsi %c1_i32 : i32 to i33
         %3 = arith.addi %1, %2 : i33
         %4 = arith.trunci %3 : i33 to i32
-        affine.store %4, %alloc[%arg1, %arg2] {to = &quot;B&quot;} : memref&lt;32x32xi32&gt;
-      } {loop_name = &quot;j&quot;, pipeline_ii = 1 : ui32}
-    } {loop_name = &quot;i&quot;, op_name = &quot;S_i_j_0&quot;}
+        affine.store %4, %alloc[%arg1, %arg2] {to = "B"} : memref&lt;32x32xi32&gt;
+      } {loop_name = "j", pipeline_ii = 1 : ui32}
+    } {loop_name = "i", op_name = "S_i_j_0"}
     return %alloc : memref&lt;32x32xi32&gt;
   }
-  func.func @top(%arg0: memref&lt;32x32xi32&gt;, %arg1: memref&lt;32x32xi32&gt;) -&gt; memref&lt;32x32xi32&gt; attributes {itypes = &quot;ss&quot;, otypes = &quot;s&quot;} {
-    %0 = call @gemm(%arg0, %arg1) {name = &quot;C&quot;} : (memref&lt;32x32xi32&gt;, memref&lt;32x32xi32&gt;) -&gt; memref&lt;32x32xi32&gt;
-    %1 = call @matrix_add(%0) {name = &quot;D&quot;} : (memref&lt;32x32xi32&gt;) -&gt; memref&lt;32x32xi32&gt;
+  func.func @top(%arg0: memref&lt;32x32xi32&gt;, %arg1: memref&lt;32x32xi32&gt;) -&gt; memref&lt;32x32xi32&gt; attributes {itypes = "ss", otypes = "s"} {
+    %0 = call @gemm(%arg0, %arg1) {name = "C"} : (memref&lt;32x32xi32&gt;, memref&lt;32x32xi32&gt;) -&gt; memref&lt;32x32xi32&gt;
+    %1 = call @matrix_add(%0) {name = "D"} : (memref&lt;32x32xi32&gt;) -&gt; memref&lt;32x32xi32&gt;
     return %1 : memref&lt;32x32xi32&gt;
   }
 }
@@ -419,7 +419,7 @@ In Allo, we can use the <code class="docutils literal notranslate"><span class="
 <section id="template-composition">
 <h2>Template Composition<a class="headerlink" href="#template-composition" title="Link to this heading"><span>¶</span></a></h2>
 <p>Sometimes we may define template kernels and invoke the kernel with different template arguments. Allo provides an <em>id</em> option to specify the exact kernel to be composed.</p>
-<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">kernel</span><span class="p">[</span><span class="n">T_in</span><span class="p">,</span> <span class="n">T_out</span><span class="p">,</span> <span class="n">S</span><span class="p">](</span><span class="n">A</span><span class="p">:</span> <span class="s2">&quot;T_in[S]&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;T_out[S]&quot;</span><span class="p">:</span>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">kernel</span><span class="p">[</span><span class="n">T_in</span><span class="p">,</span> <span class="n">T_out</span><span class="p">,</span> <span class="n">S</span><span class="p">](</span><span class="n">A</span><span class="p">:</span> <span class="s2">"T_in[S]"</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">"T_out[S]"</span><span class="p">:</span>
     <span class="n">B</span><span class="p">:</span> <span class="n">T_out</span><span class="p">[</span><span class="n">S</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
     <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">S</span><span class="p">):</span>
         <span class="k">with</span> <span class="n">allo</span><span class="o">.</span><span class="n">meta_if</span><span class="p">(</span><span class="n">T_out</span> <span class="o">==</span> <span class="n">int32</span><span class="p">):</span>
@@ -430,55 +430,55 @@ In Allo, we can use the <code class="docutils literal notranslate"><span class="
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">top2</span><span class="p">(</span><span class="n">A</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="n">M</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">float32</span><span class="p">[</span><span class="n">M</span><span class="p">]:</span>
-    <span class="n">C</span> <span class="o">=</span> <span class="n">kernel</span><span class="p">[</span><span class="n">int32</span><span class="p">,</span> <span class="n">int32</span><span class="p">,</span> <span class="n">M</span><span class="p">,</span> <span class="s2">&quot;K1&quot;</span><span class="p">](</span><span class="n">A</span><span class="p">)</span>
-    <span class="n">D</span> <span class="o">=</span> <span class="n">kernel</span><span class="p">[</span><span class="n">int32</span><span class="p">,</span> <span class="n">float32</span><span class="p">,</span> <span class="n">M</span><span class="p">,</span> <span class="s2">&quot;K2&quot;</span><span class="p">](</span><span class="n">C</span><span class="p">)</span>
+    <span class="n">C</span> <span class="o">=</span> <span class="n">kernel</span><span class="p">[</span><span class="n">int32</span><span class="p">,</span> <span class="n">int32</span><span class="p">,</span> <span class="n">M</span><span class="p">,</span> <span class="s2">"K1"</span><span class="p">](</span><span class="n">A</span><span class="p">)</span>
+    <span class="n">D</span> <span class="o">=</span> <span class="n">kernel</span><span class="p">[</span><span class="n">int32</span><span class="p">,</span> <span class="n">float32</span><span class="p">,</span> <span class="n">M</span><span class="p">,</span> <span class="s2">"K2"</span><span class="p">](</span><span class="n">C</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">D</span>
 </pre></div>
 </div>
 <p>Specifically, the last argument of the template kernel is the <em>id</em> of the kernel. Later on we can use this ID for distinguishing different kernels during composition.
 We also customize the two template kernels with different optimizations first.</p>
 <div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="n">s1</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">customize</span><span class="p">(</span><span class="n">kernel</span><span class="p">,</span> <span class="n">instantiate</span><span class="o">=</span><span class="p">[</span><span class="n">int32</span><span class="p">,</span> <span class="n">int32</span><span class="p">,</span> <span class="n">M</span><span class="p">])</span>
-<span class="n">s1</span><span class="o">.</span><span class="n">unroll</span><span class="p">(</span><span class="s2">&quot;i&quot;</span><span class="p">,</span> <span class="n">factor</span><span class="o">=</span><span class="mi">4</span><span class="p">)</span>
+<span class="n">s1</span><span class="o">.</span><span class="n">unroll</span><span class="p">(</span><span class="s2">"i"</span><span class="p">,</span> <span class="n">factor</span><span class="o">=</span><span class="mi">4</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">s1</span><span class="o">.</span><span class="n">module</span><span class="p">)</span>
 
 <span class="n">s2</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">customize</span><span class="p">(</span><span class="n">kernel</span><span class="p">,</span> <span class="n">instantiate</span><span class="o">=</span><span class="p">[</span><span class="n">int32</span><span class="p">,</span> <span class="n">float32</span><span class="p">,</span> <span class="n">M</span><span class="p">])</span>
-<span class="n">s2</span><span class="o">.</span><span class="n">pipeline</span><span class="p">(</span><span class="s2">&quot;i&quot;</span><span class="p">)</span>
+<span class="n">s2</span><span class="o">.</span><span class="n">pipeline</span><span class="p">(</span><span class="s2">"i"</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">s2</span><span class="o">.</span><span class="n">module</span><span class="p">)</span>
 </pre></div>
 </div>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>module {
-  func.func @kernel(%arg0: memref&lt;32xi32&gt;) -&gt; memref&lt;32xi32&gt; attributes {itypes = &quot;s&quot;, otypes = &quot;s&quot;} {
-    %alloc = memref.alloc() {name = &quot;B&quot;} : memref&lt;32xi32&gt;
+  func.func @kernel(%arg0: memref&lt;32xi32&gt;) -&gt; memref&lt;32xi32&gt; attributes {itypes = "s", otypes = "s"} {
+    %alloc = memref.alloc() {name = "B"} : memref&lt;32xi32&gt;
     %c0_i32 = arith.constant 0 : i32
     linalg.fill ins(%c0_i32 : i32) outs(%alloc : memref&lt;32xi32&gt;)
     affine.for %arg1 = 0 to 32 {
-      %0 = affine.load %arg0[%arg1] {from = &quot;A&quot;} : memref&lt;32xi32&gt;
+      %0 = affine.load %arg0[%arg1] {from = "A"} : memref&lt;32xi32&gt;
       %1 = arith.extsi %0 : i32 to i33
       %c1_i32 = arith.constant 1 : i32
       %2 = arith.extsi %c1_i32 : i32 to i33
       %3 = arith.addi %1, %2 : i33
       %4 = arith.trunci %3 : i33 to i32
-      affine.store %4, %alloc[%arg1] {to = &quot;B&quot;} : memref&lt;32xi32&gt;
-    } {loop_name = &quot;i&quot;, op_name = &quot;S_i_0&quot;, unroll = 4 : i32}
+      affine.store %4, %alloc[%arg1] {to = "B"} : memref&lt;32xi32&gt;
+    } {loop_name = "i", op_name = "S_i_0", unroll = 4 : i32}
     return %alloc : memref&lt;32xi32&gt;
   }
 }
 
 module {
-  func.func @kernel(%arg0: memref&lt;32xi32&gt;) -&gt; memref&lt;32xf32&gt; attributes {itypes = &quot;s&quot;, otypes = &quot;_&quot;} {
+  func.func @kernel(%arg0: memref&lt;32xi32&gt;) -&gt; memref&lt;32xf32&gt; attributes {itypes = "s", otypes = "_"} {
     %c0_i32 = arith.constant 0 : i32
     %0 = arith.sitofp %c0_i32 : i32 to f32
-    %alloc = memref.alloc() {name = &quot;B&quot;} : memref&lt;32xf32&gt;
+    %alloc = memref.alloc() {name = "B"} : memref&lt;32xf32&gt;
     linalg.fill ins(%0 : f32) outs(%alloc : memref&lt;32xf32&gt;)
     affine.for %arg1 = 0 to 32 {
-      %1 = affine.load %arg0[%arg1] {from = &quot;A&quot;} : memref&lt;32xi32&gt;
+      %1 = affine.load %arg0[%arg1] {from = "A"} : memref&lt;32xi32&gt;
       %2 = arith.extsi %1 : i32 to i64
       %c2_i32 = arith.constant 2 : i32
       %3 = arith.extsi %c2_i32 : i32 to i64
       %4 = arith.muli %2, %3 : i64
       %5 = arith.sitofp %4 : i64 to f32
-      affine.store %5, %alloc[%arg1] {to = &quot;B&quot;} : memref&lt;32xf32&gt;
-    } {loop_name = &quot;i&quot;, op_name = &quot;S_i_0&quot;, pipeline_ii = 1 : ui32}
+      affine.store %5, %alloc[%arg1] {to = "B"} : memref&lt;32xf32&gt;
+    } {loop_name = "i", op_name = "S_i_0", pipeline_ii = 1 : ui32}
     return %alloc : memref&lt;32xf32&gt;
   }
 }
@@ -486,53 +486,53 @@ module {
 </div>
 <p>Finally, we compose the two template kernels into the top-level function with the ID specified.</p>
 <div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="n">s</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">customize</span><span class="p">(</span><span class="n">top2</span><span class="p">)</span>
-<span class="n">s</span><span class="o">.</span><span class="n">compose</span><span class="p">(</span><span class="n">s1</span><span class="p">,</span> <span class="nb">id</span><span class="o">=</span><span class="s2">&quot;K1&quot;</span><span class="p">)</span>
-<span class="n">s</span><span class="o">.</span><span class="n">compose</span><span class="p">(</span><span class="n">s2</span><span class="p">,</span> <span class="nb">id</span><span class="o">=</span><span class="s2">&quot;K2&quot;</span><span class="p">)</span>
+<span class="n">s</span><span class="o">.</span><span class="n">compose</span><span class="p">(</span><span class="n">s1</span><span class="p">,</span> <span class="nb">id</span><span class="o">=</span><span class="s2">"K1"</span><span class="p">)</span>
+<span class="n">s</span><span class="o">.</span><span class="n">compose</span><span class="p">(</span><span class="n">s2</span><span class="p">,</span> <span class="nb">id</span><span class="o">=</span><span class="s2">"K2"</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">module</span><span class="p">)</span>
 </pre></div>
 </div>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>module {
-  func.func @kernel_K1(%arg0: memref&lt;32xi32&gt;) -&gt; memref&lt;32xi32&gt; attributes {itypes = &quot;s&quot;, otypes = &quot;s&quot;} {
-    %alloc = memref.alloc() {name = &quot;B&quot;} : memref&lt;32xi32&gt;
+  func.func @kernel_K1(%arg0: memref&lt;32xi32&gt;) -&gt; memref&lt;32xi32&gt; attributes {itypes = "s", otypes = "s"} {
+    %alloc = memref.alloc() {name = "B"} : memref&lt;32xi32&gt;
     %c0_i32 = arith.constant 0 : i32
     linalg.fill ins(%c0_i32 : i32) outs(%alloc : memref&lt;32xi32&gt;)
     affine.for %arg1 = 0 to 32 {
-      %0 = affine.load %arg0[%arg1] {from = &quot;A&quot;} : memref&lt;32xi32&gt;
+      %0 = affine.load %arg0[%arg1] {from = "A"} : memref&lt;32xi32&gt;
       %1 = arith.extsi %0 : i32 to i33
       %c1_i32 = arith.constant 1 : i32
       %2 = arith.extsi %c1_i32 : i32 to i33
       %3 = arith.addi %1, %2 : i33
       %4 = arith.trunci %3 : i33 to i32
-      affine.store %4, %alloc[%arg1] {to = &quot;B&quot;} : memref&lt;32xi32&gt;
-    } {loop_name = &quot;i&quot;, op_name = &quot;S_i_0&quot;, unroll = 4 : i32}
+      affine.store %4, %alloc[%arg1] {to = "B"} : memref&lt;32xi32&gt;
+    } {loop_name = "i", op_name = "S_i_0", unroll = 4 : i32}
     return %alloc : memref&lt;32xi32&gt;
   }
-  func.func @kernel_K2(%arg0: memref&lt;32xi32&gt;) -&gt; memref&lt;32xf32&gt; attributes {itypes = &quot;s&quot;, otypes = &quot;_&quot;} {
+  func.func @kernel_K2(%arg0: memref&lt;32xi32&gt;) -&gt; memref&lt;32xf32&gt; attributes {itypes = "s", otypes = "_"} {
     %c0_i32 = arith.constant 0 : i32
     %0 = arith.sitofp %c0_i32 : i32 to f32
-    %alloc = memref.alloc() {name = &quot;B&quot;} : memref&lt;32xf32&gt;
+    %alloc = memref.alloc() {name = "B"} : memref&lt;32xf32&gt;
     linalg.fill ins(%0 : f32) outs(%alloc : memref&lt;32xf32&gt;)
     affine.for %arg1 = 0 to 32 {
-      %1 = affine.load %arg0[%arg1] {from = &quot;A&quot;} : memref&lt;32xi32&gt;
+      %1 = affine.load %arg0[%arg1] {from = "A"} : memref&lt;32xi32&gt;
       %2 = arith.extsi %1 : i32 to i64
       %c2_i32 = arith.constant 2 : i32
       %3 = arith.extsi %c2_i32 : i32 to i64
       %4 = arith.muli %2, %3 : i64
       %5 = arith.sitofp %4 : i64 to f32
-      affine.store %5, %alloc[%arg1] {to = &quot;B&quot;} : memref&lt;32xf32&gt;
-    } {loop_name = &quot;i&quot;, op_name = &quot;S_i_0&quot;, pipeline_ii = 1 : ui32}
+      affine.store %5, %alloc[%arg1] {to = "B"} : memref&lt;32xf32&gt;
+    } {loop_name = "i", op_name = "S_i_0", pipeline_ii = 1 : ui32}
     return %alloc : memref&lt;32xf32&gt;
   }
-  func.func @top2(%arg0: memref&lt;32xi32&gt;) -&gt; memref&lt;32xf32&gt; attributes {itypes = &quot;s&quot;, otypes = &quot;_&quot;} {
-    %0 = call @kernel_K1(%arg0) {name = &quot;C&quot;} : (memref&lt;32xi32&gt;) -&gt; memref&lt;32xi32&gt;
-    %1 = call @kernel_K2(%0) {name = &quot;D&quot;} : (memref&lt;32xi32&gt;) -&gt; memref&lt;32xf32&gt;
+  func.func @top2(%arg0: memref&lt;32xi32&gt;) -&gt; memref&lt;32xf32&gt; attributes {itypes = "s", otypes = "_"} {
+    %0 = call @kernel_K1(%arg0) {name = "C"} : (memref&lt;32xi32&gt;) -&gt; memref&lt;32xi32&gt;
+    %1 = call @kernel_K2(%0) {name = "D"} : (memref&lt;32xi32&gt;) -&gt; memref&lt;32xf32&gt;
     return %1 : memref&lt;32xf32&gt;
   }
 }
 </pre></div>
 </div>
 <p>We can see from the printed module that the loop in the first kernel is unrolled by a factor of 4, and the loop in the second kernel is pipelined.</p>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 0.599 seconds)</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 0.603 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-gallery-dive-03-composition-py">
 <div class="sphx-glr-download sphx-glr-download-jupyter docutils container">
 <p><a class="reference download internal" download="" href="../_downloads/39c6904b3f007c07e3d59200d0bf98b4/dive_03_composition.ipynb"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Jupyter</span> <span class="pre">notebook:</span> <span class="pre">dive_03_composition.ipynb</span></code></a></p>

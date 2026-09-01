@@ -229,10 +229,10 @@
 <p>To verify the correctness of the dataflow design, a simulation is executed using the simulator backend. The test function initializes an input matrix with random values and an output matrix filled with zeros. The simulation is performed by building the module with the target set to <cite>“simulator”</cite>. After running the simulation, the output is compared against the expected result using NumPy’s testing utilities.</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">A</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
 <span class="n">B</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
-<span class="n">sim_mod</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">top</span><span class="p">,</span> <span class="n">target</span><span class="o">=</span><span class="s2">&quot;simulator&quot;</span><span class="p">)</span>
+<span class="n">sim_mod</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">top</span><span class="p">,</span> <span class="n">target</span><span class="o">=</span><span class="s2">"simulator"</span><span class="p">)</span>
 <span class="n">sim_mod</span><span class="p">(</span><span class="n">A</span><span class="p">,</span> <span class="n">B</span><span class="p">)</span>
 <span class="n">np</span><span class="o">.</span><span class="n">testing</span><span class="o">.</span><span class="n">assert_allclose</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">A</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">rtol</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">,</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Dataflow Simulator Passed!&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">"Dataflow Simulator Passed!"</span><span class="p">)</span>
 </pre></div>
 </div>
 <p>The simulator is implemented using the <a class="reference external" href="https://mlir.llvm.org/docs/Dialects/OpenMPDialect/">OMP dialect</a> in MLIR, so it can natively support multi-threaded execution on CPU, which greatly speeds up functional testing at the first place.</p>
@@ -256,11 +256,11 @@ be sure to use the <code class="docutils literal notranslate"><span class="pre">
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
 
-<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span><span class="p">(</span><span class="n">scope</span><span class="o">=</span><span class="s2">&quot;module&quot;</span><span class="p">,</span> <span class="n">autouse</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span><span class="p">(</span><span class="n">scope</span><span class="o">=</span><span class="s2">"module"</span><span class="p">,</span> <span class="n">autouse</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">setup_env</span><span class="p">():</span>
-    <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;OMP_NUM_THREADS&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;128&quot;</span>
+    <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">"OMP_NUM_THREADS"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"128"</span>
     <span class="k">yield</span>
-    <span class="k">del</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;OMP_NUM_THREADS&quot;</span><span class="p">]</span>
+    <span class="k">del</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">"OMP_NUM_THREADS"</span><span class="p">]</span>
 
 <span class="k">def</span><span class="w"> </span><span class="nf">test_xxx</span><span class="p">():</span>
     <span class="c1"># your test code here</span>

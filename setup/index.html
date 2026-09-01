@@ -24,7 +24,7 @@
     <script src="../_static/js/petite-vue.js"></script>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
-    <link rel="next" title="Getting Started" href="../gallery/tutorial_01_get_started.html" />
+    <link rel="next" title="Source Installation Troubleshooting" href="troubleshooting.html" />
     <link rel="prev" title="Allo Documentation" href="../index.html" /> 
   </head><body data-dark_mode_code_blocks="true">
 
@@ -137,7 +137,10 @@
       <div class="sphinxsidebar" role="navigation" aria-label="Main">
         <div class="sphinxsidebarwrapper"><p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
 <ul class="current">
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Installation</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Installation</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="troubleshooting.html">Source Installation Troubleshooting</a></li>
+</ul>
+</li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
 <ul>
@@ -204,32 +207,57 @@
 <section id="install-from-source">
 <span id="id1"></span><h2>Install from Source<a class="headerlink" href="#install-from-source" title="Link to this heading"><span>¶</span></a></h2>
 <p>Please follow the instructions below to build the LLVM project from source. You can also refer to the <a class="reference external" href="https://mlir.llvm.org/getting_started/">official guide</a> for more details. As the LLVM/MLIR API changes a lot, if you are using a different LLVM version, the Allo package may not work properly. The LLVM version we used can be found in the <a class="reference external" href="https://github.com/cornell-zhang/allo/tree/main/externals">externals</a> folder.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The current source-installation dependencies target CPython 3.12 on Linux
+x86-64. Use the Docker installation above on other platforms.</p>
+</div>
+<p>Create and activate the Python environment before configuring LLVM. This makes
+LLVM and Allo use the same Python interpreter. Keep the repository root in
+<code class="docutils literal notranslate"><span class="pre">ALLO_ROOT</span></code> because the LLVM build takes place several directories below it.</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>--recursive<span class="w"> </span>https://github.com/cornell-zhang/allo.git
-<span class="nb">cd</span><span class="w"> </span>allo/externals/llvm-project
-<span class="c1"># Python 3.12 is required</span>
+<span class="nb">cd</span><span class="w"> </span>allo
+<span class="nb">export</span><span class="w"> </span><span class="nv">ALLO_ROOT</span><span class="o">=</span><span class="s2">"</span><span class="k">$(</span><span class="nb">pwd</span><span class="k">)</span><span class="s2">"</span>
+
+<span class="c1"># Python 3.12 is required by the current dependency set</span>
+conda<span class="w"> </span>create<span class="w"> </span>-n<span class="w"> </span>allo<span class="w"> </span><span class="nv">python</span><span class="o">=</span><span class="m">3</span>.12
+conda<span class="w"> </span>activate<span class="w"> </span>allo
+
+python3<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>--upgrade<span class="w"> </span>pip
+python3<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>cmake<span class="w"> </span>ninja<span class="w"> </span><span class="s2">"nanobind&gt;=2.9,&lt;3.0"</span>
+
+<span class="c1"># Check the tools that will be used for the build</span>
+python3<span class="w"> </span>--version
+cmake<span class="w"> </span>--version
+ninja<span class="w"> </span>--version
+cc<span class="w"> </span>--version
+c++<span class="w"> </span>--version
+python3<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>show<span class="w"> </span>nanobind
+
+<span class="nb">cd</span><span class="w"> </span><span class="s2">"</span><span class="nv">$ALLO_ROOT</span><span class="s2">/externals/llvm-project"</span>
 mkdir<span class="w"> </span>-p<span class="w"> </span>build<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>build
 cmake<span class="w"> </span>-G<span class="w"> </span>Ninja<span class="w"> </span>../llvm<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DLLVM_ENABLE_PROJECTS<span class="o">=</span><span class="s2">&quot;clang;mlir;openmp&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DLLVM_ENABLE_PROJECTS<span class="o">=</span><span class="s2">"clang;mlir;openmp"</span><span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DLLVM_BUILD_EXAMPLES<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DLLVM_TARGETS_TO_BUILD<span class="o">=</span><span class="s2">&quot;host&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DLLVM_TARGETS_TO_BUILD<span class="o">=</span><span class="s2">"host"</span><span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DCMAKE_BUILD_TYPE<span class="o">=</span>Release<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DLLVM_ENABLE_ASSERTIONS<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DLLVM_INSTALL_UTILS<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DMLIR_ENABLE_BINDINGS_PYTHON<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DPython3_EXECUTABLE<span class="o">=</span><span class="sb">`</span>which<span class="w"> </span>python3<span class="sb">`</span>
+<span class="w">    </span>-DPython3_EXECUTABLE<span class="o">=</span><span class="s2">"</span><span class="k">$(</span><span class="nb">command</span><span class="w"> </span>-v<span class="w"> </span>python3<span class="k">)</span><span class="s2">"</span>
 ninja
-<span class="c1"># export environment variable</span>
-<span class="nb">export</span><span class="w"> </span><span class="nv">LLVM_BUILD_DIR</span><span class="o">=</span><span class="k">$(</span><span class="nb">pwd</span><span class="k">)</span>
-<span class="nb">export</span><span class="w"> </span><span class="nv">PATH</span><span class="o">=</span><span class="k">$(</span><span class="nb">pwd</span><span class="k">)</span>/bin:<span class="nv">$PATH</span>
-</pre></div>
-</div>
-<p>We recommend creating a new conda environment for Allo. Since we are using the latest Python features, the minimum Python version is <strong>3.12</strong>.</p>
-<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>conda<span class="w"> </span>create<span class="w"> </span>-n<span class="w"> </span>allo<span class="w"> </span><span class="nv">python</span><span class="o">=</span><span class="m">3</span>.12
-<span class="gp">$ </span>conda<span class="w"> </span>activate<span class="w"> </span>allo
+
+<span class="c1"># Export and verify the completed LLVM/MLIR build</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">LLVM_BUILD_DIR</span><span class="o">=</span><span class="s2">"</span><span class="k">$(</span><span class="nb">pwd</span><span class="k">)</span><span class="s2">"</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">PATH</span><span class="o">=</span><span class="s2">"</span><span class="nv">$LLVM_BUILD_DIR</span><span class="s2">/bin:</span><span class="nv">$PATH</span><span class="s2">"</span>
+<span class="nb">test</span><span class="w"> </span>-x<span class="w"> </span><span class="s2">"</span><span class="nv">$LLVM_BUILD_DIR</span><span class="s2">/bin/llvm-config"</span>
+<span class="nb">test</span><span class="w"> </span>-f<span class="w"> </span><span class="s2">"</span><span class="nv">$LLVM_BUILD_DIR</span><span class="s2">/lib/cmake/mlir/MLIRConfig.cmake"</span>
+<span class="s2">"</span><span class="nv">$LLVM_BUILD_DIR</span><span class="s2">/bin/llvm-config"</span><span class="w"> </span>--version
 </pre></div>
 </div>
 <p>You can now install Allo by running the following commands.</p>
-<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>python3<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>-v<span class="w"> </span>-e<span class="w"> </span>.
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span><span class="s2">"</span><span class="nv">$ALLO_ROOT</span><span class="s2">"</span>
+python3<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>-v<span class="w"> </span>-e<span class="w"> </span>.
 </pre></div>
 </div>
 </section>
@@ -264,23 +292,17 @@ ninja
 </pre></div>
 </div>
 <p>Now, you can run the following command to test if the installation is successful</p>
-<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>python3<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;import allo as allo; import allo.ir as air&quot;</span>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>python3<span class="w"> </span>-c<span class="w"> </span><span class="s2">"import allo as allo; import allo.ir as air"</span>
 </pre></div>
 </div>
 <p>If you see no error messages, then the installation is successful. Otherwise, please contact us for help.</p>
 </section>
 <section id="troubleshooting">
 <h2>Troubleshooting<a class="headerlink" href="#troubleshooting" title="Link to this heading"><span>¶</span></a></h2>
-<p>If you encounter the following issue when building Allo, it is mostly because you source the Vitis environment at the same time, which may cause some library conflicts. Please disable it and try again.</p>
-<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="go">running build_ext</span>
-<span class="go">  cmake: error while loading shared libraries: libidn.so.11: cannot open shared object file: No such file or directory</span>
-</pre></div>
+<p>For source-build prerequisites, diagnostic commands, and common installation
+failures, see <a class="reference internal" href="troubleshooting.html"><span class="doc">Source Installation Troubleshooting</span></a>.</p>
+<div class="toctree-wrapper compound">
 </div>
-<p>If you are seeing the errors reported by the linker like this:</p>
-<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="go">/opt/rh/devtoolset-9/root/usr/libexec/gcc/x86_64-redhat-linux/9/ld: cannot find /work/shared/common/llvm-project-main/build/lib/libMLIRLLVMToLLVMIRTranslation.a: Too many open files</span>
-</pre></div>
-</div>
-<p>It means you have hit the limit of file descriptors that can be open at a time. You can fix this by <code class="code docutils literal notranslate"><span class="pre">ulimit</span> <span class="pre">-n</span> <span class="pre">4096</span></code>, then try compiling Allo again.</p>
 </section>
 </section>
 
@@ -325,7 +347,7 @@ ninja
 
             <div class="right">
                 
-                    <a href="../gallery/tutorial_01_get_started.html"><span>Getting Started</span><span class="icon">&gt;</span></a>
+                    <a href="troubleshooting.html"><span>Source Installation Troubleshooting</span><span class="icon">&gt;</span></a>
                 
             </div>
         </div>

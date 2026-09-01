@@ -206,9 +206,9 @@ performance of the module during execution.</p>
 <code class="docutils literal notranslate"><span class="pre">allo/dataflow.py</span></code>:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">build</span><span class="p">(</span>
     <span class="n">func</span><span class="p">,</span>
-    <span class="n">target</span><span class="o">=</span><span class="s2">&quot;vitis_hls&quot;</span><span class="p">,</span>
-    <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;csim&quot;</span><span class="p">,</span>
-    <span class="n">project</span><span class="o">=</span><span class="s2">&quot;top.prj&quot;</span><span class="p">,</span>
+    <span class="n">target</span><span class="o">=</span><span class="s2">"vitis_hls"</span><span class="p">,</span>
+    <span class="n">mode</span><span class="o">=</span><span class="s2">"csim"</span><span class="p">,</span>
+    <span class="n">project</span><span class="o">=</span><span class="s2">"top.prj"</span><span class="p">,</span>
     <span class="n">configs</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
     <span class="n">wrap_io</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
     <span class="n">opt_default</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
@@ -262,7 +262,7 @@ time. Default is <code class="docutils literal notranslate"><span class="pre">10
 <span class="k">if</span> <span class="n">is_available</span><span class="p">():</span>
     <span class="n">mod</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">build</span><span class="p">(</span>
         <span class="n">top</span><span class="p">,</span>
-        <span class="n">target</span><span class="o">=</span><span class="s2">&quot;aie&quot;</span><span class="p">,</span>
+        <span class="n">target</span><span class="o">=</span><span class="s2">"aie"</span><span class="p">,</span>
         <span class="n">profile</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
         <span class="n">warmup</span><span class="o">=</span><span class="mi">200</span><span class="p">,</span>
         <span class="n">num_iters</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span>
@@ -273,9 +273,9 @@ time. Default is <code class="docutils literal notranslate"><span class="pre">10
     <span class="n">mod</span><span class="p">(</span><span class="n">A</span><span class="p">,</span> <span class="n">B</span><span class="p">,</span> <span class="n">C</span><span class="p">)</span>
     <span class="n">np_C</span> <span class="o">=</span> <span class="n">A</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span> <span class="o">@</span> <span class="n">B</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
     <span class="n">np</span><span class="o">.</span><span class="n">testing</span><span class="o">.</span><span class="n">assert_allclose</span><span class="p">(</span><span class="n">C</span><span class="p">,</span> <span class="n">np_C</span><span class="p">,</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;PASSED!&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"PASSED!"</span><span class="p">)</span>
 <span class="k">else</span><span class="p">:</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test."</span><span class="p">)</span>
 </pre></div>
 </div>
 </section>

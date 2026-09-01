@@ -221,7 +221,7 @@ dot-product.</p>
 Set the target to <cite>“xlscc”</cite> to produce XLS C++ frontend code as a string. This code includes the necessary headers and pragmas for
 Google XLS synthesis. We expose a <cite>use_memory</cite> flag to control whether to use the memory API in the XLS backend.</p>
 <blockquote>
-<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">code</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">&quot;xlscc&quot;</span><span class="p">,</span> <span class="n">use_memory</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">code</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">"xlscc"</span><span class="p">,</span> <span class="n">use_memory</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">code</span><span class="p">)</span>
 </pre></div>
 </div>
@@ -236,7 +236,7 @@ Users may also specify the target as <cite>“xlscc”</cite> but run the design
 </ul>
 <p>and runs it on the CPU. Depending on the size of your input data, this mode may take within one minute.</p>
 <blockquote>
-<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">mod</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">&quot;xlscc&quot;</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;sw_emu&quot;</span><span class="p">,</span> <span class="n">project</span><span class="o">=</span><span class="s2">&quot;gemm.prj&quot;</span><span class="p">)</span>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">mod</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">"xlscc"</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">"sw_emu"</span><span class="p">,</span> <span class="n">project</span><span class="o">=</span><span class="s2">"gemm.prj"</span><span class="p">)</span>
 </pre></div>
 </div>
 </div></blockquote>
@@ -282,12 +282,12 @@ configured wrong, the XLS backend will error out during its IR optimization pass
 <span class="kn">from</span><span class="w"> </span><span class="nn">allo.ir.types</span><span class="w"> </span><span class="kn">import</span> <span class="n">int32</span><span class="p">,</span> <span class="n">float32</span>
 
 <span class="c1"># Define memory specifications</span>
-<span class="n">MemUram</span> <span class="o">=</span> <span class="n">Memory</span><span class="p">(</span><span class="n">resource</span><span class="o">=</span><span class="s2">&quot;URAM&quot;</span><span class="p">,</span> <span class="n">storage_type</span><span class="o">=</span><span class="s2">&quot;RAM_1P&quot;</span><span class="p">)</span>
-<span class="n">MemBram</span> <span class="o">=</span> <span class="n">Memory</span><span class="p">(</span><span class="n">resource</span><span class="o">=</span><span class="s2">&quot;BRAM&quot;</span><span class="p">,</span> <span class="n">storage_type</span><span class="o">=</span><span class="s2">&quot;RAM_2P&quot;</span><span class="p">)</span>
+<span class="n">MemUram</span> <span class="o">=</span> <span class="n">Memory</span><span class="p">(</span><span class="n">resource</span><span class="o">=</span><span class="s2">"URAM"</span><span class="p">,</span> <span class="n">storage_type</span><span class="o">=</span><span class="s2">"RAM_1P"</span><span class="p">)</span>
+<span class="n">MemBram</span> <span class="o">=</span> <span class="n">Memory</span><span class="p">(</span><span class="n">resource</span><span class="o">=</span><span class="s2">"BRAM"</span><span class="p">,</span> <span class="n">storage_type</span><span class="o">=</span><span class="s2">"RAM_2P"</span><span class="p">)</span>
 
 <span class="k">def</span><span class="w"> </span><span class="nf">kernel</span><span class="p">(</span><span class="n">a</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">]</span> <span class="o">@</span> <span class="n">MemUram</span><span class="p">,</span> <span class="n">b</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="mi">16</span><span class="p">,</span> <span class="mi">16</span><span class="p">]</span> <span class="o">@</span> <span class="n">MemBram</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">]:</span>
     <span class="c1"># Local variable with memory annotation</span>
-    <span class="n">buf</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">]</span> <span class="o">@</span> <span class="n">Memory</span><span class="p">(</span><span class="n">resource</span><span class="o">=</span><span class="s2">&quot;BRAM&quot;</span><span class="p">)</span>
+    <span class="n">buf</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">]</span> <span class="o">@</span> <span class="n">Memory</span><span class="p">(</span><span class="n">resource</span><span class="o">=</span><span class="s2">"BRAM"</span><span class="p">)</span>
     <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">32</span><span class="p">):</span>
         <span class="n">buf</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">a</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">*</span> <span class="mi">2</span>
     <span class="n">c</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">]</span>
@@ -296,7 +296,7 @@ configured wrong, the XLS backend will error out during its IR optimization pass
     <span class="k">return</span> <span class="n">c</span>
 
 <span class="n">s</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">customize</span><span class="p">(</span><span class="n">kernel</span><span class="p">)</span>
-<span class="n">mod</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">&quot;xls&quot;</span><span class="p">,</span> <span class="n">use_memory</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">mod</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">"xls"</span><span class="p">,</span> <span class="n">use_memory</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">mod</span><span class="o">.</span><span class="n">hls_code</span><span class="p">)</span>
 </pre></div>
 </div>

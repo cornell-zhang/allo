@@ -216,28 +216,28 @@ and produces a 32x32 output matrix. The reduction loop is used to accumulate the
 <p>We create two schedules for the GEMM kernel using different transformations.
 The first schedule, <strong>s1</strong>, applies a loop reordering transformation, while the second schedule, <strong>s2</strong>, applies a buffering transformation on the output tensor.</p>
 <div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="n">s1</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">customize</span><span class="p">(</span><span class="n">gemm</span><span class="p">)</span>
-<span class="n">s1</span><span class="o">.</span><span class="n">reorder</span><span class="p">(</span><span class="s2">&quot;gemm:i&quot;</span><span class="p">,</span> <span class="s2">&quot;gemm:j&quot;</span><span class="p">)</span>
+<span class="n">s1</span><span class="o">.</span><span class="n">reorder</span><span class="p">(</span><span class="s2">"gemm:i"</span><span class="p">,</span> <span class="s2">"gemm:j"</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">s1</span><span class="o">.</span><span class="n">module</span><span class="p">)</span>
 </pre></div>
 </div>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>module {
-  func.func @gemm(%arg0: memref&lt;32x32xf32&gt;, %arg1: memref&lt;32x32xf32&gt;) -&gt; memref&lt;32x32xf32&gt; attributes {itypes = &quot;__&quot;, otypes = &quot;_&quot;} {
+  func.func @gemm(%arg0: memref&lt;32x32xf32&gt;, %arg1: memref&lt;32x32xf32&gt;) -&gt; memref&lt;32x32xf32&gt; attributes {itypes = "__", otypes = "_"} {
     %c0_i32 = arith.constant 0 : i32
     %0 = arith.sitofp %c0_i32 : i32 to f32
-    %alloc = memref.alloc() {name = &quot;C&quot;} : memref&lt;32x32xf32&gt;
+    %alloc = memref.alloc() {name = "C"} : memref&lt;32x32xf32&gt;
     linalg.fill ins(%0 : f32) outs(%alloc : memref&lt;32x32xf32&gt;)
     affine.for %arg2 = 0 to 32 {
       affine.for %arg3 = 0 to 32 {
         affine.for %arg4 = 0 to 32 {
-          %1 = affine.load %arg0[%arg2, %arg4] {from = &quot;A&quot;} : memref&lt;32x32xf32&gt;
-          %2 = affine.load %arg1[%arg4, %arg3] {from = &quot;B&quot;} : memref&lt;32x32xf32&gt;
+          %1 = affine.load %arg0[%arg2, %arg4] {from = "A"} : memref&lt;32x32xf32&gt;
+          %2 = affine.load %arg1[%arg4, %arg3] {from = "B"} : memref&lt;32x32xf32&gt;
           %3 = arith.mulf %1, %2 : f32
-          %4 = affine.load %alloc[%arg2, %arg3] {from = &quot;C&quot;} : memref&lt;32x32xf32&gt;
+          %4 = affine.load %alloc[%arg2, %arg3] {from = "C"} : memref&lt;32x32xf32&gt;
           %5 = arith.addf %4, %3 : f32
-          affine.store %5, %alloc[%arg2, %arg3] {to = &quot;C&quot;} : memref&lt;32x32xf32&gt;
-        } {loop_name = &quot;k&quot;, op_name = &quot;S_k_0&quot;, reduction}
-      } {loop_name = &quot;j&quot;}
-    } {loop_name = &quot;i&quot;, op_name = &quot;S_i_j_0&quot;}
+          affine.store %5, %alloc[%arg2, %arg3] {to = "C"} : memref&lt;32x32xf32&gt;
+        } {loop_name = "k", op_name = "S_k_0", reduction}
+      } {loop_name = "j"}
+    } {loop_name = "i", op_name = "S_i_j_0"}
     return %alloc : memref&lt;32x32xf32&gt;
   }
 }
@@ -246,37 +246,37 @@ The first schedule, <strong>s1</strong>, applies a loop reordering transformatio
 <p>In the code above, <strong>s1</strong> is customized by reordering the loops corresponding to indices <code class="docutils literal notranslate"><span class="pre">i</span></code> and <code class="docutils literal notranslate"><span class="pre">j</span></code>.
 The printed intermediate representation (IR) shows the effect of this transformation.</p>
 <div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="n">s2</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">customize</span><span class="p">(</span><span class="n">gemm</span><span class="p">)</span>
-<span class="n">s2</span><span class="o">.</span><span class="n">buffer_at</span><span class="p">(</span><span class="n">s2</span><span class="o">.</span><span class="n">C</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="s2">&quot;i&quot;</span><span class="p">)</span>
+<span class="n">s2</span><span class="o">.</span><span class="n">buffer_at</span><span class="p">(</span><span class="n">s2</span><span class="o">.</span><span class="n">C</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="s2">"i"</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">s2</span><span class="o">.</span><span class="n">module</span><span class="p">)</span>
 </pre></div>
 </div>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>module {
-  func.func @gemm(%arg0: memref&lt;32x32xf32&gt;, %arg1: memref&lt;32x32xf32&gt;) -&gt; memref&lt;32x32xf32&gt; attributes {itypes = &quot;__&quot;, otypes = &quot;_&quot;} {
+  func.func @gemm(%arg0: memref&lt;32x32xf32&gt;, %arg1: memref&lt;32x32xf32&gt;) -&gt; memref&lt;32x32xf32&gt; attributes {itypes = "__", otypes = "_"} {
     %c0_i32 = arith.constant 0 : i32
     %0 = arith.sitofp %c0_i32 : i32 to f32
-    %alloc = memref.alloc() {name = &quot;C&quot;} : memref&lt;32x32xf32&gt;
+    %alloc = memref.alloc() {name = "C"} : memref&lt;32x32xf32&gt;
     linalg.fill ins(%0 : f32) outs(%alloc : memref&lt;32x32xf32&gt;)
     affine.for %arg2 = 0 to 32 {
       %alloc_0 = memref.alloc() : memref&lt;32xf32&gt;
       %cst = arith.constant 0.000000e+00 : f32
       affine.for %arg3 = 0 to 32 {
         affine.store %cst, %alloc_0[%arg3] : memref&lt;32xf32&gt;
-      } {buffer, loop_name = &quot;j_init&quot;, pipeline_ii = 1 : i32}
+      } {buffer, loop_name = "j_init", pipeline_ii = 1 : i32}
       affine.for %arg3 = 0 to 32 {
         affine.for %arg4 = 0 to 32 {
-          %1 = affine.load %arg0[%arg2, %arg4] {from = &quot;A&quot;} : memref&lt;32x32xf32&gt;
-          %2 = affine.load %arg1[%arg4, %arg3] {from = &quot;B&quot;} : memref&lt;32x32xf32&gt;
+          %1 = affine.load %arg0[%arg2, %arg4] {from = "A"} : memref&lt;32x32xf32&gt;
+          %2 = affine.load %arg1[%arg4, %arg3] {from = "B"} : memref&lt;32x32xf32&gt;
           %3 = arith.mulf %1, %2 : f32
           %4 = affine.load %alloc_0[%arg3] : memref&lt;32xf32&gt;
           %5 = arith.addf %4, %3 : f32
           affine.store %5, %alloc_0[%arg3] : memref&lt;32xf32&gt;
-        } {loop_name = &quot;k&quot;, op_name = &quot;S_k_0&quot;, reduction}
-      } {loop_name = &quot;j&quot;}
+        } {loop_name = "k", op_name = "S_k_0", reduction}
+      } {loop_name = "j"}
       affine.for %arg3 = 0 to 32 {
         %1 = affine.load %alloc_0[%arg3] : memref&lt;32xf32&gt;
         affine.store %1, %alloc[%arg2, %arg3] : memref&lt;32x32xf32&gt;
-      } {buffer, loop_name = &quot;j_back&quot;, pipeline_ii = 1 : i32}
-    } {loop_name = &quot;i&quot;, op_name = &quot;S_i_j_0&quot;}
+      } {buffer, loop_name = "j_back", pipeline_ii = 1 : i32}
+    } {loop_name = "i", op_name = "S_i_j_0"}
     return %alloc : memref&lt;32x32xf32&gt;
   }
 }
@@ -292,8 +292,8 @@ Although the schedules differ in structure, they should implement equivalent fun
 are equivalent. The <code class="docutils literal notranslate"><span class="pre">allo.verify</span></code> function compares the schedules and returns a truthy
 value if they are functionally identical.</p>
 <div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="n">verifier</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">verify</span><span class="p">(</span><span class="n">s1</span><span class="p">,</span> <span class="n">s2</span><span class="p">)</span>
-<span class="k">assert</span> <span class="n">verifier</span><span class="p">,</span> <span class="s2">&quot;Failed to verify the equivalence of two schedules!&quot;</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;s1 and s2 are equivalent!&quot;</span><span class="p">)</span>
+<span class="k">assert</span> <span class="n">verifier</span><span class="p">,</span> <span class="s2">"Failed to verify the equivalence of two schedules!"</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">"s1 and s2 are equivalent!"</span><span class="p">)</span>
 </pre></div>
 </div>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>s1 and s2 are equivalent!
@@ -318,27 +318,27 @@ should not be equivalent to <strong>s1</strong>.</p>
 <span class="n">s3</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">customize</span><span class="p">(</span><span class="n">gemm_wrong</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">s3</span><span class="o">.</span><span class="n">module</span><span class="p">)</span>
 <span class="n">verifier</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">verify</span><span class="p">(</span><span class="n">s1</span><span class="p">,</span> <span class="n">s3</span><span class="p">)</span>
-<span class="k">assert</span> <span class="ow">not</span> <span class="n">verifier</span><span class="p">,</span> <span class="s2">&quot;Failed to verify the equivalence of two schedules!&quot;</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;s1 and s3 are not equivalent!&quot;</span><span class="p">)</span>
+<span class="k">assert</span> <span class="ow">not</span> <span class="n">verifier</span><span class="p">,</span> <span class="s2">"Failed to verify the equivalence of two schedules!"</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">"s1 and s3 are not equivalent!"</span><span class="p">)</span>
 </pre></div>
 </div>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>module {
-  func.func @gemm_wrong(%arg0: memref&lt;32x32xf32&gt;, %arg1: memref&lt;32x32xf32&gt;) -&gt; memref&lt;32x32xf32&gt; attributes {itypes = &quot;__&quot;, otypes = &quot;_&quot;} {
+  func.func @gemm_wrong(%arg0: memref&lt;32x32xf32&gt;, %arg1: memref&lt;32x32xf32&gt;) -&gt; memref&lt;32x32xf32&gt; attributes {itypes = "__", otypes = "_"} {
     %c0_i32 = arith.constant 0 : i32
     %c0_i32_0 = arith.constant 0 : i32
     %0 = arith.sitofp %c0_i32_0 : i32 to f32
-    %alloc = memref.alloc() {name = &quot;C&quot;} : memref&lt;32x32xf32&gt;
+    %alloc = memref.alloc() {name = "C"} : memref&lt;32x32xf32&gt;
     linalg.fill ins(%0 : f32) outs(%alloc : memref&lt;32x32xf32&gt;)
     affine.for %arg2 = 0 to 32 {
       affine.for %arg3 = 0 to 32 {
         affine.for %arg4 = 0 to 32 {
-          %1 = affine.load %arg0[%arg2, %arg4] {from = &quot;A&quot;} : memref&lt;32x32xf32&gt;
-          %2 = affine.load %arg1[%arg4, %arg3] {from = &quot;B&quot;} : memref&lt;32x32xf32&gt;
+          %1 = affine.load %arg0[%arg2, %arg4] {from = "A"} : memref&lt;32x32xf32&gt;
+          %2 = affine.load %arg1[%arg4, %arg3] {from = "B"} : memref&lt;32x32xf32&gt;
           %3 = arith.mulf %1, %2 : f32
-          affine.store %3, %alloc[%arg2, %arg3] {to = &quot;C&quot;} : memref&lt;32x32xf32&gt;
-        } {loop_name = &quot;k&quot;, op_name = &quot;S_k_0&quot;, reduction}
-      } {loop_name = &quot;j&quot;}
-    } {loop_name = &quot;i&quot;, op_name = &quot;S_i_j_0&quot;}
+          affine.store %3, %alloc[%arg2, %arg3] {to = "C"} : memref&lt;32x32xf32&gt;
+        } {loop_name = "k", op_name = "S_k_0", reduction}
+      } {loop_name = "j"}
+    } {loop_name = "i", op_name = "S_i_j_0"}
     return %alloc : memref&lt;32x32xf32&gt;
   }
 }
@@ -434,7 +434,7 @@ thus confirming that <strong>s1</strong> and <strong>s3</strong> are not equival
 scheduling transformations yield equivalent computational behavior. By verifying the equivalence
 of various schedules, you can confidently apply optimizations without compromising the
 functional correctness of your algorithms.</p>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 1.962 seconds)</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 2.025 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-gallery-dive-05-verifier-py">
 <div class="sphx-glr-download sphx-glr-download-jupyter docutils container">
 <p><a class="reference download internal" download="" href="../_downloads/d49a7fad4fb3589abd0d5cb43befd164/dive_05_verifier.ipynb"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Jupyter</span> <span class="pre">notebook:</span> <span class="pre">dive_05_verifier.ipynb</span></code></a></p>

@@ -228,7 +228,7 @@
 Compiles the generated C++ code with g++ and runs functional simulation. This mode is useful for verifying the correctness of your design before synthesis.</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 
-<span class="n">mod</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">&quot;catapult&quot;</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;csim&quot;</span><span class="p">,</span> <span class="n">project</span><span class="o">=</span><span class="s2">&quot;vvadd.prj&quot;</span><span class="p">)</span>
+<span class="n">mod</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">"catapult"</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">"csim"</span><span class="p">,</span> <span class="n">project</span><span class="o">=</span><span class="s2">"vvadd.prj"</span><span class="p">)</span>
 
 <span class="c1"># Prepare test data</span>
 <span class="n">np_a</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">100</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="p">(</span><span class="mi">100</span><span class="p">,))</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
@@ -245,7 +245,7 @@ Compiles the generated C++ code with g++ and runs functional simulation. This mo
 </li>
 <li><p><strong>C Synthesis (csyn)</strong>:
 Runs Catapult HLS synthesis to generate RTL. This mode invokes the Catapult tool to synthesize your design.</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">mod</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">&quot;catapult&quot;</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;csyn&quot;</span><span class="p">,</span> <span class="n">project</span><span class="o">=</span><span class="s2">&quot;vvadd.prj&quot;</span><span class="p">)</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">mod</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">"catapult"</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">"csyn"</span><span class="p">,</span> <span class="n">project</span><span class="o">=</span><span class="s2">"vvadd.prj"</span><span class="p">)</span>
 
 <span class="c1"># Run synthesis (no arguments needed for csyn mode)</span>
 <span class="n">mod</span><span class="p">()</span>
@@ -273,9 +273,9 @@ Runs Catapult HLS synthesis to generate RTL. This mode invokes the Catapult tool
 <p><strong>Catapult Pragmas</strong></p>
 <p>Allo’s scheduling primitives are translated to Catapult-specific pragmas:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">s</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">customize</span><span class="p">(</span><span class="n">kernel</span><span class="p">)</span>
-<span class="n">s</span><span class="o">.</span><span class="n">pipeline</span><span class="p">(</span><span class="s2">&quot;i&quot;</span><span class="p">)</span>      <span class="c1"># Generates: #pragma hls_pipeline_init_interval 1</span>
-<span class="n">s</span><span class="o">.</span><span class="n">unroll</span><span class="p">(</span><span class="s2">&quot;j&quot;</span><span class="p">)</span>        <span class="c1"># Generates: #pragma hls_unroll</span>
-<span class="n">s</span><span class="o">.</span><span class="n">unroll</span><span class="p">(</span><span class="s2">&quot;k&quot;</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span>     <span class="c1"># Generates: #pragma hls_unroll 4</span>
+<span class="n">s</span><span class="o">.</span><span class="n">pipeline</span><span class="p">(</span><span class="s2">"i"</span><span class="p">)</span>      <span class="c1"># Generates: #pragma hls_pipeline_init_interval 1</span>
+<span class="n">s</span><span class="o">.</span><span class="n">unroll</span><span class="p">(</span><span class="s2">"j"</span><span class="p">)</span>        <span class="c1"># Generates: #pragma hls_unroll</span>
+<span class="n">s</span><span class="o">.</span><span class="n">unroll</span><span class="p">(</span><span class="s2">"k"</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span>     <span class="c1"># Generates: #pragma hls_unroll 4</span>
 </pre></div>
 </div>
 </section>
@@ -306,12 +306,12 @@ Runs Catapult HLS synthesis to generate RTL. This mode invokes the Catapult tool
 <span class="n">s</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">customize</span><span class="p">(</span><span class="n">gemm</span><span class="p">)</span>
 
 <span class="c1"># Apply optimizations</span>
-<span class="n">s</span><span class="o">.</span><span class="n">pipeline</span><span class="p">(</span><span class="s2">&quot;j&quot;</span><span class="p">)</span>
-<span class="n">s</span><span class="o">.</span><span class="n">unroll</span><span class="p">(</span><span class="s2">&quot;k&quot;</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span>
+<span class="n">s</span><span class="o">.</span><span class="n">pipeline</span><span class="p">(</span><span class="s2">"j"</span><span class="p">)</span>
+<span class="n">s</span><span class="o">.</span><span class="n">unroll</span><span class="p">(</span><span class="s2">"k"</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span>
 
 <span class="c1"># Build for Catapult</span>
 <span class="k">with</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">TemporaryDirectory</span><span class="p">()</span> <span class="k">as</span> <span class="n">tmpdir</span><span class="p">:</span>
-    <span class="n">mod</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">&quot;catapult&quot;</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;csim&quot;</span><span class="p">,</span> <span class="n">project</span><span class="o">=</span><span class="n">tmpdir</span><span class="p">)</span>
+    <span class="n">mod</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">"catapult"</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">"csim"</span><span class="p">,</span> <span class="n">project</span><span class="o">=</span><span class="n">tmpdir</span><span class="p">)</span>
 
     <span class="c1"># Test the design</span>
     <span class="n">np_A</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="p">(</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">))</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
@@ -327,11 +327,11 @@ Runs Catapult HLS synthesis to generate RTL. This mode invokes the Catapult tool
 <h2>Configuration Options<a class="headerlink" href="#configuration-options" title="Link to this heading"><span>¶</span></a></h2>
 <p>You can customize the synthesis through the <code class="docutils literal notranslate"><span class="pre">configs</span></code> dictionary:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">mod</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">build</span><span class="p">(</span>
-    <span class="n">target</span><span class="o">=</span><span class="s2">&quot;catapult&quot;</span><span class="p">,</span>
-    <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;csyn&quot;</span><span class="p">,</span>
-    <span class="n">project</span><span class="o">=</span><span class="s2">&quot;gemm.prj&quot;</span><span class="p">,</span>
+    <span class="n">target</span><span class="o">=</span><span class="s2">"catapult"</span><span class="p">,</span>
+    <span class="n">mode</span><span class="o">=</span><span class="s2">"csyn"</span><span class="p">,</span>
+    <span class="n">project</span><span class="o">=</span><span class="s2">"gemm.prj"</span><span class="p">,</span>
     <span class="n">configs</span><span class="o">=</span><span class="p">{</span>
-        <span class="s2">&quot;frequency&quot;</span><span class="p">:</span> <span class="mi">500</span><span class="p">,</span>  <span class="c1"># Target frequency in MHz (default: 300)</span>
+        <span class="s2">"frequency"</span><span class="p">:</span> <span class="mi">500</span><span class="p">,</span>  <span class="c1"># Target frequency in MHz (default: 300)</span>
     <span class="p">},</span>
 <span class="p">)</span>
 </pre></div>

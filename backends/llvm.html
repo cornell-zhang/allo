@@ -208,7 +208,7 @@
 <h2>Compilation to LLVM<a class="headerlink" href="#compilation-to-llvm" title="Link to this heading"><span>¶</span></a></h2>
 <p>After defining the kernel, the next step is to compile it for the CPU. The Allo framework creates a schedule for the kernel with <cite>allo.customize</cite> and then compiles the kernel into an LLVM module using the <cite>build</cite> method. This process converts the high-level description into LLVM IR, which is used for CPU simulation.</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">s</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">customize</span><span class="p">(</span><span class="n">gemm</span><span class="p">)</span>
-<span class="n">mod</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">&quot;llvm&quot;</span><span class="p">)</span>
+<span class="n">mod</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">"llvm"</span><span class="p">)</span>
 </pre></div>
 </div>
 </section>
@@ -228,7 +228,7 @@
 <p>To verify the correctness of the compiled kernel, the output produced by the LLVM module is compared with the result of NumPy’s matrix multiplication. The comparison uses NumPy’s testing utilities to ensure that the computed result meets the desired numerical precision.</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">golden_C</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">matmul</span><span class="p">(</span><span class="n">np_A</span><span class="p">,</span> <span class="n">np_B</span><span class="p">)</span>
 <span class="n">np</span><span class="o">.</span><span class="n">testing</span><span class="o">.</span><span class="n">assert_allclose</span><span class="p">(</span><span class="n">allo_C</span><span class="p">,</span> <span class="n">golden_C</span><span class="p">,</span> <span class="n">rtol</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">,</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Results are correct!&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">"Results are correct!"</span><span class="p">)</span>
 </pre></div>
 </div>
 </section>
