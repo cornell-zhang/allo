@@ -34,7 +34,7 @@ Suppose the C++ kernel is implemented in the ``vadd.cpp`` file:
         }
     }
 
-In Allo, we can create an *IP module* to wrap the C++ kernel. Basically, we need to provide the top-level function name and the implementation file. Allo will automatically parse the C++ kernel signature, compile the kernel, and generate the corresponding Python wrapper based on the provided files. Multi-dimensional arrays and pointers are supported in this C++ function definition. The last argument ``link_hls`` of the ``IPModule`` determines whether the C++ compiler should link the Vitis HLS libraries (e.g., ``ap_int``), which is only available when your machine has installed Vitis HLS.
+In Allo, we can create an *IP module* to wrap the C++ kernel. Basically, we need to provide the top-level function name and the implementation file. Allo will automatically parse the C++ kernel signature, compile the kernel, and generate the corresponding Python wrapper based on the provided files. Multi-dimensional arrays and pointers are supported in this C++ function definition. The ``link_hls`` argument of ``IPModule`` determines whether the C++ compiler should link the Vitis HLS libraries (e.g., ``ap_int``), which are available when Vitis HLS is installed.
 
 .. code-block:: python
 
