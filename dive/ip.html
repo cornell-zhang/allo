@@ -198,7 +198,7 @@
 <span class="p">}</span>
 </pre></div>
 </div>
-<p>In Allo, we can create an <em>IP module</em> to wrap the C++ kernel. Basically, we need to provide the top-level function name and the implementation file. Allo will automatically parse the C++ kernel signature, compile the kernel, and generate the corresponding Python wrapper based on the provided files. Multi-dimensional arrays and pointers are supported in this C++ function definition. The last argument <code class="docutils literal notranslate"><span class="pre">link_hls</span></code> of the <code class="docutils literal notranslate"><span class="pre">IPModule</span></code> determines whether the C++ compiler should link the Vitis HLS libraries (e.g., <code class="docutils literal notranslate"><span class="pre">ap_int</span></code>), which is only available when your machine has installed Vitis HLS.</p>
+<p>In Allo, we can create an <em>IP module</em> to wrap the C++ kernel. Basically, we need to provide the top-level function name and the implementation file. Allo will automatically parse the C++ kernel signature, compile the kernel, and generate the corresponding Python wrapper based on the provided files. Multi-dimensional arrays and pointers are supported in this C++ function definition. The <code class="docutils literal notranslate"><span class="pre">link_hls</span></code> argument of <code class="docutils literal notranslate"><span class="pre">IPModule</span></code> determines whether the C++ compiler should link the Vitis HLS libraries (e.g., <code class="docutils literal notranslate"><span class="pre">ap_int</span></code>), which are available when Vitis HLS is installed.</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">vadd</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">IPModule</span><span class="p">(</span><span class="n">top</span><span class="o">=</span><span class="s2">"vadd"</span><span class="p">,</span> <span class="n">impl</span><span class="o">=</span><span class="s2">"vadd.cpp"</span><span class="p">,</span> <span class="n">link_hls</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
 </pre></div>
 </div>
@@ -230,6 +230,27 @@
 <span class="n">mod</span><span class="p">()</span>
 </pre></div>
 </div>
+<section id="supported-data-types">
+<h2>Supported data types<a class="headerlink" href="#supported-data-types" title="Link to this heading"><span>¶</span></a></h2>
+<p>The element types allowed in the C++ IP signature are the standard C arithmetic types (<code class="docutils literal notranslate"><span class="pre">int</span></code>, <code class="docutils literal notranslate"><span class="pre">float</span></code>, <code class="docutils literal notranslate"><span class="pre">double</span></code>, and the fixed-width <code class="docutils literal notranslate"><span class="pre">stdint</span></code> types such as <code class="docutils literal notranslate"><span class="pre">int8_t</span></code>/<code class="docutils literal notranslate"><span class="pre">uint16_t</span></code>), as well as the arbitrary-precision HLS integer types <code class="docutils literal notranslate"><span class="pre">ap_int&lt;N&gt;</span></code> and <code class="docutils literal notranslate"><span class="pre">ap_uint&lt;N&gt;</span></code>. Because <code class="docutils literal notranslate"><span class="pre">ap_int</span></code>/<code class="docutils literal notranslate"><span class="pre">ap_uint</span></code> are provided by the Vitis HLS headers, an IP module that uses them must be created with <code class="docutils literal notranslate"><span class="pre">link_hls=True</span></code>.</p>
+<p>At the Python boundary, <code class="docutils literal notranslate"><span class="pre">ap_int&lt;N&gt;</span></code> and <code class="docutils literal notranslate"><span class="pre">ap_uint&lt;N&gt;</span></code> are mapped to the matching fixed-width integer type (e.g., <code class="docutils literal notranslate"><span class="pre">ap_int&lt;8&gt;</span></code> behaves like <code class="docutils literal notranslate"><span class="pre">int8_t</span></code> and <code class="docutils literal notranslate"><span class="pre">ap_uint&lt;16&gt;</span></code> like <code class="docutils literal notranslate"><span class="pre">uint16_t</span></code>), so callers simply pass NumPy arrays of the corresponding <code class="docutils literal notranslate"><span class="pre">dtype</span></code>. For example, given the following kernel in <code class="docutils literal notranslate"><span class="pre">vadd_ap_int.cpp</span></code>:</p>
+<div class="highlight-cpp notranslate"><div class="highlight"><pre><span></span><span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;ap_int.h&gt;</span>
+<span class="kt">void</span><span class="w"> </span><span class="nf">vadd_ap_int</span><span class="p">(</span><span class="n">ap_int</span><span class="o">&lt;</span><span class="mi">8</span><span class="o">&gt;</span><span class="w"> </span><span class="n">A</span><span class="p">[</span><span class="mi">32</span><span class="p">],</span><span class="w"> </span><span class="n">ap_int</span><span class="o">&lt;</span><span class="mi">8</span><span class="o">&gt;</span><span class="w"> </span><span class="n">B</span><span class="p">[</span><span class="mi">32</span><span class="p">],</span><span class="w"> </span><span class="n">ap_int</span><span class="o">&lt;</span><span class="mi">16</span><span class="o">&gt;</span><span class="w"> </span><span class="n">C</span><span class="p">[</span><span class="mi">32</span><span class="p">])</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="kt">int</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="mi">32</span><span class="p">;</span><span class="w"> </span><span class="o">++</span><span class="n">i</span><span class="p">)</span>
+<span class="w">        </span><span class="n">C</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">A</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">B</span><span class="p">[</span><span class="n">i</span><span class="p">];</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>it can be wrapped and invoked with NumPy arrays whose dtypes match the <code class="docutils literal notranslate"><span class="pre">ap_int</span></code> widths:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">vadd_ap_int</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">IPModule</span><span class="p">(</span><span class="n">top</span><span class="o">=</span><span class="s2">"vadd_ap_int"</span><span class="p">,</span> <span class="n">impl</span><span class="o">=</span><span class="s2">"vadd_ap_int.cpp"</span><span class="p">,</span> <span class="n">link_hls</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">np_A</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="o">-</span><span class="mi">64</span><span class="p">,</span> <span class="mi">64</span><span class="p">,</span> <span class="p">(</span><span class="mi">32</span><span class="p">,))</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">int8</span><span class="p">)</span>
+<span class="n">np_B</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="o">-</span><span class="mi">64</span><span class="p">,</span> <span class="mi">64</span><span class="p">,</span> <span class="p">(</span><span class="mi">32</span><span class="p">,))</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">int8</span><span class="p">)</span>
+<span class="n">np_C</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">32</span><span class="p">,),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int16</span><span class="p">)</span>
+<span class="n">vadd_ap_int</span><span class="p">(</span><span class="n">np_A</span><span class="p">,</span> <span class="n">np_B</span><span class="p">,</span> <span class="n">np_C</span><span class="p">)</span>
+<span class="n">np</span><span class="o">.</span><span class="n">testing</span><span class="o">.</span><span class="n">assert_allclose</span><span class="p">(</span><span class="n">np_A</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">int16</span><span class="p">)</span> <span class="o">+</span> <span class="n">np_B</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">int16</span><span class="p">),</span> <span class="n">np_C</span><span class="p">,</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1e-6</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
 </section>
 
 
@@ -237,6 +258,23 @@
           </div>
         </div>
       </div>
+    
+        <div id="show_right_sidebar">
+            <p><a class="toggle_right_sidebar" href="#"><span class="icon">&lt;</span><span>Page contents</span></a></p>
+        </div>
+
+        <div id="right_sidebar">
+            <p><a class="toggle_right_sidebar" href="#"><span class="icon">&gt;</span><span>Page contents:</span></a></p>
+            <div class="page_toc">
+                <ul>
+<li><a class="reference internal" href="#">IP Integration</a><ul>
+<li><a class="reference internal" href="#supported-data-types">Supported data types</a></li>
+</ul>
+</li>
+</ul>
+
+            </div>
+        </div>
     
 
       <div class="clearer"></div>
