@@ -147,20 +147,13 @@ hw_time_ms = (end_time - start_time) * 1e3
 def postprocess_hls_code_pynq(hls_code, top=None, pragma=True):
     out_str = ""
     func_decl = False
-    has_endif = False
-    extern_decl = False
     func_args = []
     for line in hls_code.split("\n"):
         if line == "using namespace std;" or line.startswith("#ifndef"):
             out_str += line + "\n"
-            out_str += '\nextern "C" {\n\n'
-            extern_decl = True
         elif line.startswith(f"void {top}"):
             func_decl = True
-            if not extern_decl:
-                out_str += '\nextern "C" {\n\n'
-                extern_decl = True
-            out_str += line + "\n"
+            out_str += 'extern "C" ' + line + "\n"
         elif func_decl and line.startswith(") {"):
             func_decl = False
             out_str += line + "\n"
@@ -195,16 +188,10 @@ def postprocess_hls_code_pynq(hls_code, top=None, pragma=True):
                     func_args.append((arg_name, "scalar"))
             else:
                 out_str += line + "\n"
-        elif line.startswith("#endif"):
-            out_str += '} // extern "C"\n\n'
-            out_str += line + "\n"
-            has_endif = True
         else:
             out_str += line + "\n"
     # Remove the last comma in the argument list if present
     out_str = out_str.replace(",\n) {", "\n) {")
-    if not has_endif:
-        out_str += '} // extern "C"\n'
     return out_str
 
 

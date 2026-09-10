@@ -5,7 +5,7 @@ import tempfile
 
 import numpy as np
 import allo
-from allo.ir.types import uint64, uint256, int32, float32, int512, bool
+from allo.ir.types import Int, uint64, uint256, int32, float32, int512, bool
 from allo.utils import get_np_struct_type
 import allo.dataflow as df
 from allo.backend import hls
@@ -165,6 +165,30 @@ def test_pointer_generation():
             mod(inst, C)
             np.testing.assert_allclose(C, [1, 2, 3], rtol=1e-5)
             print("Passed!")
+
+
+def test_non_pod_helper_has_cpp_linkage_in_generated_hls():
+    def helper_func(x: int32) -> Int(22):
+        return x * 2
+
+    def main_func(arr: int32[10]) -> Int(22)[10]:
+        result: Int(22)[10]
+        for i in allo.grid(10):
+            result[i] = helper_func(arr[i])
+        return result
+
+    schedule = allo.customize(main_func)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        module = schedule.build(target="vitis_hls", mode="csyn", project=tmpdir)
+
+    assert module.hls_code.count('extern "C"') == 1
+    assert 'extern "C" void main_func(' in module.hls_code
+    assert "void helper_func(" in module.hls_code
+    helper_signature = module.hls_code.split("void helper_func(", 1)[1].split(") {", 1)[
+        0
+    ]
+    assert "ap_int<22> *" in helper_signature
+    assert 'extern "C" void helper_func(' not in module.hls_code
 
 
 def test_bool_array():

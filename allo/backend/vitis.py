@@ -380,21 +380,13 @@ def codegen_host(top, module, num_output_args=0):
 def postprocess_hls_code(hls_code, top=None, pragma=True):
     out_str = ""
     func_decl = False
-    has_endif = False
-    extern_decl = False
     func_args = []
     for line in hls_code.split("\n"):
         if line == "using namespace std;" or line.startswith("#ifndef"):
             out_str += line + "\n"
-            # Add external function declaration
-            out_str += '\nextern "C" {\n\n'
-            extern_decl = True
         elif line.startswith(f"void {top}"):
             func_decl = True
-            if not extern_decl:
-                out_str += '\nextern "C" {\n\n'
-                extern_decl = True
-            out_str += line + "\n"
+            out_str += 'extern "C" ' + line + "\n"
         elif func_decl and line.startswith(") {"):
             func_decl = False
             out_str += line + "\n"
@@ -416,14 +408,8 @@ def postprocess_hls_code(hls_code, top=None, pragma=True):
                     out_str += "  " + dtype + " " + var + f"{comma}\n"
             else:
                 out_str += line + "\n"
-        elif line.startswith("#endif"):
-            out_str += '} // extern "C"\n\n'
-            out_str += line + "\n"
-            has_endif = True
         else:
             out_str += line + "\n"
-    if not has_endif:
-        out_str += '} // extern "C"\n'
     return out_str
 
 
@@ -502,7 +488,7 @@ def extract_hls_arg_names(hls_code, top_func_name):
     func_decl = False
     args = []
     for line in hls_code.split("\n"):
-        if line.startswith(f"void {top_func_name}"):
+        if line.removeprefix('extern "C" ').startswith(f"void {top_func_name}"):
             func_decl = True
         elif func_decl and line.startswith(") {"):
             break
