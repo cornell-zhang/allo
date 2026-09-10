@@ -184,9 +184,9 @@ def test_non_pod_helper_has_cpp_linkage_in_generated_hls():
     assert module.hls_code.count('extern "C"') == 1
     assert 'extern "C" void main_func(' in module.hls_code
     assert "void helper_func(" in module.hls_code
-    helper_signature = module.hls_code.split("void helper_func(", 1)[1].split(
-        ") {", 1
-    )[0]
+    helper_signature = module.hls_code.split("void helper_func(", 1)[1].split(") {", 1)[
+        0
+    ]
     assert "ap_int<22> *" in helper_signature
     assert 'extern "C" void helper_func(' not in module.hls_code
 
