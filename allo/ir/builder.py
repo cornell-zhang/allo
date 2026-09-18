@@ -1794,8 +1794,8 @@ class ASTTransformer(ASTBuilder):
                     lower.result,
                     ip=ctx.get_ip(),
                 )
-                if hasattr(value, "attributes") and "unsigned" in value.attributes:
-                    op.attributes["unsigned"] = UnitAttr.get()
+                # every integer bit slice is unsigned
+                op.attributes["unsigned"] = UnitAttr.get()
                 return op
             else:  # ast.Store
                 set_slice_op = allo_d.SetIntSliceOp(

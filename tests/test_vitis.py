@@ -5,7 +5,7 @@ import tempfile
 
 import numpy as np
 import allo
-from allo.ir.types import uint64, uint256, int32, float32, int512, bool
+from allo.ir.types import uint64, uint256, int32, float32, int512, bool, UInt
 from allo.utils import get_np_struct_type
 import allo.dataflow as df
 from allo.backend import hls
@@ -17,7 +17,24 @@ from allo.backend import hls
 
 
 def test_get_bit_slice():
-    def slice_(A: int32[4]) -> int32[4]:
+    def slice1(A: int32[4]) -> int32[4]:
+        B: int32[4] = 0
+        for i in range(4):
+            raw: int32 = A[i][0:16]
+            B[i] = raw
+        return B
+
+    s = allo.customize(slice1)
+    print(s.module)
+    np_A = np.array([-1, -32768, 0x7FFF, 0], dtype=np.int32)
+    b = np.zeros(4, dtype=np.int32)
+    if hls.is_available("vitis_hls"):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mod = s.build(target="vitis_hls", mode="sw_emu", project=tmpdir)
+            mod(np_A, b)
+            np.testing.assert_array_equal(b, [65535, 32768, 32767, 0])
+
+    def slice2(A: int32[4]) -> int32[4]:
         B: int32[4] = 0
         for i in range(4):
             w: UInt(26) = A[i]
@@ -28,14 +45,15 @@ def test_get_bit_slice():
             B[i] = flag
         return B
 
-    s = allo.customize(slice_)
+    s = allo.customize(slice2)
     print(s.module)
     np_A = np.array([0x0001, 0x8000, 0x7FFF, 0xFFFF], dtype=np.int32)
     b = np.zeros(4, dtype=np.int32)
-    with tempfile.TemporaryDirectory() as tmpdir:
-        mod = s.build(target="vitis_hls", mode="sw_emu", project=tmpdir)
-        mod(np_A, b)
-        np.testing.assert_array_equal(b, [0, 1, 0, 1])
+    if hls.is_available("vitis_hls"):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mod = s.build(target="vitis_hls", mode="sw_emu", project=tmpdir)
+            mod(np_A, b)
+            np.testing.assert_array_equal(b, [0, 1, 0, 1])
 
 
 def test_grid_for_gemm():
