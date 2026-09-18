@@ -14,6 +14,30 @@ from allo.backend import hls
 # ##############################################################
 # Test basic
 # ##############################################################
+
+
+def test_get_bit_slice():
+    def slice_(A: int32[4]) -> int32[4]:
+        B: int32[4] = 0
+        for i in range(4):
+            w: UInt(26) = A[i]
+            raw: int32 = w[0:16]
+            flag: int32 = 0
+            if (raw >> 15) == 1:
+                flag = 1
+            B[i] = flag
+        return B
+
+    s = allo.customize(slice_)
+    print(s.module)
+    np_A = np.array([0x0001, 0x8000, 0x7FFF, 0xFFFF], dtype=np.int32)
+    b = np.zeros(4, dtype=np.int32)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        mod = s.build(target="vitis_hls", mode="sw_emu", project=tmpdir)
+        mod(np_A, b)
+        np.testing.assert_array_equal(b, [0, 1, 0, 1])
+
+
 def test_grid_for_gemm():
     # from `test_builder.py`, with return value
 
@@ -373,6 +397,7 @@ def test_hbm_mapping_function():
 
 
 if __name__ == "__main__":
+    test_get_bit_slice()
     test_grid_for_gemm()
     test_vitis_gemm_template_int32()
     test_vitis_gemm_template_float32()

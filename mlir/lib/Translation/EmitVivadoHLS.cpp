@@ -2077,9 +2077,9 @@ void allo::hls::VhlsModuleEmitter::emitSetBit(allo::SetIntBitOp op) {
 void allo::hls::VhlsModuleEmitter::emitGetSlice(allo::GetIntSliceOp op) {
   indent();
   Value result = op.getResult();
+  fixUnsignedType(result, op->hasAttr("unsigned"));
   emitValue(result);
   os << ";\n";
-  fixUnsignedType(result, op->hasAttr("unsigned"));
   // generate ap_int types
   indent();
   os << "ap_int<" << op.getNum().getType().getIntOrFloatBitWidth() << "> ";
