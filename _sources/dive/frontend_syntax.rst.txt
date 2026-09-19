@@ -461,6 +461,17 @@ Access individual bits or bit ranges:
     B[i] = A[i][0]      # Access bit 0
     B[i][0:2] = A[i]    # Assign to bits 0-1 (upper bound exclusive)
 
+Reading a single bit produces ``uint1``. Reading a bit slice produces an unsigned integer, regardless of whether the source is ``Int`` or ``UInt``.
+For a slice ``a[lo:hi]`` whose width is known at compile time, the result type is ``UInt(hi - lo)``. 
+If the width cannot be inferred, it defaults to ``UInt(32)``.
+
+When a slice is converted to a wider integer, it is zero-extended, even if the destination is signed:
+
+.. code-block:: python
+
+    a: int32 = -1
+    raw: int32 = a[0:16]  # UInt(16) slice, zero-extended to 65535
+
 Dynamic Shapes
 --------------
 

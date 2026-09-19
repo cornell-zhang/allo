@@ -10,7 +10,7 @@
     <link rel="stylesheet" type="text/css" href="../_static/basic_mod.css?v=9b2032db" />
     <link rel="stylesheet" type="text/css" href="../_static/graphviz.css?v=4ae1632d" />
     <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
-    <link rel="stylesheet" type="text/css" href="../_static/sg_gallery.css?v=fd6457a4" />
+    <link rel="stylesheet" type="text/css" href="../_static/sg_gallery.css?v=c83e6b79" />
     <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-binder.css?v=f4aeca0c" />
     <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-dataframe.css?v=2082cf3c" />
     <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-rendered-html.css?v=1277b6f3" />
@@ -683,6 +683,14 @@ or have an empty return:</p>
 <p>Access individual bits or bit ranges:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">B</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">A</span><span class="p">[</span><span class="n">i</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span>      <span class="c1"># Access bit 0</span>
 <span class="n">B</span><span class="p">[</span><span class="n">i</span><span class="p">][</span><span class="mi">0</span><span class="p">:</span><span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="n">A</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>    <span class="c1"># Assign to bits 0-1 (upper bound exclusive)</span>
+</pre></div>
+</div>
+<p>Reading a single bit produces <code class="docutils literal notranslate"><span class="pre">uint1</span></code>. Reading a bit slice produces an unsigned integer, regardless of whether the source is <code class="docutils literal notranslate"><span class="pre">Int</span></code> or <code class="docutils literal notranslate"><span class="pre">UInt</span></code>.
+For a slice <code class="docutils literal notranslate"><span class="pre">a[lo:hi]</span></code> whose width is known at compile time, the result type is <code class="docutils literal notranslate"><span class="pre">UInt(hi</span> <span class="pre">-</span> <span class="pre">lo)</span></code>.
+If the width cannot be inferred, it defaults to <code class="docutils literal notranslate"><span class="pre">UInt(32)</span></code>.</p>
+<p>When a slice is converted to a wider integer, it is zero-extended, even if the destination is signed:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">a</span><span class="p">:</span> <span class="n">int32</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span>
+<span class="n">raw</span><span class="p">:</span> <span class="n">int32</span> <span class="o">=</span> <span class="n">a</span><span class="p">[</span><span class="mi">0</span><span class="p">:</span><span class="mi">16</span><span class="p">]</span>  <span class="c1"># UInt(16) slice, zero-extended to 65535</span>
 </pre></div>
 </div>
 </section>

@@ -10,7 +10,7 @@
     <link rel="stylesheet" type="text/css" href="../_static/basic_mod.css?v=9b2032db" />
     <link rel="stylesheet" type="text/css" href="../_static/graphviz.css?v=4ae1632d" />
     <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
-    <link rel="stylesheet" type="text/css" href="../_static/sg_gallery.css?v=fd6457a4" />
+    <link rel="stylesheet" type="text/css" href="../_static/sg_gallery.css?v=c83e6b79" />
     <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-binder.css?v=f4aeca0c" />
     <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-dataframe.css?v=2082cf3c" />
     <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-rendered-html.css?v=1277b6f3" />
@@ -198,27 +198,25 @@ to download the full example code.</p>
 <p>This document explains how to write a template kernel in Allo.
 Template kernels are useful when we need to reuse a kernel with different data types or when certain computation patterns depend on specific constants.
 By leveraging template kernels, we can achieve greater flexibility and reusability in the code.</p>
-<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">allo</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">allo.ir.types</span><span class="w"> </span><span class="kn">import</span> <span class="n">int32</span><span class="p">,</span> <span class="n">float32</span>
-</pre></div>
-</div>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span class="kn">import</span><span class="w"> </span><span class="nn">allo</span><span class="w">
+</span><span class="kn">from</span><span class="w"> </span><span class="nn">allo</span><span class="nn">.</span><span class="nn">ir</span><span class="nn">.</span><span class="nn">types</span><span class="w"> </span><span class="kn">import</span> <span class="n">int32</span><span class="p">,</span> <span class="n">float32</span><span class="w">
+</span></pre></div></div>
 <p>We follow Python’s convention to use <em>type variable</em> to define a template kernel.
 Specifically, the type variable is specified after the function name using square brackets: <code class="docutils literal notranslate"><span class="pre">def</span> <span class="pre">kernel[T](...)</span></code>, and the type variable can be used in the function signature and body.
 Importantly, as the native Python interpreter does not support Allo’s type declaration (i.e., base type + shape), we need to use string annotations like <code class="docutils literal notranslate"><span class="pre">&quot;T[10]&quot;</span></code> to specify the type of the variables.
 Otherwise, it will raise a type error.</p>
 <p>In the following, we define a simple addition function that adds 1 to each element of the input array.
 To invoke the kernel with a specific data type, we can use the <code class="docutils literal notranslate"><span class="pre">instantiate</span></code> argument in the <code class="docutils literal notranslate"><span class="pre">allo.customize</span></code> function.</p>
-<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">kernel</span><span class="p">[</span><span class="n">T</span><span class="p">](</span><span class="n">A</span><span class="p">:</span> <span class="s2">"T[10]"</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">"T[10]"</span><span class="p">:</span>
-    <span class="n">B</span><span class="p">:</span> <span class="n">T</span><span class="p">[</span><span class="mi">10</span><span class="p">]</span>
-    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">10</span><span class="p">):</span>
-        <span class="n">B</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">A</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">+</span> <span class="mi">1</span>
-    <span class="k">return</span> <span class="n">B</span>
-
-
-<span class="n">s</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">customize</span><span class="p">(</span><span class="n">kernel</span><span class="p">,</span> <span class="n">instantiate</span><span class="o">=</span><span class="p">[</span><span class="n">int32</span><span class="p">])</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">module</span><span class="p">)</span>
-</pre></div>
-</div>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span class="k">def</span><span class="w"> </span><span class="nf">kernel</span><span class="p">[</span><span class="n">T</span><span class="p">]</span><span class="p">(</span><span class="n">A</span><span class="p">:</span> <span class="s2">&quot;</span><span class="s2">T[10]</span><span class="s2">&quot;</span><span class="p">)</span> <span class="o">-</span><span class="o">&gt;</span> <span class="s2">&quot;</span><span class="s2">T[10]</span><span class="s2">&quot;</span><span class="p">:</span><span class="w">
+</span>    <span class="n">B</span><span class="p">:</span> <span class="n">T</span><span class="p">[</span><span class="mi">10</span><span class="p">]</span><span class="w">
+</span>    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span><span class="p">:</span><span class="w">
+</span>        <span class="n">B</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">A</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">+</span> <span class="mi">1</span><span class="w">
+</span>    <span class="k">return</span> <span class="n">B</span><span class="w">
+</span><span class="w">
+</span><span class="w">
+</span><a class="sphx-glr-backref-module-allo-customize sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../api/index.html#allo.customize.Schedule" title="allo.customize.Schedule"><span class="n">s</span></a> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">customize</span><span class="p">(</span><span class="n">kernel</span><span class="p">,</span> <span class="n">instantiate</span><span class="o">=</span><span class="p">[</span><span class="n">int32</span><span class="p">]</span><span class="p">)</span><span class="w">
+</span><span class="nb">print</span><span class="p">(</span><a class="sphx-glr-backref-module-allo-customize sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../api/index.html#allo.customize.Schedule" title="allo.customize.Schedule"><span class="n">s</span></a><span class="o">.</span><span class="n">module</span><span class="p">)</span><span class="w">
+</span></pre></div></div>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>module {
   func.func @kernel(%arg0: memref&lt;10xi32&gt;) -&gt; memref&lt;10xi32&gt; attributes {itypes = "s", otypes = "s"} {
     %alloc = memref.alloc() {name = "B"} : memref&lt;10xi32&gt;
@@ -239,10 +237,9 @@ To invoke the kernel with a specific data type, we can use the <code class="docu
 </div>
 <p>We can see that the kernel is specialized with the given <code class="docutils literal notranslate"><span class="pre">int32</span></code> data type.
 Similarly, we can directly declare a new kernel by specifying <code class="docutils literal notranslate"><span class="pre">float32</span></code> as the data type.</p>
-<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="n">s</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">customize</span><span class="p">(</span><span class="n">kernel</span><span class="p">,</span> <span class="n">instantiate</span><span class="o">=</span><span class="p">[</span><span class="n">float32</span><span class="p">])</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">module</span><span class="p">)</span>
-</pre></div>
-</div>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><a class="sphx-glr-backref-module-allo-customize sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../api/index.html#allo.customize.Schedule" title="allo.customize.Schedule"><span class="n">s</span></a> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">customize</span><span class="p">(</span><span class="n">kernel</span><span class="p">,</span> <span class="n">instantiate</span><span class="o">=</span><span class="p">[</span><span class="n">float32</span><span class="p">]</span><span class="p">)</span><span class="w">
+</span><span class="nb">print</span><span class="p">(</span><a class="sphx-glr-backref-module-allo-customize sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../api/index.html#allo.customize.Schedule" title="allo.customize.Schedule"><span class="n">s</span></a><span class="o">.</span><span class="n">module</span><span class="p">)</span><span class="w">
+</span></pre></div></div>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>module {
   func.func @kernel(%arg0: memref&lt;10xf32&gt;) -&gt; memref&lt;10xf32&gt; attributes {itypes = "_", otypes = "_"} {
     %alloc = memref.alloc() {name = "B"} : memref&lt;10xf32&gt;
@@ -261,17 +258,16 @@ Similarly, we can directly declare a new kernel by specifying <code class="docut
 </div>
 <p>If we not only want to specialize the data type but also the shape of the array, we can provide another type variable, and pass it to the <code class="docutils literal notranslate"><span class="pre">instantiate</span></code> argument.
 Note that here we also use the <code class="docutils literal notranslate"><span class="pre">&lt;type_var&gt;:</span> <span class="pre">base_type</span></code> notation to constrain the type of the type variable. Here we constrain the type variable <code class="docutils literal notranslate"><span class="pre">M</span></code> to be an integer.</p>
-<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">kernel2</span><span class="p">[</span><span class="n">T</span><span class="p">,</span> <span class="n">M</span><span class="p">:</span> <span class="n">int32</span><span class="p">](</span><span class="n">A</span><span class="p">:</span> <span class="s2">"T[M]"</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">"T[M]"</span><span class="p">:</span>
-    <span class="n">B</span><span class="p">:</span> <span class="n">T</span><span class="p">[</span><span class="n">M</span><span class="p">]</span>
-    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">M</span><span class="p">):</span>
-        <span class="n">B</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">A</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">+</span> <span class="mi">1</span>
-    <span class="k">return</span> <span class="n">B</span>
-
-
-<span class="n">s</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">customize</span><span class="p">(</span><span class="n">kernel2</span><span class="p">,</span> <span class="n">instantiate</span><span class="o">=</span><span class="p">[</span><span class="n">int32</span><span class="p">,</span> <span class="mi">20</span><span class="p">])</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">module</span><span class="p">)</span>
-</pre></div>
-</div>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span class="k">def</span><span class="w"> </span><span class="nf">kernel2</span><span class="p">[</span><span class="n">T</span><span class="p">,</span> <span class="n">M</span><span class="p">:</span> <span class="n">int32</span><span class="p">]</span><span class="p">(</span><span class="n">A</span><span class="p">:</span> <span class="s2">&quot;</span><span class="s2">T[M]</span><span class="s2">&quot;</span><span class="p">)</span> <span class="o">-</span><span class="o">&gt;</span> <span class="s2">&quot;</span><span class="s2">T[M]</span><span class="s2">&quot;</span><span class="p">:</span><span class="w">
+</span>    <span class="n">B</span><span class="p">:</span> <span class="n">T</span><span class="p">[</span><span class="n">M</span><span class="p">]</span><span class="w">
+</span>    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">M</span><span class="p">)</span><span class="p">:</span><span class="w">
+</span>        <span class="n">B</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">A</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">+</span> <span class="mi">1</span><span class="w">
+</span>    <span class="k">return</span> <span class="n">B</span><span class="w">
+</span><span class="w">
+</span><span class="w">
+</span><a class="sphx-glr-backref-module-allo-customize sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../api/index.html#allo.customize.Schedule" title="allo.customize.Schedule"><span class="n">s</span></a> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">customize</span><span class="p">(</span><span class="n">kernel2</span><span class="p">,</span> <span class="n">instantiate</span><span class="o">=</span><span class="p">[</span><span class="n">int32</span><span class="p">,</span> <span class="mi">20</span><span class="p">]</span><span class="p">)</span><span class="w">
+</span><span class="nb">print</span><span class="p">(</span><a class="sphx-glr-backref-module-allo-customize sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../api/index.html#allo.customize.Schedule" title="allo.customize.Schedule"><span class="n">s</span></a><span class="o">.</span><span class="n">module</span><span class="p">)</span><span class="w">
+</span></pre></div></div>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>module {
   func.func @kernel2(%arg0: memref&lt;20xi32&gt;) -&gt; memref&lt;20xi32&gt; attributes {itypes = "s", otypes = "s"} {
     %alloc = memref.alloc() {name = "B"} : memref&lt;20xi32&gt;
@@ -293,23 +289,21 @@ Note that here we also use the <code class="docutils literal notranslate"><span 
 <p>Furthermore, Allo’s template also enables metaprogramming that can evaluate type variables at compile time.
 Specifically, we can use the <code class="docutils literal notranslate"><span class="pre">allo.meta_if</span></code>, <code class="docutils literal notranslate"><span class="pre">allo.meta_elif</span></code>, and <code class="docutils literal notranslate"><span class="pre">allo.meta_else</span></code> to conditionally generate code based on the type variables.
 Just to make sure the conditions can be determined at compile time.</p>
-<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">kernel3</span><span class="p">[</span><span class="n">T</span><span class="p">,</span> <span class="n">M</span><span class="p">:</span> <span class="n">int32</span><span class="p">](</span><span class="n">A</span><span class="p">:</span> <span class="s2">"T[M]"</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">"T[M]"</span><span class="p">:</span>
-    <span class="n">B</span><span class="p">:</span> <span class="n">T</span><span class="p">[</span><span class="n">M</span><span class="p">]</span>
-    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">M</span><span class="p">):</span>
-        <span class="k">with</span> <span class="n">allo</span><span class="o">.</span><span class="n">meta_if</span><span class="p">(</span><span class="n">T</span> <span class="o">==</span> <span class="n">int32</span><span class="p">):</span>
-            <span class="n">B</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">A</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">+</span> <span class="mi">1</span>
-        <span class="k">with</span> <span class="n">allo</span><span class="o">.</span><span class="n">meta_else</span><span class="p">():</span>
-            <span class="n">B</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">A</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">-</span> <span class="mi">1</span>
-    <span class="k">return</span> <span class="n">B</span>
-</pre></div>
-</div>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span class="k">def</span><span class="w"> </span><span class="nf">kernel3</span><span class="p">[</span><span class="n">T</span><span class="p">,</span> <span class="n">M</span><span class="p">:</span> <span class="n">int32</span><span class="p">]</span><span class="p">(</span><span class="n">A</span><span class="p">:</span> <span class="s2">&quot;</span><span class="s2">T[M]</span><span class="s2">&quot;</span><span class="p">)</span> <span class="o">-</span><span class="o">&gt;</span> <span class="s2">&quot;</span><span class="s2">T[M]</span><span class="s2">&quot;</span><span class="p">:</span><span class="w">
+</span>    <span class="n">B</span><span class="p">:</span> <span class="n">T</span><span class="p">[</span><span class="n">M</span><span class="p">]</span><span class="w">
+</span>    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">M</span><span class="p">)</span><span class="p">:</span><span class="w">
+</span>        <span class="k">with</span> <span class="n">allo</span><span class="o">.</span><span class="n">meta_if</span><span class="p">(</span><span class="n">T</span> <span class="o">==</span> <span class="n">int32</span><span class="p">)</span><span class="p">:</span><span class="w">
+</span>            <span class="n">B</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">A</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">+</span> <span class="mi">1</span><span class="w">
+</span>        <span class="k">with</span> <span class="n">allo</span><span class="o">.</span><span class="n">meta_else</span><span class="p">(</span><span class="p">)</span><span class="p">:</span><span class="w">
+</span>            <span class="n">B</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">A</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">-</span> <span class="mi">1</span><span class="w">
+</span>    <span class="k">return</span> <span class="n">B</span><span class="w">
+</span></pre></div></div>
 <p>In final generated code, we can see that only a single branch is generated based on the given data type.</p>
-<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="n">s</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">customize</span><span class="p">(</span><span class="n">kernel3</span><span class="p">,</span> <span class="n">instantiate</span><span class="o">=</span><span class="p">[</span><span class="n">int32</span><span class="p">,</span> <span class="mi">20</span><span class="p">])</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">module</span><span class="p">)</span>
-<span class="n">s</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">customize</span><span class="p">(</span><span class="n">kernel3</span><span class="p">,</span> <span class="n">instantiate</span><span class="o">=</span><span class="p">[</span><span class="n">float32</span><span class="p">,</span> <span class="mi">20</span><span class="p">])</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">module</span><span class="p">)</span>
-</pre></div>
-</div>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><a class="sphx-glr-backref-module-allo-customize sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../api/index.html#allo.customize.Schedule" title="allo.customize.Schedule"><span class="n">s</span></a> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">customize</span><span class="p">(</span><span class="n">kernel3</span><span class="p">,</span> <span class="n">instantiate</span><span class="o">=</span><span class="p">[</span><span class="n">int32</span><span class="p">,</span> <span class="mi">20</span><span class="p">]</span><span class="p">)</span><span class="w">
+</span><span class="nb">print</span><span class="p">(</span><a class="sphx-glr-backref-module-allo-customize sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../api/index.html#allo.customize.Schedule" title="allo.customize.Schedule"><span class="n">s</span></a><span class="o">.</span><span class="n">module</span><span class="p">)</span><span class="w">
+</span><a class="sphx-glr-backref-module-allo-customize sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../api/index.html#allo.customize.Schedule" title="allo.customize.Schedule"><span class="n">s</span></a> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">customize</span><span class="p">(</span><span class="n">kernel3</span><span class="p">,</span> <span class="n">instantiate</span><span class="o">=</span><span class="p">[</span><span class="n">float32</span><span class="p">,</span> <span class="mi">20</span><span class="p">]</span><span class="p">)</span><span class="w">
+</span><span class="nb">print</span><span class="p">(</span><a class="sphx-glr-backref-module-allo-customize sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../api/index.html#allo.customize.Schedule" title="allo.customize.Schedule"><span class="n">s</span></a><span class="o">.</span><span class="n">module</span><span class="p">)</span><span class="w">
+</span></pre></div></div>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>module {
   func.func @kernel3(%arg0: memref&lt;20xi32&gt;) -&gt; memref&lt;20xi32&gt; attributes {itypes = "s", otypes = "s"} {
     %alloc = memref.alloc() {name = "B"} : memref&lt;20xi32&gt;

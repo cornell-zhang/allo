@@ -10,7 +10,7 @@
     <link rel="stylesheet" type="text/css" href="../_static/basic_mod.css?v=9b2032db" />
     <link rel="stylesheet" type="text/css" href="../_static/graphviz.css?v=4ae1632d" />
     <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
-    <link rel="stylesheet" type="text/css" href="../_static/sg_gallery.css?v=fd6457a4" />
+    <link rel="stylesheet" type="text/css" href="../_static/sg_gallery.css?v=c83e6b79" />
     <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-binder.css?v=f4aeca0c" />
     <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-dataframe.css?v=2082cf3c" />
     <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-rendered-html.css?v=1277b6f3" />
@@ -197,10 +197,9 @@ to download the full example code.</p>
 <p><strong>Author</strong>: Hongzheng Chen (<a class="reference external" href="mailto:hzchen&#37;&#52;&#48;cs&#46;cornell&#46;edu">hzchen<span>&#64;</span>cs<span>&#46;</span>cornell<span>&#46;</span>edu</a>)</p>
 <p>This document will discuss the Allo-supported data types in detail.
 All the data types are defined in the <code class="docutils literal notranslate"><span class="pre">allo.ir.types</span></code> module.</p>
-<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">allo</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">allo.ir.types</span><span class="w"> </span><span class="kn">import</span> <span class="n">int16</span><span class="p">,</span> <span class="n">int32</span><span class="p">,</span> <span class="n">float32</span><span class="p">,</span> <span class="n">Int</span><span class="p">,</span> <span class="n">UInt</span><span class="p">,</span> <span class="n">Float</span><span class="p">,</span> <span class="n">Fixed</span>
-</pre></div>
-</div>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span class="kn">import</span><span class="w"> </span><span class="nn">allo</span><span class="w">
+</span><span class="kn">from</span><span class="w"> </span><span class="nn">allo</span><span class="nn">.</span><span class="nn">ir</span><span class="nn">.</span><span class="nn">types</span><span class="w"> </span><span class="kn">import</span> <span class="n">int16</span><span class="p">,</span> <span class="n">int32</span><span class="p">,</span> <span class="n">float32</span><span class="p">,</span> <span class="n">Int</span><span class="p">,</span> <span class="n">UInt</span><span class="p">,</span> <span class="n">Float</span><span class="p">,</span> <span class="n">Fixed</span><span class="w">
+</span></pre></div></div>
 <p>Currently, Allo supports three base data types for mathematical operations:</p>
 <ul class="simple">
 <li><p>Integers: <code class="docutils literal notranslate"><span class="pre">Int(bitwdith)</span></code>, <code class="docutils literal notranslate"><span class="pre">UInt(bitwidth)</span></code></p></li>
@@ -212,9 +211,8 @@ For all the C/C++ supported data types, we provide shorthands like <code class="
 <p>Notice different from native Python, Allo requires the program to be <strong>strongly and statically typed</strong>.
 The variable types are either declared explicitly or inferred from the context.
 For a variable that first appears in the program, we should declare it with an expected data type using Python’s type hint notation:</p>
-<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="n">a</span><span class="p">:</span> <span class="n">int32</span>
-</pre></div>
-</div>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span class="n">a</span><span class="p">:</span> <span class="n">int32</span><span class="w">
+</span></pre></div></div>
 <p>Once the data types are defined, an important consideration is how to handle
 operations between variables of different types. Allo supports two types of casting:
 (1) implicit casting that is automatically done by the Allo compiler;
@@ -225,14 +223,13 @@ and (2) explicit casting that is manually done by the user.</p>
 However, it is burdensome for users to cast the variables every time, and it is also error-prone to avoid overflow when performing computations.
 Therefore, Allo is equipped with builtin casting rules to automatically cast the variables to the same type before the operation, which is called <em>implicit casting</em>.
 An example is shown below:</p>
-<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">add</span><span class="p">(</span><span class="n">a</span><span class="p">:</span> <span class="n">int32</span><span class="p">,</span> <span class="n">b</span><span class="p">:</span> <span class="n">int32</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">int32</span><span class="p">:</span>
-    <span class="k">return</span> <span class="n">a</span> <span class="o">+</span> <span class="n">b</span>
-
-
-<span class="n">s</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">customize</span><span class="p">(</span><span class="n">add</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">module</span><span class="p">)</span>
-</pre></div>
-</div>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span class="k">def</span><span class="w"> </span><span class="nf">add</span><span class="p">(</span><span class="n">a</span><span class="p">:</span> <span class="n">int32</span><span class="p">,</span> <span class="n">b</span><span class="p">:</span> <span class="n">int32</span><span class="p">)</span> <span class="o">-</span><span class="o">&gt;</span> <span class="n">int32</span><span class="p">:</span><span class="w">
+</span>    <span class="k">return</span> <span class="n">a</span> <span class="o">+</span> <span class="n">b</span><span class="w">
+</span><span class="w">
+</span><span class="w">
+</span><a class="sphx-glr-backref-module-allo-customize sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../api/index.html#allo.customize.Schedule" title="allo.customize.Schedule"><span class="n">s</span></a> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">customize</span><span class="p">(</span><span class="n">add</span><span class="p">)</span><span class="w">
+</span><span class="nb">print</span><span class="p">(</span><a class="sphx-glr-backref-module-allo-customize sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../api/index.html#allo.customize.Schedule" title="allo.customize.Schedule"><span class="n">s</span></a><span class="o">.</span><span class="n">module</span><span class="p">)</span><span class="w">
+</span></pre></div></div>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>module {
   func.func @add(%arg0: i32, %arg1: i32) -&gt; i32 attributes {itypes = "ss", otypes = "s"} {
     %0 = arith.extsi %arg0 : i32 to i33
@@ -253,18 +250,17 @@ This is to avoid overflow and is automatically inferred by the Allo compiler.</p
 <p>One can also explicitly cast the variable to a specific type by creating an intermediate variable,
 or use Python-builtin functions like <code class="docutils literal notranslate"><span class="pre">float()</span></code> and <code class="docutils literal notranslate"><span class="pre">int()</span></code> to explicitly cast a variable to <code class="docutils literal notranslate"><span class="pre">float32</span></code> or <code class="docutils literal notranslate"><span class="pre">int32</span></code>.
 Another example is shown below:</p>
-<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">cast</span><span class="p">(</span><span class="n">a</span><span class="p">:</span> <span class="n">int32</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">int16</span><span class="p">:</span>
-    <span class="n">b</span><span class="p">:</span> <span class="n">float32</span> <span class="o">=</span> <span class="n">a</span>  <span class="c1"># explicit</span>
-    <span class="n">c</span><span class="p">:</span> <span class="n">float32</span> <span class="o">=</span> <span class="n">b</span> <span class="o">*</span> <span class="mi">2</span>
-    <span class="n">d</span><span class="p">:</span> <span class="n">float32</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">a</span><span class="p">)</span> <span class="o">*</span> <span class="mi">2</span>
-    <span class="n">e</span><span class="p">:</span> <span class="n">int16</span> <span class="o">=</span> <span class="n">c</span> <span class="o">+</span> <span class="n">d</span>
-    <span class="k">return</span> <span class="n">e</span>
-
-
-<span class="n">s</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">customize</span><span class="p">(</span><span class="n">cast</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">module</span><span class="p">)</span>
-</pre></div>
-</div>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span class="k">def</span><span class="w"> </span><span class="nf">cast</span><span class="p">(</span><span class="n">a</span><span class="p">:</span> <span class="n">int32</span><span class="p">)</span> <span class="o">-</span><span class="o">&gt;</span> <span class="n">int16</span><span class="p">:</span><span class="w">
+</span>    <span class="n">b</span><span class="p">:</span> <span class="n">float32</span> <span class="o">=</span> <span class="n">a</span>  <span class="c1"># explicit</span><span class="w">
+</span>    <span class="n">c</span><span class="p">:</span> <span class="n">float32</span> <span class="o">=</span> <span class="n">b</span> <span class="o">*</span> <span class="mi">2</span><span class="w">
+</span>    <span class="n">d</span><span class="p">:</span> <span class="n">float32</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">a</span><span class="p">)</span> <span class="o">*</span> <span class="mi">2</span><span class="w">
+</span>    <span class="n">e</span><span class="p">:</span> <span class="n">int16</span> <span class="o">=</span> <span class="n">c</span> <span class="o">+</span> <span class="n">d</span><span class="w">
+</span>    <span class="k">return</span> <span class="n">e</span><span class="w">
+</span><span class="w">
+</span><span class="w">
+</span><a class="sphx-glr-backref-module-allo-customize sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../api/index.html#allo.customize.Schedule" title="allo.customize.Schedule"><span class="n">s</span></a> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">customize</span><span class="p">(</span><span class="n">cast</span><span class="p">)</span><span class="w">
+</span><span class="nb">print</span><span class="p">(</span><a class="sphx-glr-backref-module-allo-customize sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../api/index.html#allo.customize.Schedule" title="allo.customize.Schedule"><span class="n">s</span></a><span class="o">.</span><span class="n">module</span><span class="p">)</span><span class="w">
+</span></pre></div></div>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>module {
   func.func @cast(%arg0: i32) -&gt; i16 attributes {itypes = "s", otypes = "s"} {
     %0 = arith.sitofp %arg0 : i32 to f32
@@ -308,13 +304,11 @@ If you want to use a union type to represent both integers and floating points, 
 <h2>Bit Operations<a class="headerlink" href="#bit-operations" title="Link to this heading"><span>¶</span></a></h2>
 <p>As hardware accelerators have ability to manipulate each bit of the data, Allo supports bit operations on
 those integer types. For example, we can access a specific bit in an integer <code class="docutils literal notranslate"><span class="pre">a</span></code> using the indexing operator:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">a</span><span class="p">[</span><span class="mi">15</span><span class="p">]</span>
-</pre></div>
-</div>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span class="n">a</span><span class="p">[</span><span class="mi">15</span><span class="p">]</span><span class="w">
+</span></pre></div></div>
 <p>We can also extract a chunk of bits from an integer using the slicing operator:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">a</span><span class="p">[</span><span class="mi">0</span><span class="p">:</span><span class="mi">16</span><span class="p">]</span>
-</pre></div>
-</div>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span class="n">a</span><span class="p">[</span><span class="mi">0</span><span class="p">:</span><span class="mi">16</span><span class="p">]</span><span class="w">
+</span></pre></div></div>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
 <p>Allo follows the Python convention that the upper bound is not included, so <code class="docutils literal notranslate"><span class="pre">[0:16]</span></code> means

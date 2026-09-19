@@ -10,7 +10,7 @@
     <link rel="stylesheet" type="text/css" href="../_static/basic_mod.css?v=9b2032db" />
     <link rel="stylesheet" type="text/css" href="../_static/graphviz.css?v=4ae1632d" />
     <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
-    <link rel="stylesheet" type="text/css" href="../_static/sg_gallery.css?v=fd6457a4" />
+    <link rel="stylesheet" type="text/css" href="../_static/sg_gallery.css?v=c83e6b79" />
     <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-binder.css?v=f4aeca0c" />
     <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-dataframe.css?v=2082cf3c" />
     <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-rendered-html.css?v=1277b6f3" />
@@ -197,10 +197,9 @@ to download the full example code.</p>
 <p><strong>Author</strong>: Hongzheng Chen (<a class="reference external" href="mailto:hzchen&#37;&#52;&#48;cs&#46;cornell&#46;edu">hzchen<span>&#64;</span>cs<span>&#46;</span>cornell<span>&#46;</span>edu</a>)</p>
 <p>This guide will give some examples on how to invoke the MLIR toolchain to
 verify the correctness of a handwritten or generated MLIR program.</p>
-<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">allo</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
-</pre></div>
-</div>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span class="kn">import</span><span class="w"> </span><span class="nn">allo</span><span class="w">
+</span><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span><span class="w">
+</span></pre></div></div>
 <section id="define-an-mlir-program-with-linalg-dialect">
 <h2>Define an MLIR program with linalg dialect<a class="headerlink" href="#define-an-mlir-program-with-linalg-dialect" title="Link to this heading"><span>¶</span></a></h2>
 <p>Based on the <a class="reference external" href="https://mlir.llvm.org/docs/LangRef/">MLIR</a> syntax, we can define
@@ -210,28 +209,26 @@ linalg program, but we can still use it to invoke the MLIR toolchain.</p>
 more like the NumPy operations, so we do not need to explicitly express the
 for loops inside the program, which may be easier to conduct program transformations
 for specific backends.</p>
-<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="n">test_mlir_program</span> <span class="o">=</span> <span class="s2">"""</span>
-<span class="s2">func.func @matmul(%A: memref&lt;32x32xi32&gt;, %B: memref&lt;32x32xi32&gt;) -&gt; memref&lt;32x32xi32&gt; {</span>
-<span class="s2">  %C = memref.alloc() : memref&lt;32x32xi32&gt;</span>
-<span class="s2">  </span><span class="si">%c</span><span class="s2">0_i32 = arith.constant 0 : i32</span>
-<span class="s2">  linalg.fill ins(</span><span class="si">%c</span><span class="s2">0_i32 : i32) outs(%C : memref&lt;32x32xi32&gt;)</span>
-<span class="s2">  linalg.matmul ins(%A, %B: memref&lt;32x32xi32&gt;, memref&lt;32x32xi32&gt;)</span>
-<span class="s2">                outs(%C: memref&lt;32x32xi32&gt;)</span>
-<span class="s2">  return %C: memref&lt;32x32xi32&gt;</span>
-<span class="s2">}</span>
-<span class="s2">"""</span>
-</pre></div>
-</div>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span class="n">test_mlir_program</span> <span class="o">=</span> <span class="s2">&quot;&quot;&quot;</span><span class="s2">
+</span><span class="s2">func.func &#64;matmul(</span><span class="s2">%</span><span class="s2">A: memref&lt;32x32xi32&gt;, </span><span class="s2">%</span><span class="s2">B: memref&lt;32x32xi32&gt;) -&gt; memref&lt;32x32xi32&gt; </span><span class="s2">{</span><span class="s2">
+</span><span class="s2">  </span><span class="s2">%</span><span class="s2">C = memref.alloc() : memref&lt;32x32xi32&gt;</span><span class="s2">
+</span><span class="s2">  </span><span class="si">%c</span><span class="s2">0_i32 = arith.constant 0 : i32</span><span class="s2">
+</span><span class="s2">  linalg.fill ins(</span><span class="si">%c</span><span class="s2">0_i32 : i32) outs(</span><span class="s2">%</span><span class="s2">C : memref&lt;32x32xi32&gt;)</span><span class="s2">
+</span><span class="s2">  linalg.matmul ins(</span><span class="s2">%</span><span class="s2">A, </span><span class="s2">%</span><span class="s2">B: memref&lt;32x32xi32&gt;, memref&lt;32x32xi32&gt;)</span><span class="s2">
+</span><span class="s2">                outs(</span><span class="s2">%</span><span class="s2">C: memref&lt;32x32xi32&gt;)</span><span class="s2">
+</span><span class="s2">  return </span><span class="s2">%</span><span class="s2">C: memref&lt;32x32xi32&gt;</span><span class="s2">
+</span><span class="s2">}</span><span class="s2">
+</span><span class="s2">&quot;&quot;&quot;</span><span class="w">
+</span></pre></div></div>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
 <p>For more linalg examples, please refer to the <a class="reference external" href="https://github.com/llvm/llvm-project/tree/main/mlir/test/Dialect/Linalg">linalg test suite</a>.</p>
 </div>
 <p>We wrap the MLIR parser in allo, so we can directly invoke it to parse the MLIR
 program.</p>
-<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="n">mod</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">invoke_mlir_parser</span><span class="p">(</span><span class="n">test_mlir_program</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">mod</span><span class="p">)</span>
-</pre></div>
-</div>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span class="n">mod</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">invoke_mlir_parser</span><span class="p">(</span><span class="n">test_mlir_program</span><span class="p">)</span><span class="w">
+</span><span class="nb">print</span><span class="p">(</span><span class="n">mod</span><span class="p">)</span><span class="w">
+</span></pre></div></div>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>module {
   func.func @matmul(%arg0: memref&lt;32x32xi32&gt;, %arg1: memref&lt;32x32xi32&gt;) -&gt; memref&lt;32x32xi32&gt; {
     %alloc = memref.alloc() : memref&lt;32x32xi32&gt;
@@ -246,27 +243,25 @@ program.</p>
 <p>The above result should be exactly the same as what we defined in the MLIR program,
 meaning the MLIR program is valid. Otherwise, for example, if omit the return value
 of <code class="docutils literal notranslate"><span class="pre">C</span></code>, you can see the following error message:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">loc</span><span class="p">(</span><span class="s2">"-"</span><span class="p">:</span><span class="mi">8</span><span class="p">:</span><span class="mi">3</span><span class="p">):</span> <span class="n">error</span><span class="p">:</span> <span class="s1">'func.return'</span> <span class="n">op</span> <span class="n">has</span> <span class="mi">0</span> <span class="n">operands</span><span class="p">,</span> <span class="n">but</span> <span class="n">enclosing</span> <span class="n">function</span> <span class="p">(</span><span class="nd">@matmul</span><span class="p">)</span> <span class="n">returns</span> <span class="mi">1</span>
-<span class="n">Traceback</span> <span class="p">(</span><span class="n">most</span> <span class="n">recent</span> <span class="n">call</span> <span class="n">last</span><span class="p">):</span>
-  <span class="n">File</span> <span class="s2">"tutorials/developer_02_mlir.py"</span><span class="p">,</span> <span class="n">line</span> <span class="mi">47</span><span class="p">,</span> <span class="ow">in</span> <span class="o">&lt;</span><span class="n">module</span><span class="o">&gt;</span>
-    <span class="n">mod</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">invoke_mlir_parser</span><span class="p">(</span><span class="n">test_mlir_program</span><span class="p">)</span>
-  <span class="n">File</span> <span class="s2">"/scratch/users/hc676/allo/allo/module.py"</span><span class="p">,</span> <span class="n">line</span> <span class="mi">33</span><span class="p">,</span> <span class="ow">in</span> <span class="n">invoke_mlir_parser</span>
-    <span class="n">module</span> <span class="o">=</span> <span class="n">Module</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">mod</span><span class="p">),</span> <span class="n">ctx</span><span class="p">)</span>
-<span class="ne">ValueError</span><span class="p">:</span> <span class="n">Unable</span> <span class="n">to</span> <span class="n">parse</span> <span class="n">module</span> <span class="n">assembly</span> <span class="p">(</span><span class="n">see</span> <span class="n">diagnostics</span><span class="p">)</span>
-</pre></div>
-</div>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span class="n">loc</span><span class="p">(</span><span class="s2">&quot;</span><span class="s2">-</span><span class="s2">&quot;</span><span class="p">:</span><span class="mi">8</span><span class="p">:</span><span class="mi">3</span><span class="p">)</span><span class="p">:</span> <span class="n">error</span><span class="p">:</span> <span class="s1">'</span><span class="s1">func.return</span><span class="s1">'</span> <span class="n">op</span> <span class="n">has</span> <span class="mi">0</span> <span class="n">operands</span><span class="p">,</span> <span class="n">but</span> <span class="n">enclosing</span> <span class="n">function</span> <span class="p">(</span><span class="nd">&#64;matmul</span><span class="p">)</span> <span class="n">returns</span> <span class="mi">1</span><span class="w">
+</span><span class="n">Traceback</span> <span class="p">(</span><span class="n">most</span> <span class="n">recent</span> <span class="n">call</span> <span class="n">last</span><span class="p">)</span><span class="p">:</span><span class="w">
+</span>  <span class="n">File</span> <span class="s2">&quot;</span><span class="s2">tutorials/developer_02_mlir.py</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">line</span> <span class="mi">47</span><span class="p">,</span> <span class="ow">in</span> <span class="o">&lt;</span><span class="n">module</span><span class="o">&gt;</span><span class="w">
+</span>    <span class="n">mod</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">invoke_mlir_parser</span><span class="p">(</span><span class="n">test_mlir_program</span><span class="p">)</span><span class="w">
+</span>  <span class="n">File</span> <span class="s2">&quot;</span><span class="s2">/scratch/users/hc676/allo/allo/module.py</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">line</span> <span class="mi">33</span><span class="p">,</span> <span class="ow">in</span> <span class="n">invoke_mlir_parser</span><span class="w">
+</span>    <span class="n">module</span> <span class="o">=</span> <span class="n">Module</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">mod</span><span class="p">)</span><span class="p">,</span> <span class="n">ctx</span><span class="p">)</span><span class="w">
+</span><span class="ne">ValueError</span><span class="p">:</span> <span class="n">Unable</span> <span class="n">to</span> <span class="n">parse</span> <span class="n">module</span> <span class="n">assembly</span> <span class="p">(</span><span class="n">see</span> <span class="n">diagnostics</span><span class="p">)</span><span class="w">
+</span></pre></div></div>
 <p>The first line gives the error message and the exact location (line 8, column 3) of the error.
 Then we know that there is a problem in the return value of our MLIR code, which helps us debug the program.</p>
 <p>To further check what causes the error, we can print out the generic form of the MLIR program.</p>
-<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="n">mod</span><span class="o">.</span><span class="n">operation</span><span class="o">.</span><span class="n">print</span><span class="p">(</span>
-    <span class="n">large_elements_limit</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
-    <span class="n">enable_debug_info</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-    <span class="n">pretty_debug_info</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-    <span class="n">print_generic_op_form</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-    <span class="n">use_local_scope</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-<span class="p">)</span>
-</pre></div>
-</div>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span class="n">mod</span><span class="o">.</span><span class="n">operation</span><span class="o">.</span><span class="n">print</span><span class="p">(</span><span class="w">
+</span>    <span class="n">large_elements_limit</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span><span class="w">
+</span>    <span class="n">enable_debug_info</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span><span class="w">
+</span>    <span class="n">pretty_debug_info</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span><span class="w">
+</span>    <span class="n">print_generic_op_form</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span><span class="w">
+</span>    <span class="n">use_local_scope</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span><span class="w">
+</span><span class="p">)</span><span class="w">
+</span></pre></div></div>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>"builtin.module"() ({
   "func.func"() &lt;{function_type = (memref&lt;32x32xi32&gt;, memref&lt;32x32xi32&gt;) -&gt; memref&lt;32x32xi32&gt;, sym_name = "matmul"}&gt; ({
   ^bb0(%arg0: memref&lt;32x32xi32&gt; -:2:19, %arg1: memref&lt;32x32xi32&gt; -:2:42):
@@ -299,23 +294,21 @@ This is done inside the <code class="docutils literal notranslate"><span class="
 However, we only include several lowering passes from commonly used dialects in the module,
 so not all the programs can be directly lowered. You will see some examples that cannot be lowered later.</p>
 </div>
-<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="n">llvm_mod</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">LLVMModule</span><span class="p">(</span><span class="n">mod</span><span class="p">,</span> <span class="s2">"matmul"</span><span class="p">)</span>
-<a href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">np_A</span></a> <span class="o">=</span> <a href="https://numpy.org/doc/stable/reference/random/generated/numpy.random.randint.html#numpy.random.randint" title="numpy.random.randint" class="sphx-glr-backref-module-numpy-random sphx-glr-backref-type-py-function"><span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">randint</span></a><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="p">(</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><a href="https://numpy.org/doc/stable/reference/arrays.scalars.html#numpy.int32" title="numpy.int32" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-attribute"><span class="n">np</span><span class="o">.</span><span class="n">int32</span></a><span class="p">)</span>
-<a href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">np_B</span></a> <span class="o">=</span> <a href="https://numpy.org/doc/stable/reference/random/generated/numpy.random.randint.html#numpy.random.randint" title="numpy.random.randint" class="sphx-glr-backref-module-numpy-random sphx-glr-backref-type-py-function"><span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">randint</span></a><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="p">(</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><a href="https://numpy.org/doc/stable/reference/arrays.scalars.html#numpy.int32" title="numpy.int32" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-attribute"><span class="n">np</span><span class="o">.</span><span class="n">int32</span></a><span class="p">)</span>
-<a href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">allo_C</span></a> <span class="o">=</span> <span class="n">llvm_mod</span><span class="p">(</span><a href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">np_A</span></a><span class="p">,</span> <a href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">np_B</span></a><span class="p">)</span>
-<a href="https://numpy.org/doc/stable/reference/generated/numpy.testing.assert_array_equal.html#numpy.testing.assert_array_equal" title="numpy.testing.assert_array_equal" class="sphx-glr-backref-module-numpy-testing sphx-glr-backref-type-py-function"><span class="n">np</span><span class="o">.</span><span class="n">testing</span><span class="o">.</span><span class="n">assert_array_equal</span></a><span class="p">(</span><a href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">allo_C</span></a><span class="p">,</span> <a href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">np_A</span></a> <span class="o">@</span> <a href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">np_B</span></a><span class="p">)</span>
-</pre></div>
-</div>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span class="n">llvm_mod</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">LLVMModule</span><span class="p">(</span><span class="n">mod</span><span class="p">,</span> <span class="s2">&quot;</span><span class="s2">matmul</span><span class="s2">&quot;</span><span class="p">)</span><span class="w">
+</span><a class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray"><span class="n">np_A</span></a> <span class="o">=</span> <a class="sphx-glr-backref-module-numpy-random sphx-glr-backref-type-py-function reference external" href="https://numpy.org/doc/stable/reference/random/generated/numpy.random.randint.html#numpy.random.randint" title="numpy.random.randint"><span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">randint</span></a><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="p">(</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">)</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><a class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-attribute reference external" href="https://numpy.org/doc/stable/reference/arrays.scalars.html#numpy.int32" title="numpy.int32"><span class="n">np</span><span class="o">.</span><span class="n">int32</span></a><span class="p">)</span><span class="w">
+</span><a class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray"><span class="n">np_B</span></a> <span class="o">=</span> <a class="sphx-glr-backref-module-numpy-random sphx-glr-backref-type-py-function reference external" href="https://numpy.org/doc/stable/reference/random/generated/numpy.random.randint.html#numpy.random.randint" title="numpy.random.randint"><span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">randint</span></a><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="p">(</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">)</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><a class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-attribute reference external" href="https://numpy.org/doc/stable/reference/arrays.scalars.html#numpy.int32" title="numpy.int32"><span class="n">np</span><span class="o">.</span><span class="n">int32</span></a><span class="p">)</span><span class="w">
+</span><a class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray"><span class="n">allo_C</span></a> <span class="o">=</span> <span class="n">llvm_mod</span><span class="p">(</span><a class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray"><span class="n">np_A</span></a><span class="p">,</span> <a class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray"><span class="n">np_B</span></a><span class="p">)</span><span class="w">
+</span><a class="sphx-glr-backref-module-numpy-testing sphx-glr-backref-type-py-function reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.testing.assert_array_equal.html#numpy.testing.assert_array_equal" title="numpy.testing.assert_array_equal"><span class="n">np</span><span class="o">.</span><span class="n">testing</span><span class="o">.</span><span class="n">assert_array_equal</span></a><span class="p">(</span><a class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray"><span class="n">allo_C</span></a><span class="p">,</span> <a class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray"><span class="n">np_A</span></a> <span class="o">&#64;</span> <a class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray"><span class="n">np_B</span></a><span class="p">)</span><span class="w">
+</span></pre></div></div>
 <p>We verify the correctness of our handwritten MLIR program, but we definitely don’t want users to write
 these tedious IR code by hand, so we need to think about how to raise the abstraction level and let
 users write programs in a more friendly way. One thing we can do is to provide high-level programming
 abstractions like NumPy that has lots of tensor-based operations instead of elementwise ones.
 Therefore, the frontend interface may look like this:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">kernel</span><span class="p">(</span><span class="n">A</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">],</span> <span class="n">B</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">]:</span>
-    <span class="n">C</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">matmul</span><span class="p">(</span><span class="n">A</span><span class="p">,</span> <span class="n">B</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">C</span>
-</pre></div>
-</div>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span class="k">def</span><span class="w"> </span><span class="nf">kernel</span><span class="p">(</span><span class="n">A</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">]</span><span class="p">,</span> <span class="n">B</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">]</span><span class="p">)</span> <span class="o">-</span><span class="o">&gt;</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">]</span><span class="p">:</span><span class="w">
+</span>    <span class="n">C</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">matmul</span><span class="p">(</span><span class="n">A</span><span class="p">,</span> <span class="n">B</span><span class="p">)</span><span class="w">
+</span>    <span class="k">return</span> <span class="n">C</span><span class="w">
+</span></pre></div></div>
 <p>Later, we want to figure out a way to lower this high-level program to the MLIR program we defined above.</p>
 </section>
 <section id="define-an-mlir-program-with-tensor-dialect">
@@ -326,27 +319,25 @@ However, as users already write tensor programs, we should generate tensor inter
 Thanks to the <a class="reference external" href="https://mlir.llvm.org/docs/Dialects/TensorOps">tensor dialect</a>, we can
 easily leverage it to conduct slicing, reshaping, and other tensor operations. Following
 shows an example of how to use the tensor dialect to define a matmul program:</p>
-<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="n">tensor_program</span> <span class="o">=</span> <span class="s2">"""</span>
-<span class="s2">func.func @matmul(%A: tensor&lt;32x32xi32&gt;, %B: tensor&lt;32x32xi32&gt;) -&gt; tensor&lt;32x32xi32&gt; {</span>
-<span class="s2">  %C = tensor.generate {</span>
-<span class="s2">      ^bb0(</span><span class="si">%i</span><span class="s2"> : index, %j : index):</span>
-<span class="s2">          </span><span class="si">%c</span><span class="s2">0_i32 = arith.constant 0 : i32</span>
-<span class="s2">          tensor.yield </span><span class="si">%c</span><span class="s2">0_i32 : i32</span>
-<span class="s2">  } : tensor&lt;32x32xi32&gt;</span>
-<span class="s2">  %1 = linalg.matmul ins(%A, %B: tensor&lt;32x32xi32&gt;, tensor&lt;32x32xi32&gt;)</span>
-<span class="s2">                outs(%C: tensor&lt;32x32xi32&gt;) -&gt; tensor&lt;32x32xi32&gt;</span>
-<span class="s2">  return %1 : tensor&lt;32x32xi32&gt;</span>
-<span class="s2">}</span>
-<span class="s2">"""</span>
-</pre></div>
-</div>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span class="n">tensor_program</span> <span class="o">=</span> <span class="s2">&quot;&quot;&quot;</span><span class="s2">
+</span><span class="s2">func.func &#64;matmul(</span><span class="s2">%</span><span class="s2">A: tensor&lt;32x32xi32&gt;, </span><span class="s2">%</span><span class="s2">B: tensor&lt;32x32xi32&gt;) -&gt; tensor&lt;32x32xi32&gt; </span><span class="s2">{</span><span class="s2">
+</span><span class="s2">  </span><span class="s2">%</span><span class="s2">C = tensor.generate </span><span class="s2">{</span><span class="s2">
+</span><span class="s2">      ^bb0(</span><span class="si">%i</span><span class="s2"> : index, </span><span class="s2">%</span><span class="s2">j : index):</span><span class="s2">
+</span><span class="s2">          </span><span class="si">%c</span><span class="s2">0_i32 = arith.constant 0 : i32</span><span class="s2">
+</span><span class="s2">          tensor.yield </span><span class="si">%c</span><span class="s2">0_i32 : i32</span><span class="s2">
+</span><span class="s2">  } : tensor&lt;32x32xi32&gt;</span><span class="s2">
+</span><span class="s2">  </span><span class="s2">%</span><span class="s2">1 = linalg.matmul ins(</span><span class="s2">%</span><span class="s2">A, </span><span class="s2">%</span><span class="s2">B: tensor&lt;32x32xi32&gt;, tensor&lt;32x32xi32&gt;)</span><span class="s2">
+</span><span class="s2">                outs(</span><span class="s2">%</span><span class="s2">C: tensor&lt;32x32xi32&gt;) -&gt; tensor&lt;32x32xi32&gt;</span><span class="s2">
+</span><span class="s2">  return </span><span class="s2">%</span><span class="s2">1 : tensor&lt;32x32xi32&gt;</span><span class="s2">
+</span><span class="s2">}</span><span class="s2">
+</span><span class="s2">&quot;&quot;&quot;</span><span class="w">
+</span></pre></div></div>
 <p>It is very similar to the original one, but the main difference is that we use <code class="docutils literal notranslate"><span class="pre">tensor</span></code>
 instead of <code class="docutils literal notranslate"><span class="pre">memref</span></code> to define the input and output of the operations.
 Again, we can invoke the MLIR parser to check if the program is valid.</p>
-<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="n">mod</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">invoke_mlir_parser</span><span class="p">(</span><span class="n">tensor_program</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">mod</span><span class="p">)</span>
-</pre></div>
-</div>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span class="n">mod</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">invoke_mlir_parser</span><span class="p">(</span><span class="n">tensor_program</span><span class="p">)</span><span class="w">
+</span><span class="nb">print</span><span class="p">(</span><span class="n">mod</span><span class="p">)</span><span class="w">
+</span></pre></div></div>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>module {
   func.func @matmul(%arg0: tensor&lt;32x32xi32&gt;, %arg1: tensor&lt;32x32xi32&gt;) -&gt; tensor&lt;32x32xi32&gt; {
     %generated = tensor.generate  {
@@ -362,15 +353,13 @@ Again, we can invoke the MLIR parser to check if the program is valid.</p>
 </div>
 <p>It outputs without any error, so we know that the program is valid.
 And we can also invoke the LLVM execution engine trying to execute the program.</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">llvm_mod</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">LLVMModule</span><span class="p">(</span><span class="n">mod</span><span class="p">,</span> <span class="s2">"matmul"</span><span class="p">)</span>
-</pre></div>
-</div>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span class="n">llvm_mod</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">LLVMModule</span><span class="p">(</span><span class="n">mod</span><span class="p">,</span> <span class="s2">&quot;</span><span class="s2">matmul</span><span class="s2">&quot;</span><span class="p">)</span><span class="w">
+</span></pre></div></div>
 <p>You will see the following error message:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>python3: llvm-project/mlir/lib/Dialect/Linalg/Transforms/Loops.cpp:209:
-         mlir::FailureOr&lt;llvm::SmallVector&lt;mlir::Operation*, 4&gt; &gt; linalgOpToLoopsImpl(mlir::PatternRewriter&amp;, mlir::linalg::LinalgOp)
-         [with LoopTy = mlir::AffineForOp]: Assertion `linalgOp.hasBufferSemantics() &amp;&amp; "expected linalg op with buffer semantics"' failed.
-</pre></div>
-</div>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span class="n">python3</span><span class="p">:</span> <span class="n">llvm</span><span class="o">-</span><span class="n">project</span><span class="o">/</span><span class="n">mlir</span><span class="o">/</span><span class="n">lib</span><span class="o">/</span><span class="n">Dialect</span><span class="o">/</span><span class="n">Linalg</span><span class="o">/</span><span class="n">Transforms</span><span class="o">/</span><span class="n">Loops</span><span class="o">.</span><span class="n">cpp</span><span class="p">:</span><span class="mi">209</span><span class="p">:</span><span class="w">
+</span>         <span class="n">mlir</span><span class="p">:</span><span class="p">:</span><span class="n">FailureOr</span><span class="o">&lt;</span><span class="n">llvm</span><span class="p">:</span><span class="p">:</span><span class="n">SmallVector</span><span class="o">&lt;</span><span class="n">mlir</span><span class="p">:</span><span class="p">:</span><span class="n">Operation</span><span class="o">*</span><span class="p">,</span> <span class="mi">4</span><span class="o">&gt;</span> <span class="o">&gt;</span> <span class="n">linalgOpToLoopsImpl</span><span class="p">(</span><span class="n">mlir</span><span class="p">:</span><span class="p">:</span><span class="n">PatternRewriter</span><span class="o">&amp;</span><span class="p">,</span> <span class="n">mlir</span><span class="p">:</span><span class="p">:</span><span class="n">linalg</span><span class="p">:</span><span class="p">:</span><span class="n">LinalgOp</span><span class="p">)</span><span class="w">
+</span>         <span class="p">[</span><span class="k">with</span> <span class="n">LoopTy</span> <span class="o">=</span> <span class="n">mlir</span><span class="p">:</span><span class="p">:</span><span class="n">AffineForOp</span><span class="p">]</span><span class="p">:</span> <span class="n">Assertion</span> <span class="err">`</span><span class="n">linalgOp</span><span class="o">.</span><span class="n">hasBufferSemantics</span><span class="p">(</span><span class="p">)</span> <span class="o">&amp;</span><span class="o">&amp;</span> <span class="s2">&quot;</span><span class="s2">expected linalg op with buffer semantics</span><span class="s2">&quot;</span><span class="s1">'</span><span class="s1"> failed.</span><span class="w">
+</span></pre></div></div>
 <p>Unfortunately, the program cannot be lowered to LLVM dialect, because we have not added
 the lowering pass from tensor dialect to LLVM dialect, and that is something we need to do next.</p>
 <p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 0.050 seconds)</p>

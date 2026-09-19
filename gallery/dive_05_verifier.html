@@ -10,7 +10,7 @@
     <link rel="stylesheet" type="text/css" href="../_static/basic_mod.css?v=9b2032db" />
     <link rel="stylesheet" type="text/css" href="../_static/graphviz.css?v=4ae1632d" />
     <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
-    <link rel="stylesheet" type="text/css" href="../_static/sg_gallery.css?v=fd6457a4" />
+    <link rel="stylesheet" type="text/css" href="../_static/sg_gallery.css?v=c83e6b79" />
     <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-binder.css?v=f4aeca0c" />
     <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-dataframe.css?v=2082cf3c" />
     <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-rendered-html.css?v=1277b6f3" />
@@ -197,29 +197,26 @@ to download the full example code.</p>
 <p><strong>Author</strong>: Hongzheng Chen (<a class="reference external" href="mailto:hzchen&#37;&#52;&#48;cs&#46;cornell&#46;edu">hzchen<span>&#64;</span>cs<span>&#46;</span>cornell<span>&#46;</span>edu</a>)</p>
 <p>In this tutorial, we demonstrate how to use Allo’s verifier facility to check the equivalence of different scheduling transformations. The verifier ensures that various optimizations applied to the same algorithm do not alter its functional behavior.</p>
 <p>First, we import the necessary packages:</p>
-<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">allo</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">allo.ir.types</span><span class="w"> </span><span class="kn">import</span> <span class="n">float32</span>
-</pre></div>
-</div>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span class="kn">import</span><span class="w"> </span><span class="nn">allo</span><span class="w">
+</span><span class="kn">from</span><span class="w"> </span><span class="nn">allo</span><span class="nn">.</span><span class="nn">ir</span><span class="nn">.</span><span class="nn">types</span><span class="w"> </span><span class="kn">import</span> <span class="n">float32</span><span class="w">
+</span></pre></div></div>
 <section id="create-the-schedule">
 <h2>Create the Schedule<a class="headerlink" href="#create-the-schedule" title="Link to this heading"><span>¶</span></a></h2>
 <p>We define a general matrix multiplication (GEMM) kernel that takes two 32x32 matrices as inputs
 and produces a 32x32 output matrix. The reduction loop is used to accumulate the multiplication results.</p>
-<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">gemm</span><span class="p">(</span><span class="n">A</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">],</span> <span class="n">B</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">float32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">]:</span>
-    <span class="n">C</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
-    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">j</span> <span class="ow">in</span> <span class="n">allo</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">):</span>
-        <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">allo</span><span class="o">.</span><span class="n">reduction</span><span class="p">(</span><span class="mi">32</span><span class="p">):</span>
-            <span class="n">C</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span> <span class="o">+=</span> <span class="n">A</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">k</span><span class="p">]</span> <span class="o">*</span> <span class="n">B</span><span class="p">[</span><span class="n">k</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span>
-    <span class="k">return</span> <span class="n">C</span>
-</pre></div>
-</div>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span class="k">def</span><span class="w"> </span><span class="nf">gemm</span><span class="p">(</span><span class="n">A</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">]</span><span class="p">,</span> <span class="n">B</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">]</span><span class="p">)</span> <span class="o">-</span><span class="o">&gt;</span> <span class="n">float32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">]</span><span class="p">:</span><span class="w">
+</span>    <span class="n">C</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span><span class="w">
+</span>    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">j</span> <span class="ow">in</span> <span class="n">allo</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">)</span><span class="p">:</span><span class="w">
+</span>        <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">allo</span><span class="o">.</span><span class="n">reduction</span><span class="p">(</span><span class="mi">32</span><span class="p">)</span><span class="p">:</span><span class="w">
+</span>            <span class="n">C</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span> <span class="o">+</span><span class="o">=</span> <span class="n">A</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">k</span><span class="p">]</span> <span class="o">*</span> <span class="n">B</span><span class="p">[</span><span class="n">k</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span><span class="w">
+</span>    <span class="k">return</span> <span class="n">C</span><span class="w">
+</span></pre></div></div>
 <p>We create two schedules for the GEMM kernel using different transformations.
 The first schedule, <strong>s1</strong>, applies a loop reordering transformation, while the second schedule, <strong>s2</strong>, applies a buffering transformation on the output tensor.</p>
-<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="n">s1</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">customize</span><span class="p">(</span><span class="n">gemm</span><span class="p">)</span>
-<span class="n">s1</span><span class="o">.</span><span class="n">reorder</span><span class="p">(</span><span class="s2">"gemm:i"</span><span class="p">,</span> <span class="s2">"gemm:j"</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">s1</span><span class="o">.</span><span class="n">module</span><span class="p">)</span>
-</pre></div>
-</div>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><a class="sphx-glr-backref-module-allo-customize sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../api/index.html#allo.customize.Schedule" title="allo.customize.Schedule"><span class="n">s1</span></a> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">customize</span><span class="p">(</span><span class="n">gemm</span><span class="p">)</span><span class="w">
+</span><a class="sphx-glr-backref-module-allo-customize sphx-glr-backref-type-py-method reference internal" href="../api/index.html#allo.customize.Schedule.reorder" title="allo.customize.Schedule.reorder"><span class="n">s1</span><span class="o">.</span><span class="n">reorder</span></a><span class="p">(</span><span class="s2">&quot;</span><span class="s2">gemm:i</span><span class="s2">&quot;</span><span class="p">,</span> <span class="s2">&quot;</span><span class="s2">gemm:j</span><span class="s2">&quot;</span><span class="p">)</span><span class="w">
+</span><span class="nb">print</span><span class="p">(</span><a class="sphx-glr-backref-module-allo-customize sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../api/index.html#allo.customize.Schedule" title="allo.customize.Schedule"><span class="n">s1</span></a><span class="o">.</span><span class="n">module</span><span class="p">)</span><span class="w">
+</span></pre></div></div>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>module {
   func.func @gemm(%arg0: memref&lt;32x32xf32&gt;, %arg1: memref&lt;32x32xf32&gt;) -&gt; memref&lt;32x32xf32&gt; attributes {itypes = "__", otypes = "_"} {
     %c0_i32 = arith.constant 0 : i32
@@ -245,11 +242,10 @@ The first schedule, <strong>s1</strong>, applies a loop reordering transformatio
 </div>
 <p>In the code above, <strong>s1</strong> is customized by reordering the loops corresponding to indices <code class="docutils literal notranslate"><span class="pre">i</span></code> and <code class="docutils literal notranslate"><span class="pre">j</span></code>.
 The printed intermediate representation (IR) shows the effect of this transformation.</p>
-<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="n">s2</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">customize</span><span class="p">(</span><span class="n">gemm</span><span class="p">)</span>
-<span class="n">s2</span><span class="o">.</span><span class="n">buffer_at</span><span class="p">(</span><span class="n">s2</span><span class="o">.</span><span class="n">C</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="s2">"i"</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">s2</span><span class="o">.</span><span class="n">module</span><span class="p">)</span>
-</pre></div>
-</div>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><a class="sphx-glr-backref-module-allo-customize sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../api/index.html#allo.customize.Schedule" title="allo.customize.Schedule"><span class="n">s2</span></a> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">customize</span><span class="p">(</span><span class="n">gemm</span><span class="p">)</span><span class="w">
+</span><a class="sphx-glr-backref-module-allo-customize sphx-glr-backref-type-py-method reference internal" href="../api/index.html#allo.customize.Schedule.buffer_at" title="allo.customize.Schedule.buffer_at"><span class="n">s2</span><span class="o">.</span><span class="n">buffer_at</span></a><span class="p">(</span><a class="sphx-glr-backref-module-allo-customize sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../api/index.html#allo.customize.Schedule" title="allo.customize.Schedule"><span class="n">s2</span></a><span class="o">.</span><span class="n">C</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="s2">&quot;</span><span class="s2">i</span><span class="s2">&quot;</span><span class="p">)</span><span class="w">
+</span><span class="nb">print</span><span class="p">(</span><a class="sphx-glr-backref-module-allo-customize sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../api/index.html#allo.customize.Schedule" title="allo.customize.Schedule"><span class="n">s2</span></a><span class="o">.</span><span class="n">module</span><span class="p">)</span><span class="w">
+</span></pre></div></div>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>module {
   func.func @gemm(%arg0: memref&lt;32x32xf32&gt;, %arg1: memref&lt;32x32xf32&gt;) -&gt; memref&lt;32x32xf32&gt; attributes {itypes = "__", otypes = "_"} {
     %c0_i32 = arith.constant 0 : i32
@@ -291,11 +287,10 @@ Although the schedules differ in structure, they should implement equivalent fun
 <p>Next, we use the verifier facility to check whether the two schedules, <strong>s1</strong> and <strong>s2</strong>,
 are equivalent. The <code class="docutils literal notranslate"><span class="pre">allo.verify</span></code> function compares the schedules and returns a truthy
 value if they are functionally identical.</p>
-<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="n">verifier</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">verify</span><span class="p">(</span><span class="n">s1</span><span class="p">,</span> <span class="n">s2</span><span class="p">)</span>
-<span class="k">assert</span> <span class="n">verifier</span><span class="p">,</span> <span class="s2">"Failed to verify the equivalence of two schedules!"</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">"s1 and s2 are equivalent!"</span><span class="p">)</span>
-</pre></div>
-</div>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span class="n">verifier</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">verify</span><span class="p">(</span><a class="sphx-glr-backref-module-allo-customize sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../api/index.html#allo.customize.Schedule" title="allo.customize.Schedule"><span class="n">s1</span></a><span class="p">,</span> <a class="sphx-glr-backref-module-allo-customize sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../api/index.html#allo.customize.Schedule" title="allo.customize.Schedule"><span class="n">s2</span></a><span class="p">)</span><span class="w">
+</span><span class="k">assert</span> <span class="n">verifier</span><span class="p">,</span> <span class="s2">&quot;</span><span class="s2">Failed to verify the equivalence of two schedules!</span><span class="s2">&quot;</span><span class="w">
+</span><span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="s2">s1 and s2 are equivalent!</span><span class="s2">&quot;</span><span class="p">)</span><span class="w">
+</span></pre></div></div>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>s1 and s2 are equivalent!
 </pre></div>
 </div>
@@ -307,21 +302,20 @@ value if they are functionally identical.</p>
 which incorrectly implements the multiplication by overwriting the output instead of
 accumulating the results. The schedule derived from <strong>gemm_wrong</strong> (named <strong>s3</strong>)
 should not be equivalent to <strong>s1</strong>.</p>
-<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">gemm_wrong</span><span class="p">(</span><span class="n">A</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">],</span> <span class="n">B</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">float32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">]:</span>
-    <span class="n">C</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
-    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">j</span> <span class="ow">in</span> <span class="n">allo</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">):</span>
-        <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">allo</span><span class="o">.</span><span class="n">reduction</span><span class="p">(</span><span class="mi">32</span><span class="p">):</span>
-            <span class="n">C</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span> <span class="o">=</span> <span class="n">A</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">k</span><span class="p">]</span> <span class="o">*</span> <span class="n">B</span><span class="p">[</span><span class="n">k</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span>
-    <span class="k">return</span> <span class="n">C</span>
-
-
-<span class="n">s3</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">customize</span><span class="p">(</span><span class="n">gemm_wrong</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">s3</span><span class="o">.</span><span class="n">module</span><span class="p">)</span>
-<span class="n">verifier</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">verify</span><span class="p">(</span><span class="n">s1</span><span class="p">,</span> <span class="n">s3</span><span class="p">)</span>
-<span class="k">assert</span> <span class="ow">not</span> <span class="n">verifier</span><span class="p">,</span> <span class="s2">"Failed to verify the equivalence of two schedules!"</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">"s1 and s3 are not equivalent!"</span><span class="p">)</span>
-</pre></div>
-</div>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span class="k">def</span><span class="w"> </span><span class="nf">gemm_wrong</span><span class="p">(</span><span class="n">A</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">]</span><span class="p">,</span> <span class="n">B</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">]</span><span class="p">)</span> <span class="o">-</span><span class="o">&gt;</span> <span class="n">float32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">]</span><span class="p">:</span><span class="w">
+</span>    <span class="n">C</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span><span class="w">
+</span>    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">j</span> <span class="ow">in</span> <span class="n">allo</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">)</span><span class="p">:</span><span class="w">
+</span>        <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">allo</span><span class="o">.</span><span class="n">reduction</span><span class="p">(</span><span class="mi">32</span><span class="p">)</span><span class="p">:</span><span class="w">
+</span>            <span class="n">C</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span> <span class="o">=</span> <span class="n">A</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">k</span><span class="p">]</span> <span class="o">*</span> <span class="n">B</span><span class="p">[</span><span class="n">k</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span><span class="w">
+</span>    <span class="k">return</span> <span class="n">C</span><span class="w">
+</span><span class="w">
+</span><span class="w">
+</span><a class="sphx-glr-backref-module-allo-customize sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../api/index.html#allo.customize.Schedule" title="allo.customize.Schedule"><span class="n">s3</span></a> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">customize</span><span class="p">(</span><span class="n">gemm_wrong</span><span class="p">)</span><span class="w">
+</span><span class="nb">print</span><span class="p">(</span><a class="sphx-glr-backref-module-allo-customize sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../api/index.html#allo.customize.Schedule" title="allo.customize.Schedule"><span class="n">s3</span></a><span class="o">.</span><span class="n">module</span><span class="p">)</span><span class="w">
+</span><span class="n">verifier</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">verify</span><span class="p">(</span><a class="sphx-glr-backref-module-allo-customize sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../api/index.html#allo.customize.Schedule" title="allo.customize.Schedule"><span class="n">s1</span></a><span class="p">,</span> <a class="sphx-glr-backref-module-allo-customize sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../api/index.html#allo.customize.Schedule" title="allo.customize.Schedule"><span class="n">s3</span></a><span class="p">)</span><span class="w">
+</span><span class="k">assert</span> <span class="ow">not</span> <span class="n">verifier</span><span class="p">,</span> <span class="s2">&quot;</span><span class="s2">Failed to verify the equivalence of two schedules!</span><span class="s2">&quot;</span><span class="w">
+</span><span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="s2">s1 and s3 are not equivalent!</span><span class="s2">&quot;</span><span class="p">)</span><span class="w">
+</span></pre></div></div>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>module {
   func.func @gemm_wrong(%arg0: memref&lt;32x32xf32&gt;, %arg1: memref&lt;32x32xf32&gt;) -&gt; memref&lt;32x32xf32&gt; attributes {itypes = "__", otypes = "_"} {
     %c0_i32 = arith.constant 0 : i32
@@ -434,7 +428,7 @@ thus confirming that <strong>s1</strong> and <strong>s3</strong> are not equival
 scheduling transformations yield equivalent computational behavior. By verifying the equivalence
 of various schedules, you can confidently apply optimizations without compromising the
 functional correctness of your algorithms.</p>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 1.976 seconds)</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 2.008 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-gallery-dive-05-verifier-py">
 <div class="sphx-glr-download sphx-glr-download-jupyter docutils container">
 <p><a class="reference download internal" download="" href="../_downloads/d49a7fad4fb3589abd0d5cb43befd164/dive_05_verifier.ipynb"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Jupyter</span> <span class="pre">notebook:</span> <span class="pre">dive_05_verifier.ipynb</span></code></a></p>
