@@ -5,6 +5,12 @@
 from .. import dsl
 from .systolic import systolic
 
+# BEGIN NATIVE INT8 QUANTIZATION: ADDED integer scalar types
+# pylint: disable=consider-using-min-builtin,consider-using-max-builtin
+from ..ir.types import float32, int16, int32, int64
+
+# END NATIVE INT8 QUANTIZATION: ADDED integer scalar types
+
 
 def linear2d[
     TyX, TyW, TyO, M, N, K
@@ -454,3 +460,908 @@ def concat[
 def schedule_concat(s):
     s.pipeline("concat:c")
     return s
+
+
+# BEGIN NATIVE INT8 QUANTIZATION: ADDED rank-2/rank-3 integer kernels
+
+# These kernels are separate from the existing floating-point kernels above.
+# The widened TyAcc parameter is instantiated as int64 by TorchBuilder.
+
+
+def roundeven(value: float32) -> int32:
+    """Round to nearest integer, resolving exact ties toward the even value."""
+
+    truncated: int32 = int(value)
+    fraction: float32 = value - float(truncated)
+    if fraction < 0.0:
+        fraction = -fraction
+    result: int32 = truncated
+    if fraction > 0.5 or (fraction == 0.5 and (truncated & 1) != 0):
+        if value < 0.0:
+            result -= 1
+        else:
+            result += 1
+    return result
+
+
+def quantize2d[
+    TyIn, TyOut, H, W
+](
+    X: "TyIn[H, W]",
+    scale: float32,
+    zero_point: int32,
+    qmin: int32,
+    qmax: int32,
+) -> "TyOut[H, W]":
+    Z: TyOut[H, W]
+    for h, w in dsl.grid(H, W):
+        value: int32 = roundeven(X[h, w] / scale) + zero_point
+        value = max(qmin, min(qmax, value))
+        Z[h, w] = value
+    return Z
+
+
+def quantize3d[
+    TyIn, TyOut, B, L, D
+](
+    X: "TyIn[B, L, D]",
+    scale: float32,
+    zero_point: int32,
+    qmin: int32,
+    qmax: int32,
+) -> "TyOut[B, L, D]":
+    Z: TyOut[B, L, D]
+    for b, l, d in dsl.grid(B, L, D):
+        value: int32 = roundeven(X[b, l, d] / scale) + zero_point
+        value = max(qmin, min(qmax, value))
+        Z[b, l, d] = value
+    return Z
+
+
+def dequantize2d[
+    TyIn, TyOut, H, W
+](X: "TyIn[H, W]", scale: float32, zero_point: int32,) -> "TyOut[H, W]":
+    Z: TyOut[H, W]
+    for h, w in dsl.grid(H, W):
+        centered: int32 = X[h, w] - zero_point
+        Z[h, w] = centered * scale
+    return Z
+
+
+def dequantize3d[
+    TyIn, TyOut, B, L, D
+](X: "TyIn[B, L, D]", scale: float32, zero_point: int32,) -> "TyOut[B, L, D]":
+    Z: TyOut[B, L, D]
+    for b, l, d in dsl.grid(B, L, D):
+        centered: int32 = X[b, l, d] - zero_point
+        Z[b, l, d] = centered * scale
+    return Z
+
+
+def requantize2d[
+    TyIn, TyAcc, TyOut, H, W
+](
+    X: "TyIn[H, W]",
+    multiplier: "TyAcc",
+    shift: int32,
+    input_zero_point: int32,
+    output_zero_point: int32,
+    qmin: int32,
+    qmax: int32,
+) -> "TyOut[H, W]":
+    Z: TyOut[H, W]
+    for h, w in dsl.grid(H, W):
+        centered: TyAcc = X[h, w] - input_zero_point
+        scaled: TyAcc = centered * multiplier
+        rounded: TyAcc = scaled
+        if shift > 0:
+            magnitude: TyAcc = scaled
+            if magnitude < 0:
+                magnitude = -magnitude
+            quotient: TyAcc = magnitude >> shift
+            remainder: TyAcc = magnitude - (quotient << shift)
+            one: TyAcc = 1
+            halfway: TyAcc = one << (shift - 1)
+            increment: TyAcc = 0
+            if remainder > halfway:
+                increment = 1
+            if remainder == halfway and (quotient & 1) == 1:
+                increment = 1
+            rounded = quotient + increment
+            if scaled < 0:
+                rounded = -rounded
+        if shift < 0:
+            rounded = scaled << (0 - shift)
+        quantized: TyAcc = rounded + output_zero_point
+        if quantized < qmin:
+            quantized = qmin
+        if quantized > qmax:
+            quantized = qmax
+        Z[h, w] = quantized
+    return Z
+
+
+def requantize3d[
+    TyIn, TyAcc, TyOut, B, L, D
+](
+    X: "TyIn[B, L, D]",
+    multiplier: "TyAcc",
+    shift: int32,
+    input_zero_point: int32,
+    output_zero_point: int32,
+    qmin: int32,
+    qmax: int32,
+) -> "TyOut[B, L, D]":
+    Z: TyOut[B, L, D]
+    for b, l, d in dsl.grid(B, L, D):
+        centered: TyAcc = X[b, l, d] - input_zero_point
+        scaled: TyAcc = centered * multiplier
+        rounded: TyAcc = scaled
+        if shift > 0:
+            magnitude: TyAcc = scaled
+            if magnitude < 0:
+                magnitude = -magnitude
+            quotient: TyAcc = magnitude >> shift
+            remainder: TyAcc = magnitude - (quotient << shift)
+            one: TyAcc = 1
+            halfway: TyAcc = one << (shift - 1)
+            increment: TyAcc = 0
+            if remainder > halfway:
+                increment = 1
+            if remainder == halfway and (quotient & 1) == 1:
+                increment = 1
+            rounded = quotient + increment
+            if scaled < 0:
+                rounded = -rounded
+        if shift < 0:
+            rounded = scaled << (0 - shift)
+        quantized: TyAcc = rounded + output_zero_point
+        if quantized < qmin:
+            quantized = qmin
+        if quantized > qmax:
+            quantized = qmax
+        Z[b, l, d] = quantized
+    return Z
+
+# BEGIN NATIVE INT8 QUANTIZATION: ADDED per-output-channel requantization
+
+
+def requantize_per_channel2d[
+    TyIn, TyAcc, TyOut, H, W
+](
+    X: "TyIn[H, W]",
+    multipliers: "TyAcc[W]",
+    shifts: "int32[W]",
+    input_zero_point: int32,
+    output_zero_point: int32,
+    qmin: int32,
+    qmax: int32,
+) -> "TyOut[H, W]":
+    Z: TyOut[H, W]
+
+    for h, w in dsl.grid(H, W):
+        channel_shift: int32 = shifts[w]
+        centered: TyAcc = X[h, w] - input_zero_point
+        scaled: TyAcc = centered * multipliers[w]
+        rounded: TyAcc = scaled
+
+        if channel_shift > 0:
+            magnitude: TyAcc = scaled
+            if magnitude < 0:
+                magnitude = -magnitude
+
+            quotient: TyAcc = magnitude >> channel_shift
+            remainder: TyAcc = (
+                magnitude - (quotient << channel_shift)
+            )
+            one: TyAcc = 1
+            halfway: TyAcc = one << (channel_shift - 1)
+            increment: TyAcc = 0
+
+            if remainder > halfway:
+                increment = 1
+            if (
+                remainder == halfway
+                and (quotient & 1) == 1
+            ):
+                increment = 1
+
+            rounded = quotient + increment
+            if scaled < 0:
+                rounded = -rounded
+
+        if channel_shift < 0:
+            rounded = scaled << (0 - channel_shift)
+
+        quantized: TyAcc = rounded + output_zero_point
+
+        if quantized < qmin:
+            quantized = qmin
+        if quantized > qmax:
+            quantized = qmax
+
+        Z[h, w] = quantized
+
+    return Z
+
+
+def requantize_per_channel3d[
+    TyIn, TyAcc, TyOut, B, L, D
+](
+    X: "TyIn[B, L, D]",
+    multipliers: "TyAcc[D]",
+    shifts: "int32[D]",
+    input_zero_point: int32,
+    output_zero_point: int32,
+    qmin: int32,
+    qmax: int32,
+) -> "TyOut[B, L, D]":
+    Z: TyOut[B, L, D]
+
+    for b, l, d in dsl.grid(B, L, D):
+        channel_shift: int32 = shifts[d]
+        centered: TyAcc = X[b, l, d] - input_zero_point
+        scaled: TyAcc = centered * multipliers[d]
+        rounded: TyAcc = scaled
+
+        if channel_shift > 0:
+            magnitude: TyAcc = scaled
+            if magnitude < 0:
+                magnitude = -magnitude
+
+            quotient: TyAcc = magnitude >> channel_shift
+            remainder: TyAcc = (
+                magnitude - (quotient << channel_shift)
+            )
+            one: TyAcc = 1
+            halfway: TyAcc = one << (channel_shift - 1)
+            increment: TyAcc = 0
+
+            if remainder > halfway:
+                increment = 1
+            if (
+                remainder == halfway
+                and (quotient & 1) == 1
+            ):
+                increment = 1
+
+            rounded = quotient + increment
+            if scaled < 0:
+                rounded = -rounded
+
+        if channel_shift < 0:
+            rounded = scaled << (0 - channel_shift)
+
+        quantized: TyAcc = rounded + output_zero_point
+
+        if quantized < qmin:
+            quantized = qmin
+        if quantized > qmax:
+            quantized = qmax
+
+        Z[b, l, d] = quantized
+
+    return Z
+
+
+# END NATIVE INT8 QUANTIZATION: ADDED per-output-channel requantization
+
+def qadd2d[
+    TyL, TyR, TyAcc, TyOut, H, W
+](
+    lhs: "TyL[H, W]",
+    rhs: "TyR[H, W]",
+    lhs_multiplier: "TyAcc",
+    rhs_multiplier: "TyAcc",
+    shift: int32,
+    lhs_zero_point: int32,
+    rhs_zero_point: int32,
+    output_zero_point: int32,
+    qmin: int32,
+    qmax: int32,
+) -> "TyOut[H, W]":
+    Z: TyOut[H, W]
+    for h, w in dsl.grid(H, W):
+        lhs_scaled: TyAcc = (lhs[h, w] - lhs_zero_point) * lhs_multiplier
+        rhs_scaled: TyAcc = (rhs[h, w] - rhs_zero_point) * rhs_multiplier
+        total: TyAcc = lhs_scaled + rhs_scaled
+        rounded: TyAcc = total
+        if shift > 0:
+            magnitude: TyAcc = total
+            if magnitude < 0:
+                magnitude = -magnitude
+            quotient: TyAcc = magnitude >> shift
+            remainder: TyAcc = magnitude - (quotient << shift)
+            one: TyAcc = 1
+            halfway: TyAcc = one << (shift - 1)
+            increment: TyAcc = 0
+            if remainder > halfway:
+                increment = 1
+            if remainder == halfway and (quotient & 1) == 1:
+                increment = 1
+            rounded = quotient + increment
+            if total < 0:
+                rounded = -rounded
+        if shift < 0:
+            rounded = total << (0 - shift)
+        quantized: TyAcc = rounded + output_zero_point
+        if quantized < qmin:
+            quantized = qmin
+        if quantized > qmax:
+            quantized = qmax
+        Z[h, w] = quantized
+    return Z
+
+
+def qadd3d[
+    TyL, TyR, TyAcc, TyOut, B, L, D
+](
+    lhs: "TyL[B, L, D]",
+    rhs: "TyR[B, L, D]",
+    lhs_multiplier: "TyAcc",
+    rhs_multiplier: "TyAcc",
+    shift: int32,
+    lhs_zero_point: int32,
+    rhs_zero_point: int32,
+    output_zero_point: int32,
+    qmin: int32,
+    qmax: int32,
+) -> "TyOut[B, L, D]":
+    Z: TyOut[B, L, D]
+    for b, l, d in dsl.grid(B, L, D):
+        lhs_scaled: TyAcc = (lhs[b, l, d] - lhs_zero_point) * lhs_multiplier
+        rhs_scaled: TyAcc = (rhs[b, l, d] - rhs_zero_point) * rhs_multiplier
+        total: TyAcc = lhs_scaled + rhs_scaled
+        rounded: TyAcc = total
+        if shift > 0:
+            magnitude: TyAcc = total
+            if magnitude < 0:
+                magnitude = -magnitude
+            quotient: TyAcc = magnitude >> shift
+            remainder: TyAcc = magnitude - (quotient << shift)
+            one: TyAcc = 1
+            halfway: TyAcc = one << (shift - 1)
+            increment: TyAcc = 0
+            if remainder > halfway:
+                increment = 1
+            if remainder == halfway and (quotient & 1) == 1:
+                increment = 1
+            rounded = quotient + increment
+            if total < 0:
+                rounded = -rounded
+        if shift < 0:
+            rounded = total << (0 - shift)
+        quantized: TyAcc = rounded + output_zero_point
+        if quantized < qmin:
+            quantized = qmin
+        if quantized > qmax:
+            quantized = qmax
+        Z[b, l, d] = quantized
+    return Z
+
+
+# BEGIN NATIVE INT8 QUANTIZATION: ADDED transformer kernels
+
+
+def rms_norm3d[
+    Ty, B, L, D
+](X: "Ty[B, L, D]", weight: "Ty[D]", eps: float32) -> "Ty[B, L, D]":
+    """RMSNorm over the final dimension."""
+
+    Z: Ty[B, L, D]
+    sum_sq: Ty[B, L] = 0.0
+    for b, l, d in dsl.grid(B, L, D, name="rms_sum_sq"):
+        sum_sq[b, l] += X[b, l, d] * X[b, l, d]
+    for b, l, d in dsl.grid(B, L, D, name="rms_normalize"):
+        mean_sq: Ty = sum_sq[b, l] / float(D)
+        Z[b, l, d] = X[b, l, d] * weight[d] / dsl.sqrt(mean_sq + eps)
+    return Z
+
+
+def silu3d[Ty, B, L, D](X: "Ty[B, L, D]") -> "Ty[B, L, D]":
+    """SiLU activation used by Llama-family gated MLPs."""
+
+    Z: Ty[B, L, D]
+    for b, l, d in dsl.grid(B, L, D, name="silu"):
+        Z[b, l, d] = X[b, l, d] / (1.0 + dsl.exp(0.0 - X[b, l, d]))
+    return Z
+
+
+def rope3d[
+    Ty, H, L, D
+](X: "Ty[H, L, D]", cos: "Ty[L, D]", sin: "Ty[L, D]") -> "Ty[H, L, D]":
+    """Llama-style rotary embedding with the head axis folded into batch."""
+
+    Z: Ty[H, L, D]
+    for h, l, d in dsl.grid(H, L, D // 2, name="rope_first_half"):
+        Z[h, l, d] = X[h, l, d] * cos[l, d] - X[h, l, d + D // 2] * sin[l, d]
+    for h, l, d in dsl.grid(H, L, D // 2, name="rope_second_half"):
+        Z[h, l, d + D // 2] = (
+            X[h, l, d + D // 2] * cos[l, d + D // 2]
+            + X[h, l, d] * sin[l, d + D // 2]
+        )
+    return Z
+
+
+def positioned_rope3d[
+    Ty, H, L, S, D
+](
+    X: "Ty[H, L, D]",
+    cos: "Ty[S, D]",
+    sin: "Ty[S, D]",
+    position: int32,
+) -> "Ty[H, L, D]":
+    """RoPE using a runtime start position and a fixed maximum table."""
+
+    Z: Ty[H, L, D]
+    for h, l, d in dsl.grid(H, L, D // 2, name="positioned_rope_first"):
+        Z[h, l, d] = (
+            X[h, l, d] * cos[position + l, d]
+            - X[h, l, d + D // 2] * sin[position + l, d]
+        )
+    for h, l, d in dsl.grid(H, L, D // 2, name="positioned_rope_second"):
+        Z[h, l, d + D // 2] = (
+            X[h, l, d + D // 2] * cos[position + l, d + D // 2]
+            + X[h, l, d] * sin[position + l, d + D // 2]
+        )
+    return Z
+
+
+def repeat_interleave3d[
+    Ty, H, L, D, R
+](X: "Ty[H, L, D]") -> "Ty[H * R, L, D]":
+    """Repeat each KV head consecutively for grouped-query attention."""
+
+    Z: Ty[H * R, L, D]
+    for h, r, l, d in dsl.grid(H, R, L, D, name="repeat_interleave"):
+        Z[h * R + r, l, d] = X[h, l, d]
+    return Z
+
+
+def causal_softmax3d[
+    Ty, H, L, S
+](X: "Ty[H, L, S]", causal_offset: int32) -> "Ty[H, L, S]":
+    """Last-dimension softmax with a causal prefix offset."""
+
+    Z: Ty[H, L, S]
+    E: Ty[H, L, S] = 0.0
+    row_max: Ty[H, L] = -1000000000000.0
+    row_sum: Ty[H, L] = 0.0
+    for h, l, s in dsl.grid(H, L, S, name="causal_row_max"):
+        if s < causal_offset + l + 1 and X[h, l, s] > row_max[h, l]:
+            row_max[h, l] = X[h, l, s]
+    for h, l, s in dsl.grid(H, L, S, name="causal_exp_sum"):
+        if s < causal_offset + l + 1:
+            E[h, l, s] = dsl.exp(X[h, l, s] - row_max[h, l])
+            row_sum[h, l] += E[h, l, s]
+    for h, l, s in dsl.grid(H, L, S, name="causal_normalize"):
+        if s < causal_offset + l + 1:
+            Z[h, l, s] = E[h, l, s] / row_sum[h, l]
+        else:
+            Z[h, l, s] = 0.0
+    return Z
+
+
+def embedding2d[
+    TyW, B, L, V, D
+](input_ids: "int32[B, L]", weight: "TyW[V, D]") -> "TyW[B, L, D]":
+    """Token embedding lookup for fixed-rank token inputs."""
+
+    Z: TyW[B, L, D]
+    for b, l, d in dsl.grid(B, L, D, name="embedding_lookup"):
+        Z[b, l, d] = weight[input_ids[b, l], d]
+    return Z
+
+
+def kv_cache_update3d[
+    Ty, H, L, S, D
+](values: "Ty[H, L, D]", cache: "Ty[H, S, D]", position: int32) -> "Ty[H, S, D]":
+    """Copy a fixed token block into a KV cache and return the updated cache."""
+
+    Z: Ty[H, S, D]
+    for h, s, d in dsl.grid(H, S, D, name="kv_cache_copy"):
+        Z[h, s, d] = cache[h, s, d]
+    for h, l, d in dsl.grid(H, L, D, name="kv_cache_update"):
+        if position + l < S:
+            Z[h, position + l, d] = values[h, l, d]
+    return Z
+
+
+def qmul3d[
+    TyL, TyR, TyAcc, TyOut, B, L, D
+](
+    lhs: "TyL[B, L, D]",
+    rhs: "TyR[B, L, D]",
+    multiplier: "TyAcc",
+    shift: int32,
+    lhs_zero_point: int32,
+    rhs_zero_point: int32,
+    output_zero_point: int32,
+    qmin: int32,
+    qmax: int32,
+) -> "TyOut[B, L, D]":
+    """Elementwise integer multiply followed by widened requantization."""
+
+    Z: TyOut[B, L, D]
+    for b, l, d in dsl.grid(B, L, D, name="qmul"):
+        product: TyAcc = (lhs[b, l, d] - lhs_zero_point) * (
+            rhs[b, l, d] - rhs_zero_point
+        )
+        scaled: TyAcc = product * multiplier
+        rounded: TyAcc = scaled
+        if shift > 0:
+            magnitude: TyAcc = scaled
+            if magnitude < 0:
+                magnitude = -magnitude
+            quotient: TyAcc = magnitude >> shift
+            remainder: TyAcc = magnitude - (quotient << shift)
+            one: TyAcc = 1
+            halfway: TyAcc = one << (shift - 1)
+            increment: TyAcc = 0
+            if remainder > halfway:
+                increment = 1
+            if remainder == halfway and (quotient & 1) == 1:
+                increment = 1
+            rounded = quotient + increment
+            if scaled < 0:
+                rounded = -rounded
+        if shift < 0:
+            rounded = scaled << (0 - shift)
+        quantized: TyAcc = rounded + output_zero_point
+        if quantized < qmin:
+            quantized = qmin
+        if quantized > qmax:
+            quantized = qmax
+        Z[b, l, d] = quantized
+    return Z
+
+
+def qmatmul3d[
+    TyL, TyR, TyAcc, TyWide, TyOut, B, M, K, N
+](
+    lhs: "TyL[B, M, K]",
+    rhs: "TyR[B, K, N]",
+    multiplier: "TyWide",
+    shift: int32,
+    lhs_zero_point: int32,
+    rhs_zero_point: int32,
+    output_zero_point: int32,
+    qmin: int32,
+    qmax: int32,
+) -> "TyOut[B, M, N]":
+    """Batched integer matmul with int32 accumulation and int64 requantization."""
+
+    Z: TyOut[B, M, N]
+    for b, m, n in dsl.grid(B, M, N, name="qmatmul_output"):
+        acc: TyAcc = 0
+        for k in range(K):
+            acc += (lhs[b, m, k] - lhs_zero_point) * (
+                rhs[b, k, n] - rhs_zero_point
+            )
+        scaled: TyWide = acc * multiplier
+        rounded: TyWide = scaled
+        if shift > 0:
+            magnitude: TyWide = scaled
+            if magnitude < 0:
+                magnitude = -magnitude
+            quotient: TyWide = magnitude >> shift
+            remainder: TyWide = magnitude - (quotient << shift)
+            one: TyWide = 1
+            halfway: TyWide = one << (shift - 1)
+            increment: TyWide = 0
+            if remainder > halfway:
+                increment = 1
+            if remainder == halfway and (quotient & 1) == 1:
+                increment = 1
+            rounded = quotient + increment
+            if scaled < 0:
+                rounded = -rounded
+        if shift < 0:
+            rounded = scaled << (0 - shift)
+        quantized: TyWide = rounded + output_zero_point
+        if quantized < qmin:
+            quantized = qmin
+        if quantized > qmax:
+            quantized = qmax
+        Z[b, m, n] = quantized
+    return Z
+
+
+def qsilu3d[
+    TyIn, TyOut, B, L, D
+](X: "TyIn[B, L, D]", table: "TyOut[256]", qmin: int32) -> "TyOut[B, L, D]":
+    """Integer SiLU using a compile-time calibrated 256-entry LUT."""
+
+    Z: TyOut[B, L, D]
+    for b, l, d in dsl.grid(B, L, D, name="qsilu"):
+        index: int32 = X[b, l, d] - qmin
+        Z[b, l, d] = table[index]
+    return Z
+
+
+def qrope3d[
+    TyIn, TyCoeff, TyAcc, TyOut, H, L, D
+](
+    X: "TyIn[H, L, D]",
+    cos: "TyCoeff[L, D]",
+    sin: "TyCoeff[L, D]",
+    multiplier: "TyAcc",
+    shift: int32,
+    input_zero_point: int32,
+    output_zero_point: int32,
+    qmin: int32,
+    qmax: int32,
+) -> "TyOut[H, L, D]":
+    """Integer rotary embedding with Q15 sine/cosine coefficients."""
+
+    Z: TyOut[H, L, D]
+    for h, l, d in dsl.grid(H, L, D, name="qrope"):
+        partner: int32 = d + D // 2
+        sign: int32 = -1
+        if d >= D // 2:
+            partner = d - D // 2
+            sign = 1
+        value: TyAcc = (X[h, l, d] - input_zero_point) * cos[l, d]
+        value += sign * (X[h, l, partner] - input_zero_point) * sin[l, d]
+        scaled: TyAcc = value * multiplier
+        rounded: TyAcc = scaled
+        if shift > 0:
+            magnitude: TyAcc = scaled
+            if magnitude < 0:
+                magnitude = -magnitude
+            quotient: TyAcc = magnitude >> shift
+            remainder: TyAcc = magnitude - (quotient << shift)
+            one: TyAcc = 1
+            halfway: TyAcc = one << (shift - 1)
+            increment: TyAcc = 0
+            if remainder > halfway:
+                increment = 1
+            if remainder == halfway and (quotient & 1) == 1:
+                increment = 1
+            rounded = quotient + increment
+            if scaled < 0:
+                rounded = -rounded
+        if shift < 0:
+            rounded = scaled << (0 - shift)
+        quantized: TyAcc = rounded + output_zero_point
+        if quantized < qmin:
+            quantized = qmin
+        if quantized > qmax:
+            quantized = qmax
+        Z[h, l, d] = quantized
+    return Z
+
+
+def qpositioned_rope3d[
+    TyIn, TyCoeff, TyAcc, TyOut, H, L, S, D
+](
+    X: "TyIn[H, L, D]",
+    cos: "TyCoeff[S, D]",
+    sin: "TyCoeff[S, D]",
+    multiplier: "TyAcc",
+    shift: int32,
+    input_zero_point: int32,
+    output_zero_point: int32,
+    qmin: int32,
+    qmax: int32,
+    position: int32,
+) -> "TyOut[H, L, D]":
+    """Integer RoPE with Q15 tables and a runtime starting position."""
+
+    Z: TyOut[H, L, D]
+    for h, l, d in dsl.grid(H, L, D, name="qpositioned_rope"):
+        partner: int32 = d + D // 2
+        sign: int32 = -1
+        if d >= D // 2:
+            partner = d - D // 2
+            sign = 1
+        value: TyAcc = (X[h, l, d] - input_zero_point) * cos[position + l, d]
+        value += sign * (X[h, l, partner] - input_zero_point) * sin[
+            position + l, d
+        ]
+        scaled: TyAcc = value * multiplier
+        rounded: TyAcc = scaled
+        if shift > 0:
+            magnitude: TyAcc = scaled
+            if magnitude < 0:
+                magnitude = -magnitude
+            quotient: TyAcc = magnitude >> shift
+            remainder: TyAcc = magnitude - (quotient << shift)
+            one: TyAcc = 1
+            halfway: TyAcc = one << (shift - 1)
+            increment: TyAcc = 0
+            if remainder > halfway:
+                increment = 1
+            if remainder == halfway and (quotient & 1) == 1:
+                increment = 1
+            rounded = quotient + increment
+            if scaled < 0:
+                rounded = -rounded
+        if shift < 0:
+            rounded = scaled << (0 - shift)
+        quantized: TyAcc = rounded + output_zero_point
+        if quantized < qmin:
+            quantized = qmin
+        if quantized > qmax:
+            quantized = qmax
+        Z[h, l, d] = quantized
+    return Z
+
+
+def qcausal_softmax3d[
+    TyIn, TyOut, H, L, S
+](
+    X: "TyIn[H, L, S]",
+    exp_table: "int32[256]",
+    output_multiplier: int64,
+    output_shift: int32,
+    causal_offset: int32,
+    input_zero_point: int32,
+    output_zero_point: int32,
+    qmin: int32,
+    qmax: int32,
+) -> "TyOut[H, L, S]":
+    """Integer causal softmax using an input-scale-specific exponential LUT."""
+
+    Z: TyOut[H, L, S]
+    E: int32[H, L, S] = 0
+    row_max: int32[H, L] = -2147483647
+    row_sum: int64[H, L] = 0
+    for h, l, s in dsl.grid(H, L, S, name="qsoftmax_row_max"):
+        if s < causal_offset + l + 1 and X[h, l, s] > row_max[h, l]:
+            row_max[h, l] = X[h, l, s]
+    for h, l, s in dsl.grid(H, L, S, name="qsoftmax_exp_sum"):
+        if s < causal_offset + l + 1:
+            delta: int32 = row_max[h, l] - X[h, l, s]
+            E[h, l, s] = exp_table[delta]
+            row_sum[h, l] += E[h, l, s]
+    for h, l, s in dsl.grid(H, L, S, name="qsoftmax_normalize"):
+        quantized: int64 = output_zero_point
+        if s < causal_offset + l + 1 and row_sum[h, l] > 0:
+            numerator: int64 = E[h, l, s] * output_multiplier
+            denominator: int64 = row_sum[h, l] << output_shift
+            quotient: int64 = numerator // denominator
+            remainder: int64 = numerator - quotient * denominator
+            if remainder * 2 > denominator:
+                quotient += 1
+            if remainder * 2 == denominator and (quotient & 1) == 1:
+                quotient += 1
+            quantized = quotient + output_zero_point
+        if quantized < qmin:
+            quantized = qmin
+        if quantized > qmax:
+            quantized = qmax
+        Z[h, l, s] = quantized
+    return Z
+
+
+def qrms_norm3d[
+    TyIn, TyW, TyAcc, TyOut, B, L, D
+](
+    X: "TyIn[B, L, D]",
+    weight: "TyW[D]",
+    factor_multiplier: "TyAcc",
+    eps_codes: "TyAcc",
+    input_zero_point: int32,
+    weight_zero_point: int32,
+    output_zero_point: int32,
+    qmin: int32,
+    qmax: int32,
+) -> "TyOut[B, L, D]":
+    """Integer RMSNorm using a widened sum of squares and integer square root."""
+
+    Z: TyOut[B, L, D]
+    for b, l in dsl.grid(B, L, name="qrms_rows"):
+        sum_sq: TyAcc = 0
+        for d_sum in range(D):
+            centered: TyAcc = X[b, l, d_sum] - input_zero_point
+            sum_sq += centered * centered
+        radicand: TyAcc = (sum_sq + eps_codes) << 24
+        low: TyAcc = 0
+        high: TyAcc = radicand + 1
+        for root_step in range(63):
+            if low + 1 < high:
+                midpoint: TyAcc = (low + high) // 2
+                if midpoint == 0 or midpoint <= radicand // midpoint:
+                    low = midpoint
+                else:
+                    high = midpoint
+        root_q12: TyAcc = low
+        if root_q12 < 1:
+            root_q12 = 1
+        denominator: TyAcc = root_q12 << 8
+        for d in range(D):
+            x_centered: TyAcc = X[b, l, d] - input_zero_point
+            w_centered: TyAcc = weight[d] - weight_zero_point
+            numerator: TyAcc = x_centered * w_centered * factor_multiplier
+            magnitude: TyAcc = numerator
+            if magnitude < 0:
+                magnitude = -magnitude
+            quotient: TyAcc = magnitude // denominator
+            remainder: TyAcc = magnitude - quotient * denominator
+            if remainder * 2 > denominator:
+                quotient += 1
+            if remainder * 2 == denominator and (quotient & 1) == 1:
+                quotient += 1
+            if numerator < 0:
+                quotient = -quotient
+            quantized: TyAcc = quotient + output_zero_point
+            if quantized < qmin:
+                quantized = qmin
+            if quantized > qmax:
+                quantized = qmax
+            Z[b, l, d] = quantized
+    return Z
+
+
+def qembedding2d[
+    TyW, B, L, V, D
+](input_ids: "int32[B, L]", weight: "TyW[V, D]") -> "TyW[B, L, D]":
+    """Integer token embedding lookup."""
+
+    Z: TyW[B, L, D]
+    for b, l, d in dsl.grid(B, L, D, name="qembedding_lookup"):
+        Z[b, l, d] = weight[input_ids[b, l], d]
+    return Z
+
+
+def qkv_cache_update3d[
+    TyValue, TyCache, TyAcc, H, L, S, D
+](
+    values: "TyValue[H, L, D]",
+    cache: "TyCache[H, S, D]",
+    multiplier: "TyAcc",
+    shift: int32,
+    value_zero_point: int32,
+    cache_zero_point: int32,
+    qmin: int32,
+    qmax: int32,
+    position: int32,
+) -> "TyCache[H, S, D]":
+    """Update an integer KV cache, reconciling the incoming tensor scale."""
+
+    Z: TyCache[H, S, D]
+    for h, s, d in dsl.grid(H, S, D, name="qkv_cache_copy"):
+        Z[h, s, d] = cache[h, s, d]
+    for h, l, d in dsl.grid(H, L, D, name="qkv_cache_update"):
+        if position + l < S:
+            centered: TyAcc = values[h, l, d] - value_zero_point
+            scaled: TyAcc = centered * multiplier
+            rounded: TyAcc = scaled
+            if shift > 0:
+                magnitude: TyAcc = scaled
+                if magnitude < 0:
+                    magnitude = -magnitude
+                quotient: TyAcc = magnitude >> shift
+                remainder: TyAcc = magnitude - (quotient << shift)
+                one: TyAcc = 1
+                halfway: TyAcc = one << (shift - 1)
+                increment: TyAcc = 0
+                if remainder > halfway:
+                    increment = 1
+                if remainder == halfway and (quotient & 1) == 1:
+                    increment = 1
+                rounded = quotient + increment
+                if scaled < 0:
+                    rounded = -rounded
+            if shift < 0:
+                rounded = scaled << (0 - shift)
+            quantized: TyAcc = rounded + cache_zero_point
+            if quantized < qmin:
+                quantized = qmin
+            if quantized > qmax:
+                quantized = qmax
+            Z[h, position + l, d] = quantized
+    return Z
+
+
+# END NATIVE INT8 QUANTIZATION: ADDED transformer kernels
+
+
+def schedule_native_quantized(s):
+    """Correctness-first schedule for native integer boundary kernels."""
+
+    return s
+
+
+# END NATIVE INT8 QUANTIZATION: ADDED rank-2/rank-3 integer kernels

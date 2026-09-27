@@ -359,6 +359,11 @@ def analyze_arg_load_store_in_func(func, mapping={}):
                 use.owner, (memref_d.LoadOp, affine_d.AffineLoadOp, allo_d.StreamGetOp)
             ):
                 io_type |= 2
+            elif str(use.owner.operation.name) == "linalg.copy":
+                if use.operand_number == 0:
+                    io_type |= 2
+                else:
+                    io_type |= 1
             elif isinstance(
                 use.owner,
                 (memref_d.StoreOp, affine_d.AffineStoreOp, allo_d.StreamPutOp),
