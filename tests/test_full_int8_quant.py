@@ -1,3 +1,6 @@
+# Copyright Allo authors. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 """Native PyTorch-to-Allo INT8 certification ladder.
 
 This suite validates the full compiler route for deterministic quantized
@@ -157,7 +160,9 @@ class QDQLinear(torch.nn.Module):
 
         if weight is None:
             if (in_features, out_features) != (4, 3):
-                raise ValueError("A custom weight is required for non-default dimensions")
+                raise ValueError(
+                    "A custom weight is required for non-default dimensions"
+                )
             weight = WEIGHT
 
         with torch.no_grad():
@@ -273,7 +278,9 @@ class QDQResidual3D(torch.nn.Module):
         return torch.quantize_per_tensor(y, 0.5, -1, torch.qint8).dequantize()
 
 
-def trace_model(model: torch.nn.Module, inputs: tuple[torch.Tensor, ...]) -> GraphModule:
+def trace_model(
+    model: torch.nn.Module, inputs: tuple[torch.Tensor, ...]
+) -> GraphModule:
     """Reproduce the tracing and ShapeProp portion of from_pytorch."""
     model.eval()
     tracer = AlloTracer(model, concrete_args={}, leaf_modules=None)
@@ -393,8 +400,7 @@ def find_function_regions(text: str, language: str) -> list[tuple[str, str]]:
         patterns = [
             (
                 re.compile(
-                    r"func\.func(?:\s+(?:private|public))?\s+"
-                    r"@([A-Za-z0-9_.$-]+)"
+                    r"func\.func(?:\s+(?:private|public))?\s+" r"@([A-Za-z0-9_.$-]+)"
                 ),
                 False,
             ),
@@ -452,10 +458,7 @@ def find_function_regions(text: str, language: str) -> list[tuple[str, str]]:
                 #   ...
                 # }
                 header = text[match.end() : brace]
-                if (
-                    language == "mlir"
-                    and re.search(r"\battributes\s*$", header)
-                ):
+                if language == "mlir" and re.search(r"\battributes\s*$", header):
                     attributes_end = find_closing_brace(brace)
                     if attributes_end is None:
                         continue
@@ -483,6 +486,7 @@ def find_function_regions(text: str, language: str) -> list[tuple[str, str]]:
 
     regions.sort(key=lambda region: region[0])
     return [(name, body) for _, name, body in regions]
+
 
 def find_linear_regions(text: str, language: str) -> list[str]:
     return [
@@ -527,9 +531,9 @@ def require_extra_global(
         f"integer type is not a valid native INT8 lowering."
     )
     name, value = matches[0]
-    assert value.dtype == np.dtype(dtype), (
-        f"{name} has dtype {value.dtype}; expected {np.dtype(dtype)}"
-    )
+    assert value.dtype == np.dtype(
+        dtype
+    ), f"{name} has dtype {value.dtype}; expected {np.dtype(dtype)}"
     return value
 
 
@@ -596,9 +600,7 @@ def test_fx_graph_and_shape_propagation(
         if node.op == "call_method" and node.target == "dequantize"
     ]
     linear_nodes = [
-        node
-        for node in nodes
-        if node.op == "call_module" and node.target == "linear"
+        node for node in nodes if node.op == "call_module" and node.target == "linear"
     ]
 
     assert len(quantize_nodes) == 2
@@ -666,7 +668,7 @@ def test_qdq_materialization_emits_typed_boundaries(
     integer_cast = re.search(
         rf"(?P<result>qdq_int_\d+)\s*:\s*{type_name}\s*"
         rf"\[\s*2\s*,\s*4\s*\]\s*\n"
-        rf'\s*for i0,\s*i1 in dsl\.grid\(\s*2,\s*4,\s*'
+        rf"\s*for i0,\s*i1 in dsl\.grid\(\s*2,\s*4,\s*"
         rf'name="(?P=result)_cast"\s*\):\s*\n'
         rf"\s*(?P=result)\[i0,\s*i1\]\s*=\s*"
         rf"qdq_min_\d+\[i0,\s*i1\]",
@@ -677,13 +679,14 @@ def test_qdq_materialization_emits_typed_boundaries(
     float_cast = re.search(
         r"(?P<result>qdq_float_\d+)\s*:\s*float32\s*"
         r"\[\s*2\s*,\s*4\s*\]\s*\n"
-        r'\s*for i0,\s*i1 in dsl\.grid\(\s*2,\s*4,\s*'
+        r"\s*for i0,\s*i1 in dsl\.grid\(\s*2,\s*4,\s*"
         r'name="(?P=result)_cast"\s*\):\s*\n'
         r"\s*(?P=result)\[i0,\s*i1\]\s*=\s*"
         r"qdq_int_\d+\[i0,\s*i1\]",
         source,
     )
     assert float_cast is not None
+
 
 def test_quantized_ranges_and_invalid_dtype():
     assert get_qrange(torch.qint8) == (-128, 127)
@@ -765,7 +768,8 @@ def test_quantized_reindexing_preserves_integer_storage():
         node
         for node in gm.graph.nodes
         if node.op == "call_method"
-        and node.target in {
+        and node.target
+        in {
             "view",
             "reshape",
             "permute",
@@ -788,8 +792,7 @@ def test_quantized_reindexing_preserves_integer_storage():
     quantize_nodes = [
         node
         for node in gm.graph.nodes
-        if node.op == "call_function"
-        and "quantize_per_tensor" in str(node.target)
+        if node.op == "call_function" and "quantize_per_tensor" in str(node.target)
     ]
     assert len(quantize_nodes) == 2
 
@@ -816,9 +819,7 @@ def test_quantized_repeat_uses_integer_kernel_dtype():
     )
 
     repeat_entries = [
-        entry
-        for entry in builder.composition
-        if entry[0] == "repeat_batch3d"
+        entry for entry in builder.composition if entry[0] == "repeat_batch3d"
     ]
     assert len(repeat_entries) == 1
     assert type_bits(repeat_entries[0][2][0]) == 8
@@ -833,9 +834,7 @@ def test_nonzero_zero_point_relu_uses_real_domain_fallback():
         op_dtypes={"relu": "int8"},
     )
 
-    relu_entries = [
-        entry for entry in builder.composition if entry[0] == "relu3d"
-    ]
+    relu_entries = [entry for entry in builder.composition if entry[0] == "relu3d"]
     assert len(relu_entries) == 1
     assert type_bits(relu_entries[0][2][0]) == 32
     assert re.search(r"nn\.relu3d\[\s*float32\b", source)
@@ -877,9 +876,7 @@ def test_torchbuilder_emits_native_int8_int8_int32_linear_source():
     assert_native_route_text(source)
 
     linear_entries = [
-        entry
-        for entry in builder.composition
-        if entry[0] in {"linear2d", "qlinear2d"}
+        entry for entry in builder.composition if entry[0] in {"linear2d", "qlinear2d"}
     ]
     assert len(linear_entries) == 1
 
@@ -889,15 +886,10 @@ def test_torchbuilder_emits_native_int8_int8_int32_linear_source():
     assert type_bits(instantiate[2]) == 32
 
     requantize_entries = [
-        entry
-        for entry in builder.composition
-        if entry[0] == "requantize2d"
+        entry for entry in builder.composition if entry[0] == "requantize2d"
     ]
     assert len(requantize_entries) == 1
-    assert [
-        type_bits(dtype)
-        for dtype in requantize_entries[0][2][:3]
-    ] == [32, 64, 8]
+    assert [type_bits(dtype) for dtype in requantize_entries[0][2][:3]] == [32, 64, 8]
 
     weight_override = require_extra_global(
         builder,
@@ -942,14 +934,10 @@ def test_torchbuilder_supports_native_integer_linear_without_bias():
     assert "linear_weight" in source
     assert "linear_bias" not in source
     assert re.search(
-        r"linear_zero_bias\s*:\s*int32\s*"
-        r"\[\s*3\s*\]\s*=\s*g_linear_zero_bias",
+        r"linear_zero_bias\s*:\s*int32\s*" r"\[\s*3\s*\]\s*=\s*g_linear_zero_bias",
         source,
     )
-    assert any(
-        name in {"linear2d", "qlinear2d"}
-        for name, _, _ in builder.composition
-    )
+    assert any(name in {"linear2d", "qlinear2d"} for name, _, _ in builder.composition)
 
 
 def test_generated_native_source_is_deterministic():
@@ -1052,9 +1040,9 @@ def test_public_frontend_returns_native_schedule_with_integer_mlir():
     region = "\n".join(integer_linear_regions)
     assert re.search(r"memref<[^>]*xi8>", region)
     assert re.search(r"memref<[^>]*xi32>", region)
-    assert re.search(r"arith\.(?:mul|add)i", region), (
-        "The native integer Linear region contains no integer multiply/add"
-    )
+    assert re.search(
+        r"arith\.(?:mul|add)i", region
+    ), "The native integer Linear region contains no integer multiply/add"
 
 
 def test_public_qdq_boundary_has_integer_storage_and_float_io():
@@ -1072,6 +1060,7 @@ def test_public_qdq_boundary_has_integer_storage_and_float_io():
     assert "memref<2x4xi8>" in forward
     assert re.search(r"->\s*memref<2x4xf32>", forward)
     assert re.search(r"math\.roundeven.*f32", forward)
+
 
 def test_composed_linear_schedule_contains_pipeline_transformations():
     schedule = from_pytorch(
@@ -1269,6 +1258,7 @@ def test_unequal_scale_residual_llvm_is_bit_exact():
 # HLS emission, project generation, C simulation, and optional full gates
 # ---------------------------------------------------------------------------
 
+
 def test_nn_linear2d_vitis_csim_is_bit_exact(tmp_path):
     vitis_available_or_skip()
 
@@ -1311,6 +1301,7 @@ def test_qdq_boundary_vitis_csim_is_bit_exact(tmp_path):
     module(INPUT_2D.numpy(), actual)
 
     np.testing.assert_array_equal(actual, expected)
+
 
 def build_native_hls_project(project: Path, *, mode: str):
     return from_pytorch(
@@ -1445,8 +1436,7 @@ def test_nn_linear3d_int8_int32_llvm_is_exact():
     )
 
     expected = (
-        np.asarray(x, dtype=np.int64)
-        @ np.asarray(weight, dtype=np.int64).T
+        np.asarray(x, dtype=np.int64) @ np.asarray(weight, dtype=np.int64).T
         + np.asarray(bias, dtype=np.int64)
     ).astype(np.int32)
 
@@ -1487,9 +1477,9 @@ def test_systolic_int8_int8_int32_overflow_stress():
 
     a = np.full((m, k), 127, dtype=np.int8)
     b = np.full((k, n), 127, dtype=np.int8)
-    expected = (
-        np.asarray(a, dtype=np.int64) @ np.asarray(b, dtype=np.int64)
-    ).astype(np.int32)
+    expected = (np.asarray(a, dtype=np.int64) @ np.asarray(b, dtype=np.int64)).astype(
+        np.int32
+    )
     assert expected.max() > np.iinfo(np.int16).max
 
     output = np.zeros((m, n), dtype=np.int32)
@@ -1501,6 +1491,7 @@ def test_systolic_int8_int8_int32_overflow_stress():
     module(a, b, output)
 
     np.testing.assert_array_equal(output, expected)
+
 
 @pytest.mark.parametrize(
     "symbol",
@@ -1719,12 +1710,8 @@ class QDQResidualMLP3D(torch.nn.Module):
         )
 
         with torch.no_grad():
-            self.up_proj.weight.copy_(
-                torch.from_numpy(RESIDUAL_MLP_UP_WEIGHT)
-            )
-            self.down_proj.weight.copy_(
-                torch.from_numpy(RESIDUAL_MLP_DOWN_WEIGHT)
-            )
+            self.up_proj.weight.copy_(torch.from_numpy(RESIDUAL_MLP_UP_WEIGHT))
+            self.down_proj.weight.copy_(torch.from_numpy(RESIDUAL_MLP_DOWN_WEIGHT))
 
     def forward(self, x):
         residual = torch.quantize_per_tensor(
@@ -1786,8 +1773,7 @@ def residual_mlp_reference(values):
     ).astype(np.float32)
 
     up_accumulator = (
-        residual.astype(np.int64)
-        @ RESIDUAL_MLP_UP_WEIGHT.astype(np.int64).T
+        residual.astype(np.int64) @ RESIDUAL_MLP_UP_WEIGHT.astype(np.int64).T
     )
 
     hidden = qdq_reference(
@@ -1805,8 +1791,7 @@ def residual_mlp_reference(values):
     ).astype(np.float32)
 
     down_accumulator = (
-        hidden.astype(np.int64)
-        @ RESIDUAL_MLP_DOWN_WEIGHT.astype(np.int64).T
+        hidden.astype(np.int64) @ RESIDUAL_MLP_DOWN_WEIGHT.astype(np.int64).T
     )
 
     branch = qdq_reference(
@@ -1863,8 +1848,7 @@ def test_residual_mlp_torchbuilder_emits_complete_integer_graph():
     quantize_nodes = [
         node
         for node in graph_nodes
-        if node.op == "call_function"
-        and "quantize_per_tensor" in str(node.target)
+        if node.op == "call_function" and "quantize_per_tensor" in str(node.target)
     ]
     dequantize_nodes = [
         node
@@ -1899,26 +1883,17 @@ def test_residual_mlp_torchbuilder_emits_complete_integer_graph():
     post_relu_quantize = next(
         user
         for user in activation_node.users
-        if user.op == "call_function"
-        and "quantize_per_tensor" in str(user.target)
+        if user.op == "call_function" and "quantize_per_tensor" in str(user.target)
     )
     materialized = builder.get_materialized_quant_map()
 
     assert materialized[f"{activation_node.name}_clamped"] == activation_node.name
-    assert (
-        materialized[f"{post_relu_quantize.name}_clamped"]
-        == activation_node.name
-    )
+    assert materialized[f"{post_relu_quantize.name}_clamped"] == activation_node.name
 
-    composition_names = [
-        function_name
-        for function_name, _, _ in builder.composition
-    ]
+    composition_names = [function_name for function_name, _, _ in builder.composition]
 
     linear_entries = [
-        entry
-        for entry in builder.composition
-        if entry[0] in {"linear3d", "qlinear3d"}
+        entry for entry in builder.composition if entry[0] in {"linear3d", "qlinear3d"}
     ]
 
     assert len(linear_entries) == 2
@@ -1930,9 +1905,7 @@ def test_residual_mlp_torchbuilder_emits_complete_integer_graph():
         assert tuple(type_bits(dtype) for dtype in instantiate[:3]) == (8, 8, 32)
 
     requantize_entries = [
-        entry
-        for entry in builder.composition
-        if entry[0] == "requantize3d"
+        entry for entry in builder.composition if entry[0] == "requantize3d"
     ]
     assert len(requantize_entries) == 2
     assert all(
@@ -1940,9 +1913,7 @@ def test_residual_mlp_torchbuilder_emits_complete_integer_graph():
         for _, _, instantiate in requantize_entries
     )
 
-    relu_entries = [
-        entry for entry in builder.composition if entry[0] == "relu3d"
-    ]
+    relu_entries = [entry for entry in builder.composition if entry[0] == "relu3d"]
     assert len(relu_entries) == 1
     assert type_bits(relu_entries[0][2][0]) == 8
 
@@ -1959,13 +1930,15 @@ def test_residual_mlp_torchbuilder_emits_complete_integer_graph():
         8,
     )
 
-    assert len(
-        re.findall(
-            r"nn\.(?:q)?linear3d"
-            r"\[\s*int8\s*,\s*int8\s*,\s*int32",
-            source,
+    assert (
+        len(
+            re.findall(
+                r"nn\.(?:q)?linear3d" r"\[\s*int8\s*,\s*int8\s*,\s*int32",
+                source,
+            )
         )
-    ) == 2
+        == 2
+    )
     assert re.search(r"nn\.relu3d\[\s*int8\b", source)
     assert source.count("nn.requantize3d[") == 2
     assert "nn.qadd3d[" in source
@@ -1991,9 +1964,7 @@ def test_residual_mlp_torchbuilder_emits_complete_integer_graph():
     )
     np.testing.assert_array_equal(
         down_weight,
-        (
-            RESIDUAL_MLP_DOWN_WEIGHT * RESIDUAL_HIDDEN_SCALE
-        ).astype(np.int8),
+        (RESIDUAL_MLP_DOWN_WEIGHT * RESIDUAL_HIDDEN_SCALE).astype(np.int8),
     )
 
 
@@ -2143,9 +2114,9 @@ def test_residual_mlp_vitis_hardware_emulation_gate(tmp_path):
         )
 
     vitis_available_or_skip()
-    assert os.environ.get("XDEVICE"), (
-        "XDEVICE must be set for residual MLP hardware emulation"
-    )
+    assert os.environ.get(
+        "XDEVICE"
+    ), "XDEVICE must be set for residual MLP hardware emulation"
 
     project = tmp_path / "residual_mlp_hw_emu.prj"
     module = build_residual_mlp_module(
@@ -2252,8 +2223,7 @@ def test_stacked_residual_mlp_torchbuilder_emits_all_integer_regions():
     quantize_nodes = [
         node
         for node in graph_nodes
-        if node.op == "call_function"
-        and "quantize_per_tensor" in str(node.target)
+        if node.op == "call_function" and "quantize_per_tensor" in str(node.target)
     ]
     dequantize_nodes = [
         node
@@ -2275,9 +2245,7 @@ def test_stacked_residual_mlp_torchbuilder_emits_all_integer_regions():
 
     composition_names = [name for name, _, _ in builder.composition]
     linear_entries = [
-        entry
-        for entry in builder.composition
-        if entry[0] in {"linear3d", "qlinear3d"}
+        entry for entry in builder.composition if entry[0] in {"linear3d", "qlinear3d"}
     ]
     assert len(linear_entries) == 4
     assert len({(entry[0], entry[1]) for entry in linear_entries}) == 4
@@ -2298,9 +2266,7 @@ def test_stacked_residual_mlp_torchbuilder_emits_all_integer_regions():
     assert actual_instantiations == expected_instantiations
 
     requantize_entries = [
-        entry
-        for entry in builder.composition
-        if entry[0] == "requantize3d"
+        entry for entry in builder.composition if entry[0] == "requantize3d"
     ]
     assert len(requantize_entries) == 5
     assert all(
@@ -2308,41 +2274,39 @@ def test_stacked_residual_mlp_torchbuilder_emits_all_integer_regions():
         for _, _, instantiate in requantize_entries
     )
 
-    relu_entries = [
-        entry for entry in builder.composition if entry[0] == "relu3d"
-    ]
+    relu_entries = [entry for entry in builder.composition if entry[0] == "relu3d"]
     assert all(type_bits(entry[2][0]) == 8 for entry in relu_entries)
 
-    assert len(
-        re.findall(
-            r"nn\.(?:q)?linear3d"
-            r"\[\s*int8\s*,\s*int8\s*,\s*int32",
-            source,
+    assert (
+        len(
+            re.findall(
+                r"nn\.(?:q)?linear3d" r"\[\s*int8\s*,\s*int8\s*,\s*int32",
+                source,
+            )
         )
-    ) == 4
+        == 4
+    )
     assert len(re.findall(r"nn\.relu3d\[\s*int8\b", source)) == 2
     assert source.count("nn.requantize3d[") == 5
     assert source.count("nn.qadd3d[") == 2
-    assert len(
-        re.findall(
-            r"requant_centered_\d+\s*:\s*int32\s*"
-            r"\[\s*1\s*,\s*3\s*,\s*8\s*\]",
-            source,
+    assert (
+        len(
+            re.findall(
+                r"requant_centered_\d+\s*:\s*int32\s*" r"\[\s*1\s*,\s*3\s*,\s*8\s*\]",
+                source,
+            )
         )
-    ) == 1
+        == 1
+    )
     assert_native_route_text(source)
 
     # Each down projection consumes activations with scale 2.0, so fused QDQ
     # lowering stores 2 * W. Each up projection consumes scale-1.0 input.
     expected_weights = {
         "first_up_proj_weight": RESIDUAL_MLP_UP_WEIGHT,
-        "first_down_proj_weight": (
-            RESIDUAL_MLP_DOWN_WEIGHT * RESIDUAL_HIDDEN_SCALE
-        ),
+        "first_down_proj_weight": (RESIDUAL_MLP_DOWN_WEIGHT * RESIDUAL_HIDDEN_SCALE),
         "second_up_proj_weight": RESIDUAL_MLP_UP_WEIGHT,
-        "second_down_proj_weight": (
-            RESIDUAL_MLP_DOWN_WEIGHT * RESIDUAL_HIDDEN_SCALE
-        ),
+        "second_down_proj_weight": (RESIDUAL_MLP_DOWN_WEIGHT * RESIDUAL_HIDDEN_SCALE),
     }
     for name_fragment, expected_weight in expected_weights.items():
         actual_weight = require_extra_global(
@@ -2458,9 +2422,7 @@ def test_stacked_residual_mlp_vitis_csim_is_bit_exact(tmp_path):
 
 def test_stacked_residual_mlp_vitis_synthesis_gate(tmp_path):
     if os.environ.get("ALLO_RUN_VITIS_CSYN") != "1":
-        pytest.skip(
-            "Set ALLO_RUN_VITIS_CSYN=1 to run stacked residual MLP synthesis"
-        )
+        pytest.skip("Set ALLO_RUN_VITIS_CSYN=1 to run stacked residual MLP synthesis")
     vitis_available_or_skip()
 
     project = tmp_path / "stacked_residual_mlp_csyn.prj"
@@ -2480,9 +2442,9 @@ def test_stacked_residual_mlp_vitis_hardware_emulation_gate(tmp_path):
             "hardware emulation"
         )
     vitis_available_or_skip()
-    assert os.environ.get("XDEVICE"), (
-        "XDEVICE must be set for stacked residual MLP hardware emulation"
-    )
+    assert os.environ.get(
+        "XDEVICE"
+    ), "XDEVICE must be set for stacked residual MLP hardware emulation"
 
     project = tmp_path / "stacked_residual_mlp_hw_emu.prj"
     module = build_stacked_residual_mlp_module(

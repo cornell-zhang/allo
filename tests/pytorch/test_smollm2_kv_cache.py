@@ -1,3 +1,6 @@
+# Copyright Allo authors. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 """SmolLM2 KV-cache prefill, decode, and generation tests."""
 
 from __future__ import annotations
@@ -89,9 +92,7 @@ def test_cached_prefill_matches_no_cache_for_complete_30_layer_model():
     config = tiny_config()
     prompt = torch.tensor([[2, 5, 9]], dtype=torch.int32)
     fixed = SmolLM2ForCausalLM(config, sequence_length=3).eval()
-    cached = SmolLM2CachedForCausalLM(
-        config, query_length=3, max_cache_length=8
-    ).eval()
+    cached = SmolLM2CachedForCausalLM(config, query_length=3, max_cache_length=8).eval()
     copy_matching_weights(fixed, cached)
     keys, values = empty_caches(config, 8)
 
@@ -117,9 +118,7 @@ def test_single_token_cached_decode_matches_full_sequence_logits():
     prefill = SmolLM2CachedForCausalLM(
         config, query_length=3, max_cache_length=8
     ).eval()
-    decode = SmolLM2CachedForCausalLM(
-        config, query_length=1, max_cache_length=8
-    ).eval()
+    decode = SmolLM2CachedForCausalLM(config, query_length=1, max_cache_length=8).eval()
     copy_matching_weights(full_model, prefill)
     copy_matching_weights(full_model, decode)
     keys, values = empty_caches(config, 8)
@@ -136,14 +135,10 @@ def test_single_token_cached_decode_matches_full_sequence_logits():
 def test_complete_cached_model_emits_positioned_rope_and_60_cache_updates():
     torch.manual_seed(7)
     config = tiny_config()
-    model = SmolLM2CachedForCausalLM(
-        config, query_length=1, max_cache_length=8
-    ).eval()
+    model = SmolLM2CachedForCausalLM(config, query_length=1, max_cache_length=8).eval()
     input_ids = torch.tensor([[3]], dtype=torch.int32)
     keys, values = empty_caches(config, 8)
-    _, builder, source = build_cached_source(
-        model, (input_ids, keys, values, 3)
-    )
+    _, builder, source = build_cached_source(model, (input_ids, keys, values, 3))
 
     assert source.count("nn.qpositioned_rope3d[") == config.num_hidden_layers * 2
     assert source.count("nn.qkv_cache_update3d[") == config.num_hidden_layers * 2
@@ -176,9 +171,9 @@ def test_real_checkpoint_cached_prefill_and_decode_match_huggingface():
         expected_prefill = reference(
             prompt.to(torch.int64), use_cache=False
         ).logits.float()
-        expected_decode = reference(
-            complete.to(torch.int64), use_cache=False
-        ).logits[:, -1].float()
+        expected_decode = (
+            reference(complete.to(torch.int64), use_cache=False).logits[:, -1].float()
+        )
         actual_prefill, keys, values = prefill(prompt, keys, values, 0)
         actual_decode, _, _ = decode(next_token, keys, values, 8)
     torch.testing.assert_close(
@@ -196,9 +191,7 @@ def test_real_checkpoint_cached_model_lowers_to_native_allo_mlir():
     require_gate("ALLO_RUN_SMOLLM2_CACHE_MLIR")
     model_dir = checkpoint_directory()
     config = load_huggingface_config(model_dir)
-    model = SmolLM2CachedForCausalLM(
-        config, query_length=1, max_cache_length=16
-    ).eval()
+    model = SmolLM2CachedForCausalLM(config, query_length=1, max_cache_length=16).eval()
     reference = load_huggingface_weights(model, model_dir)
     del reference
     ids = torch.tensor([[1]], dtype=torch.int32)
@@ -220,9 +213,7 @@ def test_real_checkpoint_cached_decode_executes_in_llvm():
     require_gate("ALLO_RUN_SMOLLM2_CACHE_LLVM")
     model_dir = checkpoint_directory()
     config = load_huggingface_config(model_dir)
-    model = SmolLM2CachedForCausalLM(
-        config, query_length=1, max_cache_length=16
-    ).eval()
+    model = SmolLM2CachedForCausalLM(config, query_length=1, max_cache_length=16).eval()
     reference = load_huggingface_weights(model, model_dir)
     del reference
     ids = torch.tensor([[1]], dtype=torch.int32)

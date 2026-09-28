@@ -1,21 +1,14 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 # pylint: disable=too-many-public-methods, too-many-instance-attributes, broad-exception-caught
-# BEGIN NATIVE INT8 QUANTIZATION: ADDED lint allowances
 # pylint: disable=too-many-arguments, too-many-locals
-# END NATIVE INT8 QUANTIZATION: ADDED lint allowances
 
 import operator
 import inspect
 import math
-
-# BEGIN NATIVE INT8 QUANTIZATION: ADDED imports
 from dataclasses import dataclass
-import warnings
 
 import numpy as np
-
-# END NATIVE INT8 QUANTIZATION: ADDED imports
 
 try:
     import torch
@@ -33,8 +26,6 @@ from ..ir import types
 from ..customize import customize
 from ..ir.types import float32, AlloType
 
-# BEGIN NATIVE INT8 QUANTIZATION: ADDED public metadata and qparam helpers
-
 
 @dataclass(frozen=True)
 class QuantInfo:
@@ -47,8 +38,18 @@ class QuantInfo:
     def __post_init__(self):
         if not math.isfinite(self.scale) or self.scale <= 0:
             raise ValueError("Quantization scale must be finite and positive")
+        if not np.finfo(np.float32).tiny <= self.scale <= np.finfo(np.float32).max:
+            raise NotImplementedError("Quantization scale must fit a normal float32")
+        if any(
+            not isinstance(value, (int, np.integer))
+            for value in (self.zero_point, self.qmin, self.qmax)
+        ):
+            raise ValueError("Quantization zero point and bounds must be integers")
         if self.qmin >= self.qmax or not self.qmin <= self.zero_point <= self.qmax:
             raise ValueError("Invalid quantization range or zero point")
+        storage_min, storage_max = get_qrange(self.dtype)
+        if self.qmin < storage_min or self.qmax > storage_max:
+            raise ValueError("Quantization bounds exceed the storage dtype")
 
 
 @dataclass(frozen=True)
@@ -57,56 +58,26 @@ class QuantizationConfig:
     weight_dtype: object = types.int8
     accumulator_dtype: object = types.int32
     calibration_method: str = "symmetric_minmax"
-
-    # BEGIN NATIVE INT8 QUANTIZATION: ADDED weight quantization granularity
     weight_granularity: str = "per_tensor"
-    # END NATIVE INT8 QUANTIZATION: ADDED weight quantization granularity
-
-    # BEGIN NATIVE INT8 QUANTIZATION: ADDED generic SmoothQuant controls
-    # SmoothQuant runs offline before activation calibration. These floating-
-    # point calculations are therefore not emitted inside native INT8 regions.
-    smoothquant_alpha: float | None = None
-    smoothquant_min_scale: float = 1.0e-5
-    # END NATIVE INT8 QUANTIZATION: ADDED generic SmoothQuant controls
 
     def __post_init__(self):
         if self.calibration_method not in {"symmetric_minmax", "minmax"}:
             raise ValueError("Unknown calibration_method")
-
-        # BEGIN NATIVE INT8 QUANTIZATION: ADDED granularity validation
         if self.weight_granularity not in {"per_tensor", "per_channel"}:
-            raise ValueError(
-                "weight_granularity must be 'per_tensor' or 'per_channel'"
-            )
-        # END NATIVE INT8 QUANTIZATION: ADDED granularity validation
-
-        # BEGIN NATIVE INT8 QUANTIZATION: ADDED SmoothQuant validation
-        if self.smoothquant_alpha is not None and not (
-            0.0 <= float(self.smoothquant_alpha) <= 1.0
-        ):
-            raise ValueError("smoothquant_alpha must be in [0, 1]")
-        if not (
-            math.isfinite(float(self.smoothquant_min_scale))
-            and float(self.smoothquant_min_scale) > 0.0
-        ):
-            raise ValueError(
-                "smoothquant_min_scale must be finite and positive"
-            )
-        # END NATIVE INT8 QUANTIZATION: ADDED SmoothQuant validation
-
-        get_qrange(self.activation_dtype)
-        get_qrange(self.weight_dtype)
+            raise ValueError("weight_granularity must be 'per_tensor' or 'per_channel'")
+        if get_qrange(self.activation_dtype) not in {(-128, 127), (0, 255)}:
+            raise NotImplementedError("activation_dtype supports only int8 or uint8")
+        if get_qrange(self.weight_dtype) != (-128, 127):
+            raise NotImplementedError("weight_dtype supports only signed int8")
         accumulator = self.accumulator_dtype
         if isinstance(accumulator, str):
             accumulator = getattr(types, accumulator, None)
         if not (
             isinstance(accumulator, AlloType)
-            and accumulator.__class__.__name__ in {"Int", "UInt"}
-            and accumulator.bits >= 32
+            and accumulator.__class__.__name__ == "Int"
+            and accumulator.bits == 32
         ):
-            raise ValueError(
-                "accumulator_dtype must be an integer of at least 32 bits"
-            )
+            raise ValueError("accumulator_dtype must be signed int32")
 
 
 def get_qrange(dtype):
@@ -167,12 +138,20 @@ def approximate_multiplier_shift(real_multiplier, multiplier_bits=31):
     while shift > 0 and multiplier % 2 == 0:
         multiplier >>= 1
         shift -= 1
+    if not -62 <= shift <= 62:
+        raise NotImplementedError("Requantization shift must be between -62 and 62")
     return multiplier, shift
 
 
-# END NATIVE INT8 QUANTIZATION: ADDED public metadata and qparam helpers
-
-# BEGIN NATIVE INT8 QUANTIZATION: ADDED generic SmoothQuant preprocessing
+def _check_requantization_range(multiplier, shift, magnitude, zero_point=0):
+    """Reject fixed-point intermediates that the int64 kernels cannot represent."""
+    if not -62 <= shift <= 62:
+        raise NotImplementedError("Requantization shift must be between -62 and 62")
+    bound = int(magnitude) * abs(int(multiplier))
+    if shift < 0:
+        bound <<= -shift
+    if bound + abs(int(zero_point)) > (1 << 63) - 1:
+        raise NotImplementedError("Requantization intermediate exceeds signed int64")
 
 
 def _normalize_calibration_inputs(
@@ -193,481 +172,16 @@ def _normalize_calibration_inputs(
     normalized = []
     for sample in samples:
         if not isinstance(sample, (tuple, list)):
-            raise TypeError(
-                "Each calibration sample must be a tuple or list"
-            )
+            raise TypeError("Each calibration sample must be a tuple or list")
         if len(sample) != len(example_inputs):
             raise ValueError(
                 "Each calibration sample must match the example_inputs arity"
             )
 
         # FX retains placeholders for arguments specialized to their defaults.
-        normalized.append(
-            tuple(sample) + tuple(concrete_args.values())
-        )
+        normalized.append(tuple(sample) + tuple(concrete_args.values()))
     return tuple(normalized)
 
-
-def _is_smoothquant_norm_candidate(module):
-    """Recognize a last-axis affine normalization without model-name checks."""
-
-    weight = getattr(module, "weight", None)
-    bias = getattr(module, "bias", None)
-    eps = getattr(module, "eps", None)
-
-    return (
-        "norm" in module.__class__.__name__.lower()
-        and isinstance(weight, torch.Tensor)
-        and weight.ndim == 1
-        and (
-            bias is None
-            or (
-                isinstance(bias, torch.Tensor)
-                and bias.shape == weight.shape
-            )
-        )
-        and isinstance(eps, (int, float))
-        and math.isfinite(float(eps))
-        and float(eps) >= 0.0
-    )
-
-
-def _discover_smoothquant_groups(gm):
-    """Find safe affine-norm outputs whose only users are Linear modules."""
-
-    modules = dict(gm.named_modules())
-    norm_nodes = {}
-
-    for node in gm.graph.nodes:
-        if node.op != "call_module":
-            continue
-
-        module = modules[node.target]
-        if not _is_smoothquant_norm_candidate(module):
-            continue
-
-        meta = node.meta.get("tensor_meta")
-        if not isinstance(meta, TensorMetadata) or not meta.shape:
-            continue
-        if int(meta.shape[-1]) != int(module.weight.numel()):
-            continue
-
-        norm_nodes.setdefault(node.target, []).append(node)
-
-    # Parameter ownership prevents the offline fold from changing a tied
-    # embedding/LM-head tensor or another consumer outside the discovered group.
-    parameter_owners = {}
-    try:
-        named_modules = gm.named_modules(remove_duplicate=False)
-    except TypeError:
-        named_modules = gm.named_modules()
-
-    for module_name, module in named_modules:
-        weight = getattr(module, "weight", None)
-        if isinstance(weight, torch.Tensor):
-            parameter_owners.setdefault(id(weight), set()).add(module_name)
-
-    groups = {}
-    skipped = {}
-    linear_owner = {}
-
-    for norm_target, nodes in norm_nodes.items():
-        linear_targets = {}
-        unsafe_user = False
-
-        for node in nodes:
-            if not node.users:
-                unsafe_user = True
-                break
-
-            for user in node.users:
-                if (
-                    user.op != "call_module"
-                    or user.target not in modules
-                    or not isinstance(
-                        modules[user.target],
-                        torch.nn.Linear,
-                    )
-                    or not user.args
-                    or user.args[0] is not node
-                ):
-                    unsafe_user = True
-                    break
-
-                linear_targets[user.target] = modules[user.target]
-
-            if unsafe_user:
-                break
-
-        if unsafe_user or not linear_targets:
-            continue
-
-        hidden_size = int(modules[norm_target].weight.numel())
-        if any(
-            int(linear.in_features) != hidden_size
-            for linear in linear_targets.values()
-        ):
-            continue
-
-        target_names = set(linear_targets)
-
-        external_aliases = {
-            owner
-            for linear in linear_targets.values()
-            for owner in parameter_owners.get(
-                id(linear.weight),
-                set(),
-            )
-            if owner not in target_names
-        }
-        norm_aliases = (
-            parameter_owners.get(
-                id(modules[norm_target].weight),
-                set(),
-            )
-            - {norm_target}
-        )
-
-        if external_aliases or norm_aliases:
-            skipped[norm_target] = (
-                "parameter storage is shared outside the group"
-            )
-            continue
-
-        conflicting = {
-            target: linear_owner[target]
-            for target in target_names
-            if (
-                target in linear_owner
-                and linear_owner[target] != norm_target
-            )
-        }
-        if conflicting:
-            skipped[norm_target] = (
-                "a Linear consumer belongs to another norm group"
-            )
-            continue
-
-        for target in target_names:
-            linear_owner[target] = norm_target
-
-        groups[norm_target] = (
-            modules[norm_target],
-            tuple(linear_targets.items()),
-        )
-
-    return groups, skipped
-
-
-def _smoothquant_norm_weight_offset(
-    norm,
-    probe_args,
-    scale,
-):
-    """Detect direct-weight versus one-plus-weight normalization gain."""
-
-    weight = norm.weight
-    bias = getattr(norm, "bias", None)
-
-    weight_before = weight.detach().clone()
-    bias_before = (
-        bias.detach().clone()
-        if bias is not None
-        else None
-    )
-
-    # This unusual FP32 conversion is only for proving the offline fold. It is
-    # not emitted into the generated native quantized implementation.
-    scale = scale.to(
-        device=weight.device,
-        dtype=torch.float32,
-    )
-
-    with torch.no_grad():
-        reference = norm(*probe_args).detach().float()
-        expected = reference / scale
-
-        for offset in (0.0, 1.0):
-            try:
-                # Standard LayerNorm/RMSNorm uses weight directly. Some RMSNorm
-                # implementations, including Gemma-style variants, use 1+weight.
-                adjusted = (
-                    (weight_before.float() + offset) / scale
-                    - offset
-                )
-                weight.copy_(adjusted.to(weight.dtype))
-
-                if bias is not None:
-                    bias.copy_(
-                        (bias_before.float() / scale).to(bias.dtype)
-                    )
-
-                actual = norm(*probe_args).detach().float()
-            finally:
-                weight.copy_(weight_before)
-                if bias is not None:
-                    bias.copy_(bias_before)
-
-            if torch.allclose(
-                actual,
-                expected,
-                rtol=2.0e-4,
-                atol=2.0e-5,
-            ):
-                return offset
-
-    raise NotImplementedError(
-        "SmoothQuant cannot prove an affine fold for "
-        f"{norm.__class__.__name__}"
-    )
-
-
-def apply_smoothquant(
-    gm,
-    calibration_inputs,
-    *,
-    alpha=0.5,
-    min_scale=1.0e-5,
-):
-    """Apply offline SmoothQuant to safe FX norm-to-Linear groups."""
-
-    alpha = float(alpha)
-    min_scale = float(min_scale)
-
-    if not 0.0 <= alpha <= 1.0:
-        raise ValueError("SmoothQuant alpha must be in [0, 1]")
-    if not math.isfinite(min_scale) or min_scale <= 0.0:
-        raise ValueError(
-            "SmoothQuant min_scale must be finite and positive"
-        )
-
-    previous_alpha = getattr(
-        gm,
-        "_allo_smoothquant_alpha",
-        None,
-    )
-    if previous_alpha is not None:
-        # Compare all fold parameters so a repeated call cannot silently reuse
-        # incompatible quantization metadata or compound a previous fold.
-        previous_min_scale = getattr(
-            gm,
-            "_allo_smoothquant_min_scale",
-            None,
-        )
-        if not (
-            math.isclose(float(previous_alpha), alpha)
-            and previous_min_scale is not None
-            and math.isclose(
-                float(previous_min_scale),
-                min_scale,
-            )
-        ):
-            raise ValueError(
-                "SmoothQuant was already applied with different parameters"
-            )
-
-        return {
-            name: scale.clone()
-            for name, scale
-            in gm._allo_smoothquant_scales.items()
-        }
-
-    calibration_inputs = tuple(calibration_inputs)
-    if not calibration_inputs:
-        raise ValueError(
-            "SmoothQuant requires at least one calibration sample"
-        )
-
-    groups, skipped = _discover_smoothquant_groups(gm)
-    if not groups:
-        detail = (
-            f"; skipped groups: {skipped}"
-            if skipped
-            else ""
-        )
-        raise ValueError(
-            "No safe norm-to-Linear SmoothQuant groups were found"
-            f"{detail}"
-        )
-
-    if skipped:
-        warnings.warn(
-            f"SmoothQuant skipped unsafe groups: {skipped}",
-            RuntimeWarning,
-            stacklevel=2,
-        )
-
-    # Activation range metadata is collected per input channel. Only folded
-    # parameters, not these FP32 calibration values, reach native INT8 lowering.
-    activation_max = {
-        name: torch.zeros(
-            norm.weight.numel(),
-            dtype=torch.float32,
-        )
-        for name, (norm, _) in groups.items()
-    }
-    probe_args = {}
-
-    def capture_output(name):
-        def hook(_module, args, output):
-            if not isinstance(output, torch.Tensor):
-                raise TypeError(
-                    "SmoothQuant normalization output must be a Tensor"
-                )
-
-            values = (
-                output.detach()
-                .float()
-                .reshape(-1, output.shape[-1])
-            )
-            activation_max[name] = torch.maximum(
-                activation_max[name],
-                values.abs().amax(dim=0).cpu(),
-            )
-
-            if name not in probe_args:
-                # Keep one real norm input to prove the fold before modifying
-                # checkpoint tensors with potentially unusual norm semantics.
-                probe_args[name] = tuple(
-                    value.detach().clone()
-                    if isinstance(value, torch.Tensor)
-                    else value
-                    for value in args
-                )
-
-        return hook
-
-    handles = [
-        norm.register_forward_hook(capture_output(name))
-        for name, (norm, _) in groups.items()
-    ]
-
-    was_training = gm.training
-    try:
-        gm.eval()
-        with torch.no_grad():
-            for sample in calibration_inputs:
-                if not isinstance(sample, (tuple, list)):
-                    raise TypeError(
-                        "Each SmoothQuant calibration sample "
-                        "must be a tuple or list"
-                    )
-                gm(*tuple(sample))
-    finally:
-        for handle in handles:
-            handle.remove()
-        gm.train(was_training)
-
-    # Validate every group before changing any checkpoint tensor. Otherwise an
-    # unsupported later norm could leave the model only partially smoothed.
-    fold_plan = []
-
-    for name, (norm, linears) in groups.items():
-        if name not in probe_args:
-            raise RuntimeError(
-                f"Calibration did not execute norm group {name!r}"
-            )
-
-        device = linears[0][1].weight.device
-        act_max = activation_max[name].to(
-            device=device,
-            dtype=torch.float32,
-        )
-
-        weight_max = torch.stack(
-            [
-                linear.weight.detach()
-                .float()
-                .abs()
-                .amax(dim=0)
-                for _, linear in linears
-            ]
-        ).amax(dim=0)
-        weight_max = weight_max.clamp(min=min_scale)
-
-        # SmoothQuant scale reconciliation:
-        # s_j = max|x_j|^alpha / max|W[:,j]|^(1-alpha)
-        scale = (
-            act_max.pow(alpha)
-            / weight_max.pow(1.0 - alpha)
-        ).clamp(min=min_scale)
-
-        if not torch.isfinite(scale).all():
-            raise ValueError(
-                f"SmoothQuant produced a non-finite scale for {name}"
-            )
-
-        offset = _smoothquant_norm_weight_offset(
-            norm,
-            probe_args[name],
-            scale,
-        )
-        fold_plan.append(
-            (name, norm, linears, scale, offset)
-        )
-
-    smooth_scales = {}
-    group_metadata = {}
-
-    with torch.no_grad():
-        for name, norm, linears, scale, offset in fold_plan:
-            norm_scale = scale.to(
-                norm.weight.device,
-                dtype=torch.float32,
-            )
-
-            adjusted = (
-                (norm.weight.detach().float() + offset)
-                / norm_scale
-                - offset
-            )
-            norm.weight.copy_(
-                adjusted.to(norm.weight.dtype)
-            )
-
-            if getattr(norm, "bias", None) is not None:
-                norm.bias.div_(
-                    norm_scale.to(norm.bias.dtype)
-                )
-
-            # Multiply each shared weight once. The existing Allo path still
-            # performs INT8×INT8→INT32 accumulation and INT64 requantization.
-            updated_weights = set()
-            for _, linear in linears:
-                if id(linear.weight) in updated_weights:
-                    continue
-
-                linear.weight.mul_(
-                    scale.to(linear.weight.dtype).reshape(1, -1)
-                )
-                updated_weights.add(id(linear.weight))
-
-            smooth_scales[name] = scale.detach().cpu()
-
-            # Record exact topology and norm convention for reviewability and
-            # to prevent an unnoticed repeated parameter fold.
-            group_metadata[name] = {
-                "linear_targets": tuple(
-                    target for target, _ in linears
-                ),
-                "weight_offset": offset,
-            }
-
-    # Persist preprocessing metadata on the FX module. This is offline metadata;
-    # it does not introduce a second graph representation or runtime operation.
-    gm._allo_smoothquant_alpha = alpha
-    gm._allo_smoothquant_min_scale = min_scale
-    gm._allo_smoothquant_scales = smooth_scales
-    gm._allo_smoothquant_groups = group_metadata
-    gm._allo_smoothquant_skipped = skipped
-
-    return {
-        name: scale.clone()
-        for name, scale in smooth_scales.items()
-    }
-
-
-# END NATIVE INT8 QUANTIZATION: ADDED generic SmoothQuant preprocessing
 
 def from_pytorch(
     model,
@@ -680,11 +194,9 @@ def from_pytorch(
     project="top.prj",
     op_dtypes=None,
     weights_as_args=False,
-    # BEGIN NATIVE INT8 QUANTIZATION: ADDED public options
     quant_config=None,
     qdq_lowering_mode="early",
     calibration_inputs=None,
-    # END NATIVE INT8 QUANTIZATION: ADDED public options
 ):
     sig = inspect.signature(model.forward)
     input_names = [
@@ -697,14 +209,11 @@ def from_pytorch(
     args += example_inputs
     for item in concrete_args.values():
         args.append(item)
-
-    # BEGIN NATIVE INT8 QUANTIZATION: ADDED reusable calibration batches
     calibration_args = _normalize_calibration_inputs(
         example_inputs,
         calibration_inputs,
         concrete_args,
     )
-    # END NATIVE INT8 QUANTIZATION: ADDED reusable calibration batches
 
     tracer = AlloTracer(model, concrete_args=concrete_args, leaf_modules=leaf_modules)
     graph = tracer.trace()
@@ -715,79 +224,6 @@ def from_pytorch(
     )
     gm = GraphModule(tracer.root, graph, name)
     ShapeProp(gm).propagate(*args)
-
-    # BEGIN NATIVE INT8 QUANTIZATION: ADDED frontend SmoothQuant dispatch
-    # Perform the offline fold before TorchBuilder chooses activation qparams.
-    smoothquant_alpha = getattr(
-        quant_config,
-        "smoothquant_alpha",
-        None,
-    )
-
-    if smoothquant_alpha is not None:
-        if not isinstance(model, torch.nn.Module):
-            raise TypeError(
-                "SmoothQuant requires a torch.nn.Module model"
-            )
-
-        previous_alpha = getattr(
-            model,
-            "_allo_smoothquant_alpha",
-            None,
-        )
-
-        if previous_alpha is None:
-            scales = apply_smoothquant(
-                gm,
-                calibration_args,
-                alpha=smoothquant_alpha,
-                min_scale=quant_config.smoothquant_min_scale,
-            )
-
-            # GraphModule normally shares the original module objects. Loading
-            # state back also covers FX versions that copy module state.
-            if model is not gm:
-                model.load_state_dict(
-                    gm.state_dict(),
-                    strict=False,
-                )
-
-            # Preserve offline scale/topology metadata on the public model.
-            model._allo_smoothquant_alpha = float(
-                smoothquant_alpha
-            )
-            model._allo_smoothquant_min_scale = float(
-                quant_config.smoothquant_min_scale
-            )
-            model._allo_smoothquant_scales = scales
-            model._allo_smoothquant_groups = (
-                gm._allo_smoothquant_groups
-            )
-            model._allo_smoothquant_skipped = (
-                gm._allo_smoothquant_skipped
-            )
-
-        elif not (
-            math.isclose(
-                float(previous_alpha),
-                float(smoothquant_alpha),
-            )
-            and math.isclose(
-                float(
-                    getattr(
-                        model,
-                        "_allo_smoothquant_min_scale",
-                        -1.0,
-                    )
-                ),
-                float(quant_config.smoothquant_min_scale),
-            )
-        ):
-            raise ValueError(
-                "SmoothQuant was already applied with "
-                "different parameters"
-            )
-    # END NATIVE INT8 QUANTIZATION: ADDED frontend SmoothQuant dispatch
 
     if verbose:
         print(str(gm.graph) + "\n")
@@ -805,19 +241,22 @@ def from_pytorch(
             new_name = "gb_" + name.replace(".", "_")
             global_vars.update({new_name: buf.detach().numpy()})
 
-    builder = TorchBuilder(gm, example_inputs, leaf_modules, op_dtypes, weights_as_args, calibration_inputs=calibration_args,)
-    # BEGIN NATIVE INT8 QUANTIZATION: ADDED opt-in builder configuration
+    builder = TorchBuilder(
+        gm,
+        example_inputs,
+        leaf_modules,
+        op_dtypes,
+        weights_as_args,
+        calibration_inputs=calibration_args,
+    )
     if quant_config is not None or qdq_lowering_mode != "early":
         builder.configure_quantization(quant_config, qdq_lowering_mode)
-    # END NATIVE INT8 QUANTIZATION: ADDED opt-in builder configuration
     code = builder.build()
     if verbose:
         print(code)
-    # BEGIN NATIVE INT8 QUANTIZATION: ADDED integer constants
     if builder.quantization_enabled:
         global_vars["roundeven"] = dsl.roundeven
     global_vars.update(builder.extra_globals)
-    # END NATIVE INT8 QUANTIZATION: ADDED integer constants
     # register any synthetic dtype symbols required by the builder
     if getattr(builder, "extra_types", None):
         global_vars.update(builder.extra_types)
@@ -833,9 +272,8 @@ def from_pytorch(
 
     # If weights are passed as arguments, create a wrapper function
     if weights_as_args:
-        # BEGIN NATIVE INT8 QUANTIZATION: CHANGED runtime arguments use the
-        # exact integer arrays prepared by TorchBuilder instead of the original
-        # floating-point checkpoint arrays.
+        # Runtime arguments use the exact integer arrays prepared by TorchBuilder
+        # instead of the original floating-point checkpoint arrays.
         weight_data = []
         weight_names = []
         for name, param in builder.named_params.items():
@@ -853,7 +291,6 @@ def from_pytorch(
         for name, (_, _, data) in builder.runtime_aux_params.items():
             weight_names.append(name)
             weight_data.append(data)
-        # END NATIVE INT8 QUANTIZATION: CHANGED runtime argument preparation
 
         # Create a wrapper that accepts inputs and weights
         def wrapped_forward(*args):
@@ -903,36 +340,26 @@ class TorchBuilder:
         leaf_modules=None,
         op_dtypes=None,
         weights_as_args=False,
-        # BEGIN NATIVE INT8 QUANTIZATION: ADDED direct builder options
         quant_config=None,
         qdq_lowering_mode="early",
         calibration_inputs=None,
-        # END NATIVE INT8 QUANTIZATION: ADDED direct builder options
     ):
         self.gm = gm
         self.code = []
         self.input_names = []
         self.input_shapes = []
         self.example_inputs = example_inputs
-        # BEGIN NATIVE INT8 QUANTIZATION: ADDED multi-sample calibration state
         # These are complete FX call tuples. example_inputs still controls the
         # generated function signature and fixed tensor shapes.
         self.calibration_inputs = (
             (tuple(example_inputs),)
             if calibration_inputs is None
-            else tuple(
-                tuple(sample)
-                for sample in calibration_inputs
-            )
+            else tuple(tuple(sample) for sample in calibration_inputs)
         )
         if not self.calibration_inputs:
-            raise ValueError(
-                "calibration_inputs must contain at least one sample"
-            )
-        # END NATIVE INT8 QUANTIZATION: ADDED multi-sample calibration state
+            raise ValueError("calibration_inputs must contain at least one sample")
         self.leaf_modules = leaf_modules
         self.input_args = []
-        # BEGIN NATIVE INT8 QUANTIZATION: ADDED tied-parameter alias metadata
         self.named_params = dict(gm.named_parameters())
         self.parameter_aliases = {}
         try:
@@ -948,11 +375,8 @@ class TorchBuilder:
         }
         for name, param in all_named_params:
             canonical = canonical_parameters.get(id(param), name)
-            self.parameter_aliases[name.replace(".", "_")] = canonical.replace(
-                ".", "_"
-            )
+            self.parameter_aliases[name.replace(".", "_")] = canonical.replace(".", "_")
         self.named_buffers = dict(gm.named_buffers())
-        # END NATIVE INT8 QUANTIZATION: ADDED tied-parameter alias metadata
         self.subfunctions = []
         self.output = []
         self.composition = []
@@ -965,13 +389,9 @@ class TorchBuilder:
         self.extra_types = {}
         # whether to pass weights as function arguments instead of global constants
         self.weights_as_args = weights_as_args
-        # BEGIN NATIVE INT8 QUANTIZATION: ADDED builder state
         self.runtime_param_data = {}
         self.runtime_aux_params = {}
         self.configure_quantization(quant_config, qdq_lowering_mode)
-        # END NATIVE INT8 QUANTIZATION: ADDED builder state
-
-    # BEGIN NATIVE INT8 QUANTIZATION: ADDED TorchBuilder integer helpers
 
     def configure_quantization(self, quant_config=None, qdq_lowering_mode="early"):
         if quant_config is not None and not isinstance(
@@ -1016,9 +436,8 @@ class TorchBuilder:
     def _emit_scalar_constant(self, value, dtype_name, prefix):
         result = self._new_tmp_name(prefix)
 
-        # BEGIN NATIVE INT8 QUANTIZATION: CHANGED materialize wide int64
-        # constants from signed-i32-safe limbs because Allo initially infers
-        # integer literals as i32 before applying the destination annotation.
+        # Build wide int64 constants from signed-i32-safe limbs. Allo initially
+        # infers integer literals as i32 before applying the destination annotation.
         if dtype_name == "int64":
             integer_value = int(value)
             if not -(1 << 31) <= integer_value <= (1 << 31) - 1:
@@ -1037,11 +456,8 @@ class TorchBuilder:
 
                 self.code.append(f"{result}: int64 = {initial}")
                 for limb in reversed(limbs[:-1]):
-                    self.code.append(
-                        f"{result} = ({result} << 30) {operation} {limb}"
-                    )
+                    self.code.append(f"{result} = ({result} << 30) {operation} {limb}")
                 return result
-        # END NATIVE INT8 QUANTIZATION: CHANGED wide int64 materialization
 
         self.code.append(f"{result}: {dtype_name} = {value}")
         return result
@@ -1136,7 +552,7 @@ class TorchBuilder:
                     )
                     previous = ranges.get(n)
 
-                    # NATIVE INT8 QUANTIZATION: CHANGED aggregate extrema
+                    # aggregate extrema
                     # across every representative calibration batch.
                     ranges[n] = (
                         current
@@ -1151,7 +567,7 @@ class TorchBuilder:
                 return result
 
         with torch.no_grad():
-            # NATIVE INT8 QUANTIZATION: CHANGED aggregate ranges across every
+            # aggregate ranges across every
             # representative input batch instead of only example_inputs.
             for sample in self.calibration_inputs:
                 RangeInterpreter(self.gm).run(*sample)
@@ -1190,10 +606,20 @@ class TorchBuilder:
         )
 
     def _explicit_output_quant_info(self, node):
+        # A float observer or a differently quantized branch must see the
+        # unrounded intermediate. Fuse only a common boundary for every use.
+        info = None
         for user in node.users:
-            if user.op == "call_function" and user.target is torch.quantize_per_tensor:
-                return self._quant_info_from_node(user)
-        return None
+            if (
+                user.op != "call_function"
+                or user.target is not torch.quantize_per_tensor
+            ):
+                return None
+            candidate = self._quant_info_from_node(user)
+            if info is not None and candidate != info:
+                return None
+            info = candidate
+        return info
 
     @staticmethod
     def _shape(node):
@@ -1201,10 +627,6 @@ class TorchBuilder:
         if isinstance(meta, TensorMetadata):
             return tuple(meta.shape)
         raise NotImplementedError(f"Missing tensor shape for {node.name}")
-
-    @staticmethod
-    def _is_output_boundary(node):
-        return any(user.op == "output" for user in node.users)
 
     def _emit_cast(self, value, dtype_name, shape, prefix):
         result = self._new_tmp_name(prefix)
@@ -1225,12 +647,15 @@ class TorchBuilder:
         dims = ", ".join(str(dim) for dim in shape)
         indices = ", ".join(f"i{axis}" for axis in range(len(shape)))
         values = self._new_tmp_name("qdq_min")
+        # Bound the floating value before converting the rounded result to int32.
         self.code += [
             f"{values}: int32[{dims}]",
             f'for {indices} in dsl.grid({dims}, name="{values}_quantize"):',
             (
-                f"    {values}[{indices}] = min(max(roundeven("
-                f"{node.name}[{indices}] / {repr(float(info.scale))}) + "
+                f"    {values}[{indices}] = min(max(roundeven(min(max("
+                f"{node.name}[{indices}] / {repr(float(info.scale))}, "
+                f"{float(info.qmin - info.zero_point)}), "
+                f"{float(info.qmax - info.zero_point)})) + "
                 f"{info.zero_point}, {info.qmin}), {info.qmax})"
             ),
         ]
@@ -1244,6 +669,11 @@ class TorchBuilder:
         if key in self.materialized_quant_map:
             return self.materialized_quant_map[key]
         info = self.lookup_quant_info(node)
+        if node in self.integer_values:
+            result = node.name + "_dequantized"
+            self.code.append(self._dequantize_value(node, node.name, info, result))
+            self.materialized_quant_map[key] = result
+            return result
         value = self._emit_cast(
             self.materialize_quant_info_clamped(node),
             "float32",
@@ -1260,6 +690,22 @@ class TorchBuilder:
             value = scaled
         self.materialized_quant_map[key] = value
         return value
+
+    def _floating_value_name(self, value):
+        """Materialize a logical floating operand before a non-integer consumer."""
+        if not isinstance(value, fx.Node) or self.lookup_quant_info(value) is None:
+            return get_var_name(value)
+        if not self._node_has_floating_tensor(value):
+            raise NotImplementedError(
+                "Floating consumers require dequantize() on quantized tensors"
+            )
+        if (
+            value in self.integer_values
+            or self.delay_qdq_lowering
+            or self.quant_config is not None
+        ):
+            return self.materialize_quant_info(value)
+        return value.name
 
     def _prepare_quantized_passthrough(self, source, destination):
         info = self.lookup_quant_info(source)
@@ -1331,6 +777,15 @@ class TorchBuilder:
         multiplier, shift = approximate_multiplier_shift(
             src_info.scale / dst_info.scale
         )
+        _check_requantization_range(
+            multiplier,
+            shift,
+            max(
+                abs(src_info.qmin - src_info.zero_point),
+                abs(src_info.qmax - src_info.zero_point),
+            ),
+            dst_info.zero_point,
+        )
         multiplier = self._emit_scalar_constant(
             multiplier, "int64", "requant_multiplier"
         )
@@ -1369,11 +824,27 @@ class TorchBuilder:
             )
         if spec is None:
             return None
-        if not isinstance(spec, (tuple, list)) or len(spec) != 3:
+        if not isinstance(spec, (tuple, list)):
+            return None
+        if len(spec) != 3:
             raise ValueError(
                 "Linear dtype specification must contain exactly three entries"
             )
-        return tuple(self._dtype(dtype) for dtype in spec)
+        dtypes = tuple(self._dtype(dtype) for dtype in spec)
+        if not any(dtype[1].__class__.__name__ in {"Int", "UInt"} for dtype in dtypes):
+            return None
+        if not (
+            self._is_integer(dtypes[0][1], 8)
+            and self._is_integer(dtypes[1][1], 8)
+            and dtypes[1][1].__class__.__name__ == "Int"
+            and self._is_integer(dtypes[2][1], 32)
+            and dtypes[2][1].__class__.__name__ == "Int"
+        ):
+            raise NotImplementedError(
+                "Native Linear requires int8/uint8 input, signed int8 weights, "
+                "and signed int32 accumulation"
+            )
+        return dtypes
 
     def _build_native_linear(self, node, has_bias, dtypes):
         input_node = node.args[0]
@@ -1393,15 +864,17 @@ class TorchBuilder:
             and self._is_integer(acc_type, 32)
         ):
             return None
+        if get_qrange(input_info.dtype) != get_qrange(x_type):
+            raise NotImplementedError(
+                "Native Linear input storage must match its dtype triplet"
+            )
 
         target = node.target.replace(".", "_")
         requested_weight_name = target + "_weight"
         weight_name = self._module_parameter_symbol(node.target)
         weight = self._module_parameter(node.target).detach().numpy()
         wmin, wmax = get_qrange(w_type)
-
-        # BEGIN NATIVE INT8 QUANTIZATION: CHANGED optional per-output-channel
-        # weight quantization. A tied Linear alias, such as the tied LM head,
+        # A tied Linear alias, such as the tied LM head,
         # remains per-tensor so it can safely reuse the embedding table.
         per_channel_weights = (
             self.quant_config is not None
@@ -1410,9 +883,30 @@ class TorchBuilder:
         )
 
         if self.quant_config is None:
+            # Preserve the existing exact scale-folded representation when
+            # possible. Otherwise keep exact integer weights and carry the
+            # input scale on the accumulator instead of rounding it away.
             weight_scale = 1.0
-            weight_source = weight * input_info.scale
+            weight_source = weight.astype(np.float64) * input_info.scale
             accumulator_scale = 1.0
+            if not (
+                np.isfinite(weight_source).all()
+                and np.equal(weight_source, np.rint(weight_source)).all()
+                and (weight_source >= wmin).all()
+                and (weight_source <= wmax).all()
+            ):
+                weight_source = weight.astype(np.float64)
+                accumulator_scale = input_info.scale
+            if not (
+                np.isfinite(weight_source).all()
+                and np.equal(weight_source, np.rint(weight_source)).all()
+                and (weight_source >= wmin).all()
+                and (weight_source <= wmax).all()
+            ):
+                raise NotImplementedError(
+                    "Explicit Q/DQ Linear requires exactly representable int8 "
+                    "weights, either directly or after folding the input scale"
+                )
         elif per_channel_weights:
             weight_scale = np.asarray(
                 [
@@ -1438,12 +932,7 @@ class TorchBuilder:
             weight_source = weight
             accumulator_scale = input_info.scale * weight_scale
 
-        weight_divisor = (
-            weight_scale[:, None]
-            if per_channel_weights
-            else weight_scale
-        )
-        # END NATIVE INT8 QUANTIZATION: CHANGED weight scale selection
+        weight_divisor = weight_scale[:, None] if per_channel_weights else weight_scale
 
         weight_codes = np.clip(
             np.rint(weight_source / weight_divisor),
@@ -1463,19 +952,42 @@ class TorchBuilder:
         ).sum(axis=1)
 
         if has_bias:
-            bias = self._module_parameter(
-                node.target,
-                "bias",
-            ).detach().numpy()
-            bias_codes += np.rint(
-                bias / accumulator_scale
-            ).astype(np.int64)
+            bias = (
+                self._module_parameter(
+                    node.target,
+                    "bias",
+                )
+                .detach()
+                .numpy()
+            )
+            scaled_bias = bias.astype(np.float64) / accumulator_scale
+            if self.quant_config is None and not (
+                np.isfinite(scaled_bias).all()
+                and np.equal(scaled_bias, np.rint(scaled_bias)).all()
+            ):
+                raise NotImplementedError(
+                    "Explicit Q/DQ Linear bias must be exact at the accumulator scale"
+                )
+            if not np.isfinite(scaled_bias).all() or (np.abs(scaled_bias) > amax).any():
+                raise NotImplementedError("Linear bias exceeds signed int32")
+            bias_codes += np.rint(scaled_bias).astype(np.int64)
+
+        if (bias_codes < amin).any() or (bias_codes > amax).any():
+            raise NotImplementedError("Centered Linear bias exceeds signed int32")
 
         bias_codes = np.clip(
             bias_codes,
             amin,
             amax,
         ).astype(acc_numpy)
+        input_bound = max(abs(input_info.qmin), abs(input_info.qmax))
+        accumulation_bound = np.abs(weight_codes.astype(np.int64)).sum(
+            axis=1
+        ) * input_bound + np.abs(bias_codes.astype(np.int64))
+        if (accumulation_bound > amax).any():
+            raise NotImplementedError(
+                "Native Linear accumulation may exceed signed int32"
+            )
 
         if has_bias:
             bias_name = target + "_bias"
@@ -1520,9 +1032,7 @@ class TorchBuilder:
                 shape[2],
             )
         else:
-            raise NotImplementedError(
-                "Integer Linear supports rank-2/rank-3"
-            )
+            raise NotImplementedError("Integer Linear supports rank-2/rank-3")
 
         name_id = self.get_unique_id("linear")
         self.composition.append(
@@ -1547,11 +1057,7 @@ class TorchBuilder:
             ]
         )
 
-        accumulator = (
-            node.name + "_acc"
-            if self.quant_config is not None
-            else node.name
-        )
+        accumulator = node.name + "_acc" if self.quant_config is not None else node.name
 
         linear = (
             f'{accumulator} = nn.{kernel}[{template}, "{name_id}"]('
@@ -1569,22 +1075,23 @@ class TorchBuilder:
             )
             self.record_quant_info(node, accumulator_info)
             self.integer_values.add(node)
-            self.materialized_quant_map[
-                node.name + "_clamped"
-            ] = node.name
+            self.materialized_quant_map[node.name + "_clamped"] = node.name
             return linear
 
         self.code.append(linear)
         output_info = self._activation_quant_info(node)
-
-        # BEGIN NATIVE INT8 QUANTIZATION: ADDED per-channel requantization
         if per_channel_weights:
             multiplier_shift = [
-                approximate_multiplier_shift(
-                    float(scale) / output_info.scale
-                )
+                approximate_multiplier_shift(float(scale) / output_info.scale)
                 for scale in accumulator_scale
             ]
+            for multiplier, shift in multiplier_shift:
+                _check_requantization_range(
+                    multiplier,
+                    shift,
+                    max(abs(amin), abs(amax)),
+                    output_info.zero_point,
+                )
 
             multipliers = np.asarray(
                 [item[0] for item in multiplier_shift],
@@ -1606,12 +1113,8 @@ class TorchBuilder:
                 shifts,
             )
 
-            requantize_kernel = (
-                f"requantize_per_channel{len(shape)}d"
-            )
-            requantize_id = self.get_unique_id(
-                requantize_kernel
-            )
+            requantize_kernel = f"requantize_per_channel{len(shape)}d"
+            requantize_id = self.get_unique_id(requantize_kernel)
 
             self.composition.append(
                 (
@@ -1640,11 +1143,8 @@ class TorchBuilder:
 
             self.record_quant_info(node, output_info)
             self.integer_values.add(node)
-            self.materialized_quant_map[
-                node.name + "_clamped"
-            ] = node.name
+            self.materialized_quant_map[node.name + "_clamped"] = node.name
             return result
-        # END NATIVE INT8 QUANTIZATION: ADDED per-channel requantization
 
         accumulator_info = QuantInfo(
             float(accumulator_scale),
@@ -1664,9 +1164,7 @@ class TorchBuilder:
 
         self.record_quant_info(node, output_info)
         self.integer_values.add(node)
-        self.materialized_quant_map[
-            node.name + "_clamped"
-        ] = node.name
+        self.materialized_quant_map[node.name + "_clamped"] = node.name
         return requantized
 
     def _build_quantized_add(self, node):
@@ -1685,14 +1183,12 @@ class TorchBuilder:
         if output_info is None and self.quant_config is not None:
             output_info = self._activation_quant_info(node)
         if output_info is None:
-            output_info = QuantInfo(
-                max(lhs_info.scale, rhs_info.scale),
-                0,
-                lhs_info.dtype,
-                lhs_info.qmin,
-                lhs_info.qmax,
-            )
+            return None
         shape = self._shape(node)
+        if len(shape) not in {2, 3} or any(
+            self._shape(operand) != shape for operand in (lhs, rhs)
+        ):
+            return None
         kernel, name_id = f"qadd{len(shape)}d", self.get_unique_id(f"qadd{len(shape)}d")
         lhs_name, lhs_type, _ = self._dtype(lhs_info.dtype)
         rhs_name, rhs_type, _ = self._dtype(rhs_info.dtype)
@@ -1702,6 +1198,16 @@ class TorchBuilder:
         shift = max(ls, rs)
         lm <<= shift - ls
         rm <<= shift - rs
+        magnitude = max(
+            abs(lhs_info.qmin - lhs_info.zero_point),
+            abs(lhs_info.qmax - lhs_info.zero_point),
+        ) * abs(lm) + max(
+            abs(rhs_info.qmin - rhs_info.zero_point),
+            abs(rhs_info.qmax - rhs_info.zero_point),
+        ) * abs(
+            rm
+        )
+        _check_requantization_range(1, shift, magnitude, output_info.zero_point)
         lhs_value = self._quantized_value_name(lhs)
         rhs_value = self._quantized_value_name(rhs)
         lm = self._emit_scalar_constant(lm, "int64", "qadd_lhs_multiplier")
@@ -1793,6 +1299,19 @@ class TorchBuilder:
             multiplier, shift = approximate_multiplier_shift(
                 lhs_info.scale * rhs_info.scale / output_info.scale
             )
+            _check_requantization_range(
+                multiplier,
+                shift,
+                max(
+                    abs(lhs_info.qmin - lhs_info.zero_point),
+                    abs(lhs_info.qmax - lhs_info.zero_point),
+                )
+                * max(
+                    abs(rhs_info.qmin - rhs_info.zero_point),
+                    abs(rhs_info.qmax - rhs_info.zero_point),
+                ),
+                output_info.zero_point,
+            )
             multiplier = self._emit_scalar_constant(
                 multiplier, "int64", "qmul_multiplier"
             )
@@ -1826,7 +1345,7 @@ class TorchBuilder:
             source, scalar, source_info = lhs, float(rhs), lhs_info
         elif rhs_info is not None and isinstance(lhs, (int, float)):
             source, scalar, source_info = rhs, float(lhs), rhs_info
-        if source is None or scalar < 0:
+        if source is None or scalar <= 0:
             return None
         scaled_info = QuantInfo(
             source_info.scale * scalar,
@@ -1867,6 +1386,24 @@ class TorchBuilder:
         out_name, out_type, _ = self._dtype(output_info.dtype)
         multiplier, shift = approximate_multiplier_shift(
             lhs_info.scale * rhs_info.scale / output_info.scale
+        )
+        magnitude = (
+            K
+            * max(
+                abs(lhs_info.qmin - lhs_info.zero_point),
+                abs(lhs_info.qmax - lhs_info.zero_point),
+            )
+            * max(
+                abs(rhs_info.qmin - rhs_info.zero_point),
+                abs(rhs_info.qmax - rhs_info.zero_point),
+            )
+        )
+        if magnitude > (1 << 31) - 1:
+            raise NotImplementedError(
+                "Batched matmul accumulation may exceed signed int32"
+            )
+        _check_requantization_range(
+            multiplier, shift, magnitude, output_info.zero_point
         )
         multiplier = self._emit_scalar_constant(
             multiplier, "int64", "qmatmul_multiplier"
@@ -1920,9 +1457,7 @@ class TorchBuilder:
         table_name = self._record_synthetic_array(
             f"qsilu_table_{name_id}", out_name, table
         )
-        self.composition.append(
-            ("qsilu3d", name_id, [in_type, out_type, *shape])
-        )
+        self.composition.append(("qsilu3d", name_id, [in_type, out_type, *shape]))
         self._record_integer_result(node, output_info)
         B, L, D = shape
         return (
@@ -1946,11 +1481,30 @@ class TorchBuilder:
         out_name, out_type, _ = self._dtype(output_info.dtype)
         B, L, D = shape
         factor = weight_info.scale * math.sqrt(D) / output_info.scale
+        factor_code = int(round(factor * (1 << 20)))
+        eps_code = max(0, int(round(float(module.eps) * D / (source_info.scale**2))))
+        input_bound = max(
+            abs(source_info.qmin - source_info.zero_point),
+            abs(source_info.qmax - source_info.zero_point),
+        )
+        weight_bound = max(
+            abs(weight_info.qmin - weight_info.zero_point),
+            abs(weight_info.qmax - weight_info.zero_point),
+        )
+        radicand_bound = (D * input_bound**2 + eps_code) << 24
+        # Binary search adds low+high, and ties-to-even doubles remainders.
+        if 2 * (radicand_bound + 1) > (1 << 63) - 1:
+            raise NotImplementedError(
+                "RMSNorm square-root intermediate exceeds signed int64"
+            )
+        _check_requantization_range(
+            factor_code, 0, input_bound * weight_bound, output_info.zero_point
+        )
         factor_multiplier = self._emit_scalar_constant(
-            int(round(factor * (1 << 20))), "int64", "qrms_factor"
+            factor_code, "int64", "qrms_factor"
         )
         eps_codes = self._emit_scalar_constant(
-            max(0, int(round(float(module.eps) * D / (source_info.scale**2)))),
+            eps_code,
             "int64",
             "qrms_eps",
         )
@@ -2007,9 +1561,18 @@ class TorchBuilder:
         multiplier, shift = approximate_multiplier_shift(
             source_info.scale / (32767.0 * output_info.scale)
         )
-        multiplier = self._emit_scalar_constant(
-            multiplier, "int64", "qrope_multiplier"
+        _check_requantization_range(
+            multiplier,
+            shift,
+            2
+            * 32768
+            * max(
+                abs(source_info.qmin - source_info.zero_point),
+                abs(source_info.qmax - source_info.zero_point),
+            ),
+            output_info.zero_point,
         )
+        multiplier = self._emit_scalar_constant(multiplier, "int64", "qrope_multiplier")
         name_id = self.get_unique_id("qrope3d")
         self.composition.append(
             (
@@ -2052,6 +1615,17 @@ class TorchBuilder:
         multiplier, shift = approximate_multiplier_shift(
             source_info.scale / (32767.0 * output_info.scale)
         )
+        _check_requantization_range(
+            multiplier,
+            shift,
+            2
+            * 32768
+            * max(
+                abs(source_info.qmin - source_info.zero_point),
+                abs(source_info.qmax - source_info.zero_point),
+            ),
+            output_info.zero_point,
+        )
         multiplier = self._emit_scalar_constant(
             multiplier, "int64", "qpositioned_rope_multiplier"
         )
@@ -2079,19 +1653,18 @@ class TorchBuilder:
         if source_info is None or self.quant_config is None:
             return None
         H, L, S = self._shape(node)
+        if S * (1 << 41) > (1 << 63) - 1:
+            raise NotImplementedError("Softmax normalization exceeds signed int64")
         output_info = QuantInfo(1.0 / 255.0, 0, types.uint8, 0, 255)
         in_name, in_type, _ = self._dtype(source_info.dtype)
         out_name, out_type, _ = self._dtype(output_info.dtype)
         exp_table = np.rint(
-            np.exp(-np.arange(256, dtype=np.float64) * source_info.scale)
-            * (1 << 20)
+            np.exp(-np.arange(256, dtype=np.float64) * source_info.scale) * (1 << 20)
         ).astype(np.int32)
         name_id = self.get_unique_id("qcausal_softmax3d")
-        # BEGIN NATIVE INT8 QUANTIZATION: CHANGED use typed synthetic LUT storage
         table_name = self._record_synthetic_array(
             f"qsoftmax_exp_table_{name_id}", "int32", exp_table
         )
-        # END NATIVE INT8 QUANTIZATION: CHANGED use typed synthetic LUT storage
         output_multiplier = self._emit_scalar_constant(
             int(round((1.0 / output_info.scale) * (1 << 20))),
             "int64",
@@ -2126,9 +1699,7 @@ class TorchBuilder:
         B, L = input_shape
         V, D = tuple(module.weight.shape)
         name_id = self.get_unique_id("qembedding2d")
-        self.composition.append(
-            ("qembedding2d", name_id, [weight_type, B, L, V, D])
-        )
+        self.composition.append(("qembedding2d", name_id, [weight_type, B, L, V, D]))
         self._record_integer_result(node, weight_info)
         return (
             f"{node.name} = nn.qembedding2d[{weight_dtype_name}, {B}, {L}, "
@@ -2157,9 +1728,9 @@ class TorchBuilder:
 
     def _build_quantized_kv_cache_update(self, node):
         values, cache = node.args[:2]
-        values_info, cache_info = self.lookup_quant_info(values), self.lookup_quant_info(
-            cache
-        )
+        values_info, cache_info = self.lookup_quant_info(
+            values
+        ), self.lookup_quant_info(cache)
         if values_info is None or cache_info is None:
             return None
         H, L, D = self._shape(values)
@@ -2170,6 +1741,15 @@ class TorchBuilder:
         cache_name, cache_type, _ = self._dtype(cache_info.dtype)
         multiplier, shift = approximate_multiplier_shift(
             values_info.scale / cache_info.scale
+        )
+        _check_requantization_range(
+            multiplier,
+            shift,
+            max(
+                abs(values_info.qmin - values_info.zero_point),
+                abs(values_info.qmax - values_info.zero_point),
+            ),
+            cache_info.zero_point,
         )
         multiplier = self._emit_scalar_constant(
             multiplier, "int64", "qkv_cache_multiplier"
@@ -2192,8 +1772,6 @@ class TorchBuilder:
             f"{cache_info.zero_point}, {cache_info.qmin}, {cache_info.qmax}, "
             f"{position})"
         )
-
-    # END NATIVE INT8 QUANTIZATION: ADDED TorchBuilder integer helpers
 
     def _find_types_module_symbol(self, dtype_obj):
         # Try to find a public symbol name in allo.ir.types that references this object
@@ -2295,12 +1873,15 @@ class TorchBuilder:
         if var_name_underscored not in self.param_dtypes:
             self.param_dtypes[var_name_underscored] = self._resolve_dtype_name(op_kind)
 
-    # BEGIN NATIVE INT8 QUANTIZATION: ADDED input and parameter helpers
-
-    @staticmethod
-    def _input_dtype_name(value, quant_config):
+    def _input_dtype_name(self, value, quant_config):
         if not isinstance(value, torch.Tensor):
             return "int32"
+        if "inputs" in self.op_dtypes or "default" in self.op_dtypes:
+            return self._resolve_dtype_name("inputs")
+        # Keep the ordinary floating ABI from upstream. Quantized models and
+        # token/cache inputs still need their individual storage types.
+        if quant_config is None and value.dtype.is_floating_point:
+            return self._resolve_dtype_name("inputs")
         if value.dtype in {torch.int8, torch.qint8}:
             return "int8"
         if value.dtype in {torch.uint8, torch.quint8}:
@@ -2315,8 +1896,6 @@ class TorchBuilder:
             return "float16"
         if value.dtype in {torch.float64}:
             return "float64"
-        if quant_config is not None:
-            return "float32"
         return "float32"
 
     @staticmethod
@@ -2341,13 +1920,10 @@ class TorchBuilder:
         if self.weights_as_args:
             self.runtime_param_data[name] = value
         else:
-            buffer_names = {
-                item.replace(".", "_") for item in self.named_buffers
-            }
+            buffer_names = {item.replace(".", "_") for item in self.named_buffers}
             prefix = "gb_" if name in buffer_names else "g_"
             self.extra_globals[prefix + name] = value
 
-    # BEGIN NATIVE INT8 QUANTIZATION: ADDED synthetic array ABI helper
     def _record_synthetic_array(self, name, dtype_name, value):
         shape = tuple(value.shape)
         if self.weights_as_args:
@@ -2358,18 +1934,13 @@ class TorchBuilder:
             self.synthetic_params[name] = (dtype_name, shape, global_name)
         return name
 
-    # END NATIVE INT8 QUANTIZATION: ADDED synthetic array ABI helper
-
-    # END NATIVE INT8 QUANTIZATION: ADDED input and parameter helpers
-
-    def build(self):
+    def build(self):  # pylint: disable=too-many-branches
         for node in self.gm.graph.nodes:
             self(node)
         for i, x in enumerate(self.example_inputs):
             if isinstance(x, torch.Tensor):
                 self.input_shapes.append(x.shape)
                 self.input_args.append(self.input_names[i])
-            # BEGIN NATIVE INT8 QUANTIZATION: ADDED flattened tuple/scalar ABI
             elif isinstance(x, (list, tuple)):
                 input_name = self.input_names[i]
                 for num, item in enumerate(x):
@@ -2381,9 +1952,7 @@ class TorchBuilder:
             elif isinstance(x, int):
                 self.input_shapes.append(None)
                 self.input_args.append(self.input_names[i])
-            # END NATIVE INT8 QUANTIZATION: ADDED flattened tuple/scalar ABI
-        # BEGIN NATIVE INT8 QUANTIZATION: CHANGED preserve each logical input's
-        # actual storage type instead of assigning one global floating dtype.
+        # Preserve individual input storage types and caller-selected ABI dtypes.
         input_dtype_names = []
         for value in self.example_inputs:
             if isinstance(value, torch.Tensor):
@@ -2407,7 +1976,6 @@ class TorchBuilder:
                 self.input_args, self.input_shapes, input_dtype_names
             )
         ]
-        # END NATIVE INT8 QUANTIZATION: CHANGED heterogeneous input dtypes
 
         # Add weight parameters to function signature if weights_as_args is True
         weight_args = []
@@ -2433,12 +2001,9 @@ class TorchBuilder:
                         weight_args.append(f"{new_name}: {dtype_name}[{shape_str}]")
                     else:
                         weight_args.append(f"{new_name}: {dtype_name}")
-
-            # BEGIN NATIVE INT8 QUANTIZATION: ADDED synthetic runtime arrays
             for name, (dtype_name, shape, _) in self.runtime_aux_params.items():
                 dims = ", ".join(str(dim) for dim in shape)
                 weight_args.append(f"{name}: {dtype_name}[{dims}]")
-            # END NATIVE INT8 QUANTIZATION: ADDED synthetic runtime arrays
 
         # Combine input args and weight args
         all_args = args + weight_args
@@ -2472,12 +2037,10 @@ class TorchBuilder:
                         res += f"    {new_name}: {dtype_name}[{shape_str}] = gb_{new_name}\n"
                     else:
                         res += f"    {new_name}: {dtype_name} = gb_{new_name}\n"
-        # BEGIN NATIVE INT8 QUANTIZATION: ADDED synthetic biases
         if not self.weights_as_args:
             for name, (dtype_name, shape, global_name) in self.synthetic_params.items():
                 dims = ", ".join(str(dim) for dim in shape)
                 res += f"    {name}: {dtype_name}[{dims}] = {global_name}\n"
-        # END NATIVE INT8 QUANTIZATION: ADDED synthetic biases
         # function body
         for line in self.code:
             res += f"    {line}\n"
@@ -2502,7 +2065,15 @@ class TorchBuilder:
 
     def build_placeholder(self, node):
         self.input_names.append(node.name)
-        # BEGIN NATIVE INT8 QUANTIZATION: ADDED calibrated input
+        meta = node.meta.get("tensor_meta")
+        if isinstance(meta, TensorMetadata) and meta.dtype in {
+            torch.qint8,
+            torch.quint8,
+        }:
+            raise NotImplementedError(
+                "Quantized Tensor inputs require explicit quantize_per_tensor "
+                "on floating inputs"
+            )
         if (
             self.quant_config is not None
             and "tensor_meta" in node.meta
@@ -2510,7 +2081,6 @@ class TorchBuilder:
         ):
             self.record_quant_info(node, self._activation_quant_info(node))
             self._quantized_value_name(node)
-        # END NATIVE INT8 QUANTIZATION: ADDED calibrated input
 
     def build_getattr(self, node):
         pass
@@ -2521,9 +2091,7 @@ class TorchBuilder:
 
     def build_repeat(self, node):
         inp = get_var_name(node.args[0])
-        # BEGIN NATIVE INT8 QUANTIZATION: ADDED integer repeat input
         inp, repeat_info = self._prepare_quantized_passthrough(node.args[0], node)
-        # END NATIVE INT8 QUANTIZATION: ADDED integer repeat input
         input_shape = tuple(node.args[0].meta["tensor_meta"].shape)
         output_shape = tuple(node.meta["tensor_meta"].shape)
         if len(input_shape) == 3:
@@ -2532,10 +2100,8 @@ class TorchBuilder:
             name_id = self.get_unique_id("repeat_batch3d")
             dtype_name = self._resolve_dtype_name("repeat_batch3d")
             dtype_obj = self._resolve_dtype_obj("repeat_batch3d")
-            # BEGIN NATIVE INT8 QUANTIZATION: ADDED integer repeat dtype
             if repeat_info is not None:
                 dtype_name, dtype_obj, _ = self._dtype(repeat_info.dtype)
-            # END NATIVE INT8 QUANTIZATION: ADDED integer repeat dtype
             self.composition.append(
                 ("repeat_batch3d", name_id, [dtype_obj, B, L, C, repeat_factor])
             )
@@ -2549,10 +2115,8 @@ class TorchBuilder:
             torch.nn.Dropout: "identity",
             torch.nn.ReLU: "relu",
             torch.nn.GELU: "gelu",
-            # BEGIN NATIVE INT8 QUANTIZATION: ADDED transformer module dispatch
             torch.nn.SiLU: "silu",
             torch.nn.Embedding: "embedding",
-            # END NATIVE INT8 QUANTIZATION: ADDED transformer module dispatch
             torch.nn.LayerNorm: "layernorm",
             torch.nn.Conv2d: "conv2d",
             torch.nn.MaxPool2d: "maxpool2d",
@@ -2576,9 +2140,9 @@ class TorchBuilder:
             res += f'  # shape: {str(tuple(node.meta["tensor_meta"].shape))}'
         return res
 
-    # BEGIN NATIVE INT8 QUANTIZATION: ADDED QDQ boundary builders
-
     def build_quantize_per_tensor(self, node):
+        if len(self._shape(node)) not in {2, 3}:
+            raise NotImplementedError("Explicit Q/DQ supports rank-2/rank-3 tensors")
         source = node.args[0]
         info = self._quant_info_from_node(node)
         source_info = self.lookup_quant_info(source)
@@ -2599,9 +2163,10 @@ class TorchBuilder:
             self.integer_values.add(node)
             self.materialized_quant_map[node.name + "_clamped"] = codes
             return result
+        source_name = self._floating_value_name(source)
         self.record_quant_info(node, info)
         if self.delay_qdq_lowering:
-            return f"{node.name} = {source.name}"
+            return f"{node.name} = {source_name}"
 
         shape = self._shape(node)
         qkernel, dkernel = f"quantize{len(shape)}d", f"dequantize{len(shape)}d"
@@ -2615,7 +2180,7 @@ class TorchBuilder:
         ]
         self.code.append(
             f"{integer} = nn.{qkernel}[float32, {dtype_name}, {dims}, "
-            f'"{qid}"]({source.name}, {repr(float(info.scale))}, '
+            f'"{qid}"]({source_name}, {repr(float(info.scale))}, '
             f"{info.zero_point}, {info.qmin}, {info.qmax})"
         )
         return (
@@ -2629,15 +2194,12 @@ class TorchBuilder:
             return f"{node.name} = {source.name}"
         self.record_quant_info(node, info)
         if source in self.integer_values:
-            if self._is_output_boundary(node):
-                return self._dequantize_value(source, source.name, info, node.name)
             self.integer_values.add(node)
             self.materialized_quant_map[node.name + "_clamped"] = (
                 self.materialized_quant_map.get(source.name + "_clamped", source.name)
             )
             return f"{node.name} = {source.name}"
-        if self._is_output_boundary(node) and self.delay_qdq_lowering:
-            return f"{node.name} = {self.materialize_quant_info(source)}"
+        # Materialize a delayed boundary at floating consumers/public outputs.
         return f"{node.name} = {source.name}"
 
     def build_int_repr(self, node):
@@ -2645,12 +2207,9 @@ class TorchBuilder:
         if info is None:
             raise RuntimeError("int_repr requires quantization metadata")
         value = self._quantized_value_name(source)
-        self.record_quant_info(node, info)
-        self.integer_values.add(node)
-        self.materialized_quant_map[node.name + "_clamped"] = value
+        # int_repr() exposes ordinary storage integers. Do not propagate affine
+        # metadata to their subsequent arithmetic or dequantize their output.
         return f"{node.name} = {value}"
-
-    # END NATIVE INT8 QUANTIZATION: ADDED QDQ boundary builders
 
     def build_call_function(self, node):
         opcls = {
@@ -2662,18 +2221,14 @@ class TorchBuilder:
             torch.matmul: "matmul",
             torch.ones: "ones",
             torch.zeros: "zeros",
-            # BEGIN NATIVE INT8 QUANTIZATION: ADDED QDQ function dispatch
             torch.quantize_per_tensor: "quantize_per_tensor",
             torch.relu: "relu",
-            # END NATIVE INT8 QUANTIZATION: ADDED QDQ function dispatch
             math.sqrt: "sqrt",
             F.softmax: "softmax",
             F.log_softmax: "log_softmax",
             F.linear: "linear",
             F.gelu: "gelu",
-            # BEGIN NATIVE INT8 QUANTIZATION: ADDED transformer function dispatch
             F.silu: "silu",
-            # END NATIVE INT8 QUANTIZATION: ADDED transformer function dispatch
             F.relu: "relu",
             F.dropout: "identity",
             torch.tril: "tril",
@@ -2682,12 +2237,10 @@ class TorchBuilder:
         # Only nodes with shape need to be built.
         if "tensor_meta" in node.meta:
             res = getattr(self, f"build_{opcls}")(node)
-            # BEGIN NATIVE INT8 QUANTIZATION: CHANGED a builder may emit its
-            # statements directly when ordering is significant (tuple-cache
+            # A builder may emit statements directly when ordering matters (tuple-cache
             # aliases must exist before their quantization loops).
             if res is None:
                 return None
-            # END NATIVE INT8 QUANTIZATION: CHANGED direct-emission handling
             # append shape after the operation
             res += f'  # shape: {str(tuple(node.meta["tensor_meta"].shape))}'
             return res
@@ -2696,12 +2249,10 @@ class TorchBuilder:
     def build_call_method(self, node):
         if node.target == "contiguous":
             return self.build_identity(node)
-        # BEGIN NATIVE INT8 QUANTIZATION: ADDED QDQ method dispatch
         if node.target == "dequantize":
             return self.build_dequantize(node)
         if node.target == "int_repr":
             return self.build_int_repr(node)
-        # END NATIVE INT8 QUANTIZATION: ADDED QDQ method dispatch
         # Only nodes with shape need to be built.
         return (
             getattr(self, f"build_{node.target}")(node)
@@ -2711,25 +2262,29 @@ class TorchBuilder:
 
     def append_output(self, output):
         shape = str(list(output.shape))
+        if output.dtype in {torch.qint8, torch.quint8}:
+            raise NotImplementedError(
+                "Return dequantize() or int_repr(), not a quantized Tensor object"
+            )
         # Prefer user-specified outputs dtype, then global default, then tensor meta dtype
         dtype_name = self._resolve_dtype_name("outputs")
-        if dtype_name is None:
+        if not output.dtype.is_floating_point:
+            # Integer storage outputs (notably int_repr) are not floating
+            # activations and must keep the logical dtype from the FX graph.
+            requested = self.op_dtypes.get("outputs")
             dtype_name = str(output.dtype)[6:]
+            if (
+                requested is not None
+                and self._resolve_dtype_name("outputs") != dtype_name
+            ):
+                raise NotImplementedError(
+                    "Integer output dtype overrides must match the graph"
+                )
         self.output.append(dtype_name + shape)
-
-    # BEGIN NATIVE INT8 QUANTIZATION: ADDED recursive output materialization
 
     def _flatten_output_names(self, value):
         if isinstance(value, fx.Node):
-            if self.quant_config is not None and value in self.integer_values:
-                name = value.name + "_dequantized"
-                self.code.append(
-                    self._dequantize_value(
-                        value, value.name, self.lookup_quant_info(value), name
-                    )
-                )
-                return [name]
-            return [value.name]
+            return [self._floating_value_name(value)]
         if isinstance(value, (list, tuple)):
             names = []
             for item in value:
@@ -2741,8 +2296,6 @@ class TorchBuilder:
                 names.extend(self._flatten_output_names(item))
             return names
         return [str(value)]
-
-    # END NATIVE INT8 QUANTIZATION: ADDED recursive output materialization
 
     def build_output(self, node):
         if isinstance(node.meta["tensor_meta"], TensorMetadata):
@@ -2765,108 +2318,77 @@ class TorchBuilder:
             for output in node.meta["tensor_meta"].values():
                 if isinstance(output, TensorMetadata):
                     self.append_output(output)
-        # BEGIN NATIVE INT8 QUANTIZATION: CHANGED recursively unwrap and
-        # dequantize every public output, including KV-cache tuples.
+        # Dequantize public floating outputs, including KV-cache tuples.
         return_names = self._flatten_output_names(node.args[0])
         return f"return ({', '.join(return_names)})"
-        # END NATIVE INT8 QUANTIZATION: CHANGED recursive output handling
 
     def build_getitem(self, node):
         inp = get_var_name(node.args[0])
         index = node.args[1]
         result = f"{node.name} = {inp}_{index}"
-        # BEGIN NATIVE INT8 QUANTIZATION: CHANGED tuple tensor inputs receive
-        # their own calibration metadata before use by cached decoder kernels.
+        # Tuple tensor inputs receive their own calibration metadata before use
+        # by cached decoder kernels.
         if self.quant_config is not None and self._node_has_floating_tensor(node):
             self.code.append(result)
             info = self._activation_quant_info(node)
             self.record_quant_info(node, info)
             self._quantized_value_name(node)
             return None
-        # END NATIVE INT8 QUANTIZATION: CHANGED tuple input materialization
         return result
 
     def build_add(self, node):
-        # BEGIN NATIVE INT8 QUANTIZATION: ADDED integer residual dispatch
         result = self._build_quantized_add(node)
         if result is not None:
             return result
-        if self.delay_qdq_lowering:
-            lhs_info = self.lookup_quant_info(node.args[0])
-            rhs_info = self.lookup_quant_info(node.args[1])
-            if lhs_info is not None or rhs_info is not None:
-                lhs = (
-                    self.materialize_quant_info(node.args[0])
-                    if lhs_info is not None
-                    else get_var_name(node.args[0])
-                )
-                rhs = (
-                    self.materialize_quant_info(node.args[1])
-                    if rhs_info is not None
-                    else get_var_name(node.args[1])
-                )
-                return f"{node.name} = {lhs} + {rhs}"
-        # END NATIVE INT8 QUANTIZATION: ADDED integer residual dispatch
-        lhs = get_var_name(node.args[0])
-        rhs = get_var_name(node.args[1])
+        lhs = self._floating_value_name(node.args[0])
+        rhs = self._floating_value_name(node.args[1])
         return f"{node.name} = {lhs} + {rhs}"
 
     def build_sub(self, node):
-        lhs = get_var_name(node.args[0])
-        rhs = get_var_name(node.args[1])
+        lhs = self._floating_value_name(node.args[0])
+        rhs = self._floating_value_name(node.args[1])
         return f"{node.name} = {lhs} - {rhs}"
 
     def build_mul(self, node):
-        # BEGIN NATIVE INT8 QUANTIZATION: ADDED integer multiply dispatch
         result = self._build_quantized_mul(node)
         if result is not None:
             return result
-        # END NATIVE INT8 QUANTIZATION: ADDED integer multiply dispatch
-        lhs = get_var_name(node.args[0])
-        rhs = get_var_name(node.args[1])
+        lhs = self._floating_value_name(node.args[0])
+        rhs = self._floating_value_name(node.args[1])
         return f"{node.name} = {lhs} * {rhs}"
 
     def build_matmul(self, node):
-        # BEGIN NATIVE INT8 QUANTIZATION: ADDED integer matmul dispatch
         result = self._build_quantized_matmul(node)
         if result is not None:
             return result
-        # END NATIVE INT8 QUANTIZATION: ADDED integer matmul dispatch
-        lhs = get_var_name(node.args[0])
-        rhs = get_var_name(node.args[1])
-        # BEGIN NATIVE INT8 QUANTIZATION: CHANGED preserve the FP32 path for
-        # rank-3 torch.matmul by selecting Allo's batch-matmul intrinsic.
-        if (
-            len(self._shape(node.args[0])) == 3
-            and len(self._shape(node.args[1])) == 3
-        ):
+        lhs = self._floating_value_name(node.args[0])
+        rhs = self._floating_value_name(node.args[1])
+        # Preserve rank-3 FP32 torch.matmul via Allo's batch-matmul intrinsic.
+        if len(self._shape(node.args[0])) == 3 and len(self._shape(node.args[1])) == 3:
             return f"{node.name} = dsl.bmm({lhs}, {rhs})"
-        # END NATIVE INT8 QUANTIZATION: CHANGED rank-3 matmul selection
         return f"{node.name} = dsl.matmul({lhs}, {rhs})"
 
     def build_div(self, node):
-        lhs = get_var_name(node.args[0])
-        rhs = get_var_name(node.args[1])
+        lhs = self._floating_value_name(node.args[0])
+        rhs = self._floating_value_name(node.args[1])
         return f"{node.name} = {lhs} / {rhs}"
 
     def build_softmax(self, node):
         if node.kwargs.get("dim") != -1:
             raise NotImplementedError("Only support softmax on the last dimension")
-        # BEGIN NATIVE INT8 QUANTIZATION: ADDED integer noncausal softmax dispatch
         if self.lookup_quant_info(node.args[0]) is not None:
             result = self._build_quantized_causal_softmax(
                 node, offset_override=self._shape(node)[-1]
             )
             if result is not None:
                 return result
-        # END NATIVE INT8 QUANTIZATION: ADDED integer noncausal softmax dispatch
-        inp = get_var_name(node.args[0])
+        inp = self._floating_value_name(node.args[0])
         return f"{node.name} = dsl.softmax({inp})"
 
     def build_log_softmax(self, node):
         if node.kwargs.get("dim") != -1:
             raise NotImplementedError("Only support log_softmax on the last dimension")
-        inp = get_var_name(node.args[0])
+        inp = self._floating_value_name(node.args[0])
 
         shape = tuple(node.meta["tensor_meta"].shape)
         name_id = self.get_unique_id("log_softmax")
@@ -2880,12 +2402,10 @@ class TorchBuilder:
         raise NotImplementedError(f"Unsupported shape for log_softmax: {shape}")
 
     def build_relu(self, node):
-        # BEGIN NATIVE INT8 QUANTIZATION: ADDED integer ReLU dispatch
         result = self._build_quantized_relu(node)
         if result is not None:
             return result
-        # END NATIVE INT8 QUANTIZATION: ADDED integer ReLU dispatch
-        inp = get_var_name(node.args[0])
+        inp = self._floating_value_name(node.args[0])
         shape = tuple(node.meta["tensor_meta"].shape)
         name_id = self.get_unique_id("relu")
         dtype_name = self._resolve_dtype_name("relu")
@@ -2908,20 +2428,19 @@ class TorchBuilder:
         raise NotImplementedError("Unsupported shape for relu")
 
     def build_linear(self, node, bias):
-        # BEGIN NATIVE INT8 QUANTIZATION: ADDED integer Linear dispatch
-        if isinstance(node.target, str):
+        if (
+            isinstance(node.target, str)
+            and self.lookup_quant_info(node.args[0]) is not None
+        ):
             dtypes = self._native_linear_dtypes(node.target)
             if dtypes is not None:
                 result = self._build_native_linear(node, bool(bias), dtypes)
                 if result is not None:
                     return result
-        # END NATIVE INT8 QUANTIZATION: ADDED integer Linear dispatch
         target_name = node.target.replace(".", "_")
-        inp = get_var_name(node.args[0])
-        # BEGIN NATIVE INT8 QUANTIZATION: CHANGED tied Linear weights reuse the
-        # canonical runtime parameter instead of duplicating the table.
+        inp = self._floating_value_name(node.args[0])
+        # Tied Linear weights reuse the canonical runtime parameter.
         weight = self._module_parameter_symbol(node.target)
-        # END NATIVE INT8 QUANTIZATION: CHANGED tied Linear weight symbol
         if bias:
             bias = get_var_name(target_name + "_bias")
             shape = tuple(node.meta["tensor_meta"].shape)
@@ -2936,11 +2455,9 @@ class TorchBuilder:
                 dtype_O_obj,
             ) = self._get_linear_dtype_triplet(node.target)
             # record parameter dtypes
-            # BEGIN NATIVE INT8 QUANTIZATION: CHANGED record the canonical
-            # symbol and query the owning module for tied weights.
+            # Record the canonical symbol and query the owner for tied weights.
             self.param_dtypes[weight] = dtype_W_name
             module_weight_shape = self._module_parameter(node.target).shape
-            # END NATIVE INT8 QUANTIZATION: CHANGED tied Linear metadata
             self.param_dtypes[f"{target_name}_bias"] = dtype_O_name
             if len(shape) == 2:
                 n, d = shape
@@ -2970,16 +2487,14 @@ class TorchBuilder:
         return f"{node.name} = dsl.linear({inp}, {weight})"
 
     def build_gelu(self, node):
-        inp = get_var_name(node.args[0])
+        inp = self._floating_value_name(node.args[0])
         return f"{node.name} = dsl.gelu({inp})"
-
-    # BEGIN NATIVE INT8 QUANTIZATION: ADDED generic transformer builders
 
     def build_silu(self, node):
         result = self._build_quantized_silu(node)
         if result is not None:
             return result
-        inp = get_var_name(node.args[0])
+        inp = self._floating_value_name(node.args[0])
         shape = self._shape(node)
         if len(shape) != 3:
             raise NotImplementedError("SiLU supports rank-3 tensors")
@@ -2988,7 +2503,9 @@ class TorchBuilder:
         dtype_name = self._resolve_dtype_name("silu")
         dtype_obj = self._resolve_dtype_obj("silu")
         self.composition.append(("silu3d", name_id, [dtype_obj, B, L, D]))
-        return f'{node.name} = nn.silu3d[{dtype_name}, {B}, {L}, {D}, "{name_id}"]({inp})'
+        return (
+            f'{node.name} = nn.silu3d[{dtype_name}, {B}, {L}, {D}, "{name_id}"]({inp})'
+        )
 
     def build_embedding(self, node):
         result = self._build_quantized_embedding(node)
@@ -3002,11 +2519,9 @@ class TorchBuilder:
         dtype_obj = self._resolve_dtype_obj("embedding")
         self.param_dtypes[weight] = dtype_name
         name_id = self.get_unique_id("embedding2d")
-        self.composition.append(
-            ("embedding2d", name_id, [dtype_obj, B, L, V, D])
-        )
+        self.composition.append(("embedding2d", name_id, [dtype_obj, B, L, V, D]))
         return (
-            f'{node.name} = nn.embedding2d[{dtype_name}, {B}, {L}, {V}, {D}, '
+            f"{node.name} = nn.embedding2d[{dtype_name}, {B}, {L}, {V}, {D}, "
             f'"{name_id}"]({get_var_name(node.args[0])}, {weight})'
         )
 
@@ -3024,8 +2539,9 @@ class TorchBuilder:
         name_id = self.get_unique_id("rms_norm3d")
         self.composition.append(("rms_norm3d", name_id, [dtype_obj, B, L, D]))
         return (
-            f'{node.name} = nn.rms_norm3d[{dtype_name}, {B}, {L}, {D}, '
-            f'"{name_id}"]({get_var_name(node.args[0])}, {weight}, {module.eps})'
+            f"{node.name} = nn.rms_norm3d[{dtype_name}, {B}, {L}, {D}, "
+            f'"{name_id}"]({self._floating_value_name(node.args[0])}, '
+            f"{weight}, {module.eps})"
         )
 
     def build_RotaryEmbedding(self, node):
@@ -3043,7 +2559,7 @@ class TorchBuilder:
         self.composition.append(("rope3d", name_id, [dtype_obj, H, L, D]))
         return (
             f'{node.name} = nn.rope3d[{dtype_name}, {H}, {L}, {D}, "{name_id}"]('
-            f"{get_var_name(node.args[0])}, {cos_name}, {sin_name})"
+            f"{self._floating_value_name(node.args[0])}, {cos_name}, {sin_name})"
         )
 
     def build_PositionedRotaryEmbedding(self, node):
@@ -3060,13 +2576,11 @@ class TorchBuilder:
         self.param_dtypes[cos_name] = dtype_name
         self.param_dtypes[sin_name] = dtype_name
         name_id = self.get_unique_id("positioned_rope3d")
-        self.composition.append(
-            ("positioned_rope3d", name_id, [dtype_obj, H, L, S, D])
-        )
+        self.composition.append(("positioned_rope3d", name_id, [dtype_obj, H, L, S, D]))
         return (
-            f'{node.name} = nn.positioned_rope3d[{dtype_name}, {H}, {L}, {S}, '
-            f'{D}, "{name_id}"]({get_var_name(node.args[0])}, {cos_name}, '
-            f"{sin_name}, {get_var_name(node.args[1])})"
+            f"{node.name} = nn.positioned_rope3d[{dtype_name}, {H}, {L}, {S}, "
+            f'{D}, "{name_id}"]({self._floating_value_name(node.args[0])}, {cos_name}, '
+            f"{sin_name}, {self._floating_value_name(node.args[1])})"
         )
 
     def build_RepeatKV(self, node):
@@ -3087,8 +2601,8 @@ class TorchBuilder:
             )
         )
         return (
-            f'{node.name} = nn.repeat_interleave3d[{dtype_name}, {H}, {L}, {D}, '
-            f'{repeat_factor}, "{name_id}"]({get_var_name(node.args[0])})'
+            f"{node.name} = nn.repeat_interleave3d[{dtype_name}, {H}, {L}, {D}, "
+            f'{repeat_factor}, "{name_id}"]({self._floating_value_name(node.args[0])})'
         )
 
     def build_CausalSoftmax(self, node):
@@ -3099,13 +2613,11 @@ class TorchBuilder:
         dtype_name = self._resolve_dtype_name("causal_softmax")
         dtype_obj = self._resolve_dtype_obj("causal_softmax")
         name_id = self.get_unique_id("causal_softmax3d")
-        self.composition.append(
-            ("causal_softmax3d", name_id, [dtype_obj, H, L, S])
-        )
-        offset = get_var_name(node.args[1]) if len(node.args) > 1 else 0
+        self.composition.append(("causal_softmax3d", name_id, [dtype_obj, H, L, S]))
+        offset = self._floating_value_name(node.args[1]) if len(node.args) > 1 else 0
         return (
-            f'{node.name} = nn.causal_softmax3d[{dtype_name}, {H}, {L}, {S}, '
-            f'"{name_id}"]({get_var_name(node.args[0])}, {offset})'
+            f"{node.name} = nn.causal_softmax3d[{dtype_name}, {H}, {L}, {S}, "
+            f'"{name_id}"]({self._floating_value_name(node.args[0])}, {offset})'
         )
 
     def build_KVCacheUpdate(self, node):
@@ -3119,29 +2631,24 @@ class TorchBuilder:
         dtype_name = self._resolve_dtype_name("kv_cache")
         dtype_obj = self._resolve_dtype_obj("kv_cache")
         name_id = self.get_unique_id("kv_cache_update3d")
-        self.composition.append(
-            ("kv_cache_update3d", name_id, [dtype_obj, H, L, S, D])
-        )
+        self.composition.append(("kv_cache_update3d", name_id, [dtype_obj, H, L, S, D]))
         return (
-            f'{node.name} = nn.kv_cache_update3d[{dtype_name}, {H}, {L}, {S}, '
-            f'{D}, "{name_id}"]({get_var_name(node.args[0])}, '
-            f"{get_var_name(node.args[1])}, {get_var_name(node.args[2])})"
+            f"{node.name} = nn.kv_cache_update3d[{dtype_name}, {H}, {L}, {S}, "
+            f'{D}, "{name_id}"]({self._floating_value_name(node.args[0])}, '
+            f"{self._floating_value_name(node.args[1])}, "
+            f"{self._floating_value_name(node.args[2])})"
         )
-
-    # END NATIVE INT8 QUANTIZATION: ADDED generic transformer builders
 
     def build_layernorm(self, node):
         target_name = node.target.replace(".", "_")
-        inp = get_var_name(node.args[0])
+        inp = self._floating_value_name(node.args[0])
         weight = get_var_name(target_name + "_weight")
         bias = get_var_name(target_name + "_bias")
         return f"{node.name} = dsl.layernorm({inp}, {weight}, {bias})"
 
     def build_view(self, node):
         inp = get_var_name(node.args[0])
-        # BEGIN NATIVE INT8 QUANTIZATION: ADDED integer view propagation
         inp, _ = self._prepare_quantized_passthrough(node.args[0], node)
-        # END NATIVE INT8 QUANTIZATION: ADDED integer view propagation
         shape = tuple(node.meta["tensor_meta"].shape)
         return f"{node.name} = dsl.view({inp}, {shape})"
 
@@ -3150,9 +2657,7 @@ class TorchBuilder:
 
     def build_permute(self, node):
         inp = get_var_name(node.args[0])
-        # BEGIN NATIVE INT8 QUANTIZATION: ADDED integer permute propagation
         inp, _ = self._prepare_quantized_passthrough(node.args[0], node)
-        # END NATIVE INT8 QUANTIZATION: ADDED integer permute propagation
         permutation = node.args[1:]
         return f"{node.name} = dsl.transpose({inp}, {permutation})"
 
@@ -3161,9 +2666,7 @@ class TorchBuilder:
         # https://pytorch.org/docs/stable/generated/torch.transpose.html
         inp = get_var_name(node.args[0])
         shape_len = len(node.meta["tensor_meta"].shape)
-        # BEGIN NATIVE INT8 QUANTIZATION: ADDED integer transpose propagation
         inp, _ = self._prepare_quantized_passthrough(node.args[0], node)
-        # END NATIVE INT8 QUANTIZATION: ADDED integer transpose propagation
         sorted_args = sorted(
             [
                 node.args[1] if node.args[1] >= 0 else node.args[1] + shape_len,
@@ -3177,7 +2680,6 @@ class TorchBuilder:
 
     def build_identity(self, node):
         inp = get_var_name(node.args[0])
-        # BEGIN NATIVE INT8 QUANTIZATION: ADDED identity metadata propagation
         info = self.lookup_quant_info(node.args[0])
         if info is not None:
             self.record_quant_info(node, info)
@@ -3188,7 +2690,6 @@ class TorchBuilder:
                         node.args[0].name + "_clamped", node.args[0].name
                     )
                 )
-        # END NATIVE INT8 QUANTIZATION: ADDED identity metadata propagation
         return f"{node.name} = {inp}"
 
     def build_ones(self, node):
@@ -3206,13 +2707,13 @@ class TorchBuilder:
         return f"{node.name} = dsl.zeros({shape}, dtype={dtype})"
 
     def build_tril(self, node):
-        inp = get_var_name(node.args[0])
+        inp = self._floating_value_name(node.args[0])
         return f"{node.name} = dsl.tril({inp})"
 
     def build_concat(self, node):
         shape_len = len(node.meta["tensor_meta"].shape)
-        tensor_A = get_var_name(node.args[0][0])
-        tensor_B = get_var_name(node.args[0][1])
+        tensor_A = self._floating_value_name(node.args[0][0])
+        tensor_B = self._floating_value_name(node.args[0][1])
         shape_a = tuple(node.args[0][0].meta["tensor_meta"].shape)
         shape_b = tuple(node.args[0][1].meta["tensor_meta"].shape)
         dim = node.kwargs["dim"] + (node.kwargs["dim"] < 0) * shape_len
@@ -3242,7 +2743,8 @@ class TorchBuilder:
 
         if src not in self.subfunctions:
             self.subfunctions.append(src)
-        return f"{node.name} = CoreAttention({', '.join([get_var_name(arg) for arg in node.args])})"
+        inputs = ", ".join(self._floating_value_name(arg) for arg in node.args)
+        return f"{node.name} = CoreAttention({inputs})"
 
     def build_KVCache(self, node):
         shape = tuple(node.meta["tensor_meta"][0])
@@ -3256,7 +2758,8 @@ class TorchBuilder:
 
         if src not in self.subfunctions:
             self.subfunctions.append(src)
-        return f"{node.name} = KVCache({', '.join([get_var_name(arg) for arg in node.args])})"
+        inputs = ", ".join(self._floating_value_name(arg) for arg in node.args)
+        return f"{node.name} = KVCache({inputs})"
 
     def build_SliceClsToken(self, node):
         shape = tuple(node.args[0].meta["tensor_meta"].shape)
@@ -3269,13 +2772,13 @@ class TorchBuilder:
         if src not in self.subfunctions:
             self.subfunctions.append(src)
 
-        return f"{node.name} = SliceClsToken({get_var_name(node.args[0])})"
+        return f"{node.name} = SliceClsToken({self._floating_value_name(node.args[0])})"
 
     def build_conv2d(self, node):
         # The current implementation only supports conv2d with bias, dialation=1, shape = 4
         module = self.get_module(node.target)
         target_name = node.target.replace(".", "_")
-        inp = get_var_name(node.args[0])
+        inp = self._floating_value_name(node.args[0])
         weight = get_var_name(target_name + "_weight")
         input_shape = tuple(node.args[0].meta["tensor_meta"].shape)
 
@@ -3335,7 +2838,7 @@ class TorchBuilder:
 
     def build_maxpool2d(self, node):
         module = self.get_module(node.target)
-        inp = get_var_name(node.args[0])
+        inp = self._floating_value_name(node.args[0])
         input_shape = tuple(node.args[0].meta["tensor_meta"].shape)
 
         kernel_size = module.kernel_size
@@ -3365,7 +2868,7 @@ class TorchBuilder:
 
     def build_avgpool2d(self, node):
         module = self.get_module(node.target)
-        inp = get_var_name(node.args[0])
+        inp = self._floating_value_name(node.args[0])
         input_shape = tuple(node.args[0].meta["tensor_meta"].shape)
 
         kernel_size = module.kernel_size
@@ -3395,7 +2898,7 @@ class TorchBuilder:
 
     def build_batchnorm1d(self, node):
         module = self.get_module(node.target)
-        inp = get_var_name(node.args[0])
+        inp = self._floating_value_name(node.args[0])
         input_shape = tuple(node.args[0].meta["tensor_meta"].shape)
         target_name = node.target.replace(".", "_")
 
@@ -3435,7 +2938,7 @@ class TorchBuilder:
 
     def build_batchnorm2d(self, node):
         module = self.get_module(node.target)
-        inp = get_var_name(node.args[0])
+        inp = self._floating_value_name(node.args[0])
         input_shape = tuple(node.args[0].meta["tensor_meta"].shape)
         target_name = node.target.replace(".", "_")
 

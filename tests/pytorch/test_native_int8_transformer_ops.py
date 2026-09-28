@@ -1,3 +1,6 @@
+# Copyright Allo authors. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 """Focused certification for native INT8 transformer operators."""
 
 from __future__ import annotations
@@ -59,6 +62,7 @@ def round_shift_ties_even(value: int, shift: int) -> int:
         quotient += 1
     return -quotient if value < 0 else quotient
 
+
 def per_channel_requantization_reference(
     values,
     multipliers,
@@ -72,9 +76,7 @@ def per_channel_requantization_reference(
 
     for index in np.ndindex(values.shape):
         channel = index[-1]
-        centered = (
-            int(values[index]) - input_zero_point
-        )
+        centered = int(values[index]) - input_zero_point
         scaled = centered * int(multipliers[channel])
         rounded = round_shift_ties_even(
             scaled,
@@ -88,6 +90,7 @@ def per_channel_requantization_reference(
         )
 
     return expected
+
 
 def build_source(model: torch.nn.Module, inputs: tuple[torch.Tensor, ...]):
     tracer = AlloTracer(
@@ -136,7 +139,9 @@ def test_qmul3d_uses_int64_requantization_in_llvm():
     multiplier, shift = 3, 2
     expected = np.empty(shape, dtype=np.int8)
     for index in np.ndindex(shape):
-        value = round_shift_ties_even(int(lhs[index]) * int(rhs[index]) * multiplier, shift)
+        value = round_shift_ties_even(
+            int(lhs[index]) * int(rhs[index]) * multiplier, shift
+        )
         expected[index] = np.clip(value, -128, 127)
     schedule = allo.customize(
         allo_nn.qmul3d,
@@ -273,9 +278,7 @@ def test_qrms_norm_uses_widened_integer_square_root_in_llvm():
     weight = np.array([110, 115, 119, 123, 127, 121, 117, 113], dtype=np.int8)
     input_scale, weight_scale, output_scale = 0.0625, 0.0078125, 0.03125
     eps = 1.0e-5
-    factor = int(
-        round(weight_scale * math.sqrt(width) / output_scale * (1 << 20))
-    )
+    factor = int(round(weight_scale * math.sqrt(width) / output_scale * (1 << 20)))
     eps_codes = int(round(eps * width / (input_scale**2)))
     expected = np.empty_like(values)
     for batch_index in range(batch):
@@ -285,9 +288,7 @@ def test_qrms_norm_uses_widened_integer_square_root_in_llvm():
             denominator = math.isqrt(radicand) << 8
             for column in range(width):
                 numerator = (
-                    int(values[batch_index, row, column])
-                    * int(weight[column])
-                    * factor
+                    int(values[batch_index, row, column]) * int(weight[column]) * factor
                 )
                 quotient, remainder = divmod(abs(numerator), denominator)
                 if remainder * 2 > denominator or (
@@ -320,9 +321,9 @@ def test_qrms_norm_uses_widened_integer_square_root_in_llvm():
 def test_qkv_cache_update_reconciles_scales_and_preserves_other_tokens_in_llvm():
     heads, update_length, cache_length, width = 1, 2, 5, 4
     values = np.array([[[-9, -5, 5, 9], [12, -12, 15, -15]]], dtype=np.int8)
-    cache = np.arange(
-        heads * cache_length * width, dtype=np.int8
-    ).reshape(heads, cache_length, width)
+    cache = np.arange(heads * cache_length * width, dtype=np.int8).reshape(
+        heads, cache_length, width
+    )
     position = 2
     expected = cache.copy()
     for head in range(heads):
@@ -385,6 +386,7 @@ def test_real_sized_smollm2_layer_emits_the_complete_composed_integer_graph():
     composition_names = [name for name, _, _ in builder.composition]
     assert "qcausal_softmax3d" in composition_names
     assert math.isclose(model.layer.self_attn.scaling, 1.0 / 8.0)
+
 
 def test_requantize_per_channel2d_is_bit_exact_in_llvm():
     rows, channels = 2, 5

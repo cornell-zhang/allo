@@ -197,9 +197,7 @@ class SmolLM2CachedDecoderLayer(nn.Module):
         )
         self.mlp = SmolLM2MLP(config)
         self.input_layernorm = RMSNorm(config.hidden_size, config.rms_norm_eps)
-        self.post_attention_layernorm = RMSNorm(
-            config.hidden_size, config.rms_norm_eps
-        )
+        self.post_attention_layernorm = RMSNorm(config.hidden_size, config.rms_norm_eps)
 
     def forward(
         self,
@@ -307,7 +305,9 @@ def empty_caches(
     max_cache_length: int,
 ) -> tuple[tuple[torch.Tensor, ...], tuple[torch.Tensor, ...]]:
     shape = (config.num_key_value_heads, max_cache_length, config.head_dim)
-    keys = tuple(torch.zeros(shape, dtype=torch.float32) for _ in range(config.num_hidden_layers))
+    keys = tuple(
+        torch.zeros(shape, dtype=torch.float32) for _ in range(config.num_hidden_layers)
+    )
     values = tuple(
         torch.zeros(shape, dtype=torch.float32) for _ in range(config.num_hidden_layers)
     )

@@ -50,7 +50,6 @@ from .nn import (
     schedule_log_softmax,
     concat,
     schedule_concat,
-    # BEGIN NATIVE INT8 QUANTIZATION: ADDED integer kernel exports
     roundeven,
     quantize2d,
     quantize3d,
@@ -62,7 +61,6 @@ from .nn import (
     requantize_per_channel3d,
     qadd2d,
     qadd3d,
-    # BEGIN NATIVE INT8 QUANTIZATION: ADDED transformer kernel exports
     rms_norm3d,
     silu3d,
     rope3d,
@@ -80,13 +78,10 @@ from .nn import (
     qrms_norm3d,
     qembedding2d,
     qkv_cache_update3d,
-    # END NATIVE INT8 QUANTIZATION: ADDED transformer kernel exports
     schedule_native_quantized,
-    # END NATIVE INT8 QUANTIZATION: ADDED integer kernel exports
 )
 
 KERNEL2SCHEDULE = {}
-# BEGIN NATIVE INT8 QUANTIZATION: ADDED integer schedule registration
 
 KERNEL2SCHEDULE.update(
     {
@@ -101,7 +96,6 @@ KERNEL2SCHEDULE.update(
         requantize_per_channel3d: schedule_native_quantized,
         qadd2d: schedule_native_quantized,
         qadd3d: schedule_native_quantized,
-        # BEGIN NATIVE INT8 QUANTIZATION: ADDED transformer schedule registration
         rms_norm3d: schedule_native_quantized,
         silu3d: schedule_native_quantized,
         rope3d: schedule_native_quantized,
@@ -119,10 +113,8 @@ KERNEL2SCHEDULE.update(
         qrms_norm3d: schedule_native_quantized,
         qembedding2d: schedule_native_quantized,
         qkv_cache_update3d: schedule_native_quantized,
-        # END NATIVE INT8 QUANTIZATION: ADDED transformer schedule registration
     }
 )
-# END NATIVE INT8 QUANTIZATION: ADDED integer schedule registration
 
 KERNEL2SCHEDULE.update(
     {

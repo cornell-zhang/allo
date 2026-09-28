@@ -5,11 +5,8 @@
 from .. import dsl
 from .systolic import systolic
 
-# BEGIN NATIVE INT8 QUANTIZATION: ADDED integer scalar types
 # pylint: disable=consider-using-min-builtin,consider-using-max-builtin
-from ..ir.types import float32, int16, int32, int64
-
-# END NATIVE INT8 QUANTIZATION: ADDED integer scalar types
+from ..ir.types import float32, int32, int64
 
 
 def linear2d[
@@ -462,8 +459,6 @@ def schedule_concat(s):
     return s
 
 
-# BEGIN NATIVE INT8 QUANTIZATION: ADDED rank-2/rank-3 integer kernels
-
 # These kernels are separate from the existing floating-point kernels above.
 # The widened TyAcc parameter is instantiated as int64 by TorchBuilder.
 
@@ -495,7 +490,13 @@ def quantize2d[
 ) -> "TyOut[H, W]":
     Z: TyOut[H, W]
     for h, w in dsl.grid(H, W):
-        value: int32 = roundeven(X[h, w] / scale) + zero_point
+        # Clamp in floating point before the int32 conversion. Rounding then
+        # clamping to integral bounds is equivalent, without conversion overflow.
+        normalized: float32 = X[h, w] / scale
+        normalized = max(
+            float(qmin - zero_point), min(float(qmax - zero_point), normalized)
+        )
+        value: int32 = roundeven(normalized) + zero_point
         value = max(qmin, min(qmax, value))
         Z[h, w] = value
     return Z
@@ -512,7 +513,11 @@ def quantize3d[
 ) -> "TyOut[B, L, D]":
     Z: TyOut[B, L, D]
     for b, l, d in dsl.grid(B, L, D):
-        value: int32 = roundeven(X[b, l, d] / scale) + zero_point
+        normalized: float32 = X[b, l, d] / scale
+        normalized = max(
+            float(qmin - zero_point), min(float(qmax - zero_point), normalized)
+        )
+        value: int32 = roundeven(normalized) + zero_point
         value = max(qmin, min(qmax, value))
         Z[b, l, d] = value
     return Z
@@ -623,8 +628,6 @@ def requantize3d[
         Z[b, l, d] = quantized
     return Z
 
-# BEGIN NATIVE INT8 QUANTIZATION: ADDED per-output-channel requantization
-
 
 def requantize_per_channel2d[
     TyIn, TyAcc, TyOut, H, W
@@ -651,19 +654,14 @@ def requantize_per_channel2d[
                 magnitude = -magnitude
 
             quotient: TyAcc = magnitude >> channel_shift
-            remainder: TyAcc = (
-                magnitude - (quotient << channel_shift)
-            )
+            remainder: TyAcc = magnitude - (quotient << channel_shift)
             one: TyAcc = 1
             halfway: TyAcc = one << (channel_shift - 1)
             increment: TyAcc = 0
 
             if remainder > halfway:
                 increment = 1
-            if (
-                remainder == halfway
-                and (quotient & 1) == 1
-            ):
+            if remainder == halfway and (quotient & 1) == 1:
                 increment = 1
 
             rounded = quotient + increment
@@ -710,19 +708,14 @@ def requantize_per_channel3d[
                 magnitude = -magnitude
 
             quotient: TyAcc = magnitude >> channel_shift
-            remainder: TyAcc = (
-                magnitude - (quotient << channel_shift)
-            )
+            remainder: TyAcc = magnitude - (quotient << channel_shift)
             one: TyAcc = 1
             halfway: TyAcc = one << (channel_shift - 1)
             increment: TyAcc = 0
 
             if remainder > halfway:
                 increment = 1
-            if (
-                remainder == halfway
-                and (quotient & 1) == 1
-            ):
+            if remainder == halfway and (quotient & 1) == 1:
                 increment = 1
 
             rounded = quotient + increment
@@ -743,8 +736,6 @@ def requantize_per_channel3d[
 
     return Z
 
-
-# END NATIVE INT8 QUANTIZATION: ADDED per-output-channel requantization
 
 def qadd2d[
     TyL, TyR, TyAcc, TyOut, H, W
@@ -840,9 +831,6 @@ def qadd3d[
     return Z
 
 
-# BEGIN NATIVE INT8 QUANTIZATION: ADDED transformer kernels
-
-
 def rms_norm3d[
     Ty, B, L, D
 ](X: "Ty[B, L, D]", weight: "Ty[D]", eps: float32) -> "Ty[B, L, D]":
@@ -877,8 +865,7 @@ def rope3d[
         Z[h, l, d] = X[h, l, d] * cos[l, d] - X[h, l, d + D // 2] * sin[l, d]
     for h, l, d in dsl.grid(H, L, D // 2, name="rope_second_half"):
         Z[h, l, d + D // 2] = (
-            X[h, l, d + D // 2] * cos[l, d + D // 2]
-            + X[h, l, d] * sin[l, d + D // 2]
+            X[h, l, d + D // 2] * cos[l, d + D // 2] + X[h, l, d] * sin[l, d + D // 2]
         )
     return Z
 
@@ -907,9 +894,7 @@ def positioned_rope3d[
     return Z
 
 
-def repeat_interleave3d[
-    Ty, H, L, D, R
-](X: "Ty[H, L, D]") -> "Ty[H * R, L, D]":
+def repeat_interleave3d[Ty, H, L, D, R](X: "Ty[H, L, D]") -> "Ty[H * R, L, D]":
     """Repeat each KV head consecutively for grouped-query attention."""
 
     Z: Ty[H * R, L, D]
@@ -1035,9 +1020,7 @@ def qmatmul3d[
     for b, m, n in dsl.grid(B, M, N, name="qmatmul_output"):
         acc: TyAcc = 0
         for k in range(K):
-            acc += (lhs[b, m, k] - lhs_zero_point) * (
-                rhs[b, k, n] - rhs_zero_point
-            )
+            acc += (lhs[b, m, k] - lhs_zero_point) * (rhs[b, k, n] - rhs_zero_point)
         scaled: TyWide = acc * multiplier
         rounded: TyWide = scaled
         if shift > 0:
@@ -1156,9 +1139,7 @@ def qpositioned_rope3d[
             partner = d - D // 2
             sign = 1
         value: TyAcc = (X[h, l, d] - input_zero_point) * cos[position + l, d]
-        value += sign * (X[h, l, partner] - input_zero_point) * sin[
-            position + l, d
-        ]
+        value += sign * (X[h, l, partner] - input_zero_point) * sin[position + l, d]
         scaled: TyAcc = value * multiplier
         rounded: TyAcc = scaled
         if shift > 0:
@@ -1196,7 +1177,7 @@ def qcausal_softmax3d[
     output_multiplier: int64,
     output_shift: int32,
     causal_offset: int32,
-    input_zero_point: int32,
+    _input_zero_point: int32,
     output_zero_point: int32,
     qmin: int32,
     qmax: int32,
@@ -1259,7 +1240,7 @@ def qrms_norm3d[
         radicand: TyAcc = (sum_sq + eps_codes) << 24
         low: TyAcc = 0
         high: TyAcc = radicand + 1
-        for root_step in range(63):
+        for _root_step in range(63):
             if low + 1 < high:
                 midpoint: TyAcc = (low + high) // 2
                 if midpoint == 0 or midpoint <= radicand // midpoint:
@@ -1355,13 +1336,7 @@ def qkv_cache_update3d[
     return Z
 
 
-# END NATIVE INT8 QUANTIZATION: ADDED transformer kernels
-
-
 def schedule_native_quantized(s):
     """Correctness-first schedule for native integer boundary kernels."""
 
     return s
-
-
-# END NATIVE INT8 QUANTIZATION: ADDED rank-2/rank-3 integer kernels

@@ -540,6 +540,9 @@ public:
   bool visitOp(math::CeilOp op) {
     return emitter.emitUnary(op, "hls::ceil"), true;
   }
+  bool visitOp(math::RoundEvenOp op) {
+    return emitter.emitUnary(op, "rint"), true;
+  }
   bool visitOp(math::CosOp op) {
     return emitter.emitUnary(op, "hls::cos"), true;
   }

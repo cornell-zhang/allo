@@ -2,8 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from .pytorch import from_pytorch
-
-# BEGIN NATIVE INT8 QUANTIZATION: ADDED public frontend exports
 from .pytorch import (
     QuantInfo,
     QuantizationConfig,
@@ -12,5 +10,3 @@ from .pytorch import (
     choose_qparams,
     get_qrange,
 )
-
-# END NATIVE INT8 QUANTIZATION: ADDED public frontend exports
