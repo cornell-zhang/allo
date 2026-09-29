@@ -4,7 +4,8 @@
 
 import numpy as np
 import pytest
-import torch
+
+torch = pytest.importorskip("torch")
 
 from allo.frontend.pytorch import (
     QuantizationConfig,

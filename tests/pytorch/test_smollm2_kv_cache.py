@@ -10,7 +10,8 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-import torch
+
+torch = pytest.importorskip("torch")
 from torch.fx.graph_module import GraphModule
 from torch.fx.passes.shape_prop import ShapeProp
 
