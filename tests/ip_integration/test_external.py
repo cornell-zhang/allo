@@ -64,6 +64,23 @@ def test_scalar_pybind():
     print("Passed!")
 
 
+@pytest.mark.skipif(not hls.is_available("vitis_hls"), reason="Vitis HLS not found")
+def test_ap_int():
+    vadd_ap_int = allo.IPModule(
+        top="vadd_ap_int",
+        impl=Path(__file__).resolve().parent / "vadd_ap_int.cpp",
+        link_hls=True,
+    )
+    np_A = np.random.randint(-64, 64, (32,)).astype(np.int8)
+    np_B = np.random.randint(-64, 64, (32,)).astype(np.int8)
+    np_C = np.zeros((32,), dtype=np.int16)
+    vadd_ap_int(np_A, np_B, np_C)
+    np.testing.assert_allclose(
+        np_A.astype(np.int16) + np_B.astype(np.int16), np_C, atol=1e-6
+    )
+    print("Passed!")
+
+
 #####################
 # Test shared library
 #####################

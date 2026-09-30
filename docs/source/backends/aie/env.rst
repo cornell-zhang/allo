@@ -24,7 +24,7 @@ Environment Setup
 Prerequisites
 -------------
 
-Before proceeding with the Allo installation, please follow the instructions on the `MLIR-AIE website <https://github.com/Xilinx/mlir-aie/tree/main?tab=readme-ov-file#getting-started-for-amd-ryzen-ai---linux-quick-setup-instructions>`_ to install the required `Vitis <https://www.amd.com/en/products/software/adaptive-socs-and-fpgas/vitis.html>`_ and XRT environment. Stop when you reach the "Install IRON for AMD Ryzen™ AI AIE Application" section as we need a separate process to install MLIR-AIE under the Allo environment.
+Before proceeding with the Allo installation, please follow the instructions on the `MLIR-AIE website <https://github.com/Xilinx/mlir-aie/tree/main?tab=readme-ov-file#install-the-xdna-driver-and-xrt>`_ to install the required `Vitis <https://www.amd.com/en/products/software/adaptive-socs-and-fpgas/vitis.html>`_ and XRT environment. Stop when you reach the "Install IRON for AMD Ryzen™ AI AIE Application" section as we need a separate process to install MLIR-AIE under the Allo environment.
 
 
 Install from Source
@@ -52,6 +52,11 @@ We depend on the `MLIR-AIE <https://github.com/Xilinx/mlir-aie>`_ project to com
    python3 -m pip install mlir_aie -f https://github.com/Xilinx/mlir-aie/releases/expanded_assets/v1.0
    # Install Peano from a llvm-aie wheel
    python3 -m pip install https://github.com/Xilinx/llvm-aie/releases/download/nightly/llvm_aie-19.0.0.2025041501+b2a279c1-py3-none-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
+
+.. warning::
+
+   The pinned ``llvm_aie`` nightly wheel above no longer exists, so the ``pip install`` command will fail. 
+   For a working MLIR-AIE v1.0 environment, use :ref:`docker`.
 
 
 .. warning::
@@ -139,12 +144,72 @@ Lastly, you can verify the AIE backend by running the following command under Al
    python3 tests/dataflow/aie/test_vector.py
 
 
+.. _docker:
+
+Docker Setup for MLIR-AIE v1.0
+------------------------------
+
+The ``shihanfang/allo-ci:aie-v1.0`` image provides a working MLIR-AIE v1.0 environment and is also used by the weekly AIE CI workflow. 
+After installing the required XDNA driver and XRT, run the following commands at the root directory of your cloned Allo repository:
+
+.. code-block:: bash
+
+   docker pull shihanfang/allo-ci:aie-v1.0
+   docker run --rm -it \
+      --device /dev/accel/accel0:/dev/accel/accel0 \
+      --ulimit memlock=-1 \
+      -v "$(pwd):/ryzers/allo" \
+      -w /ryzers/allo \
+      shihanfang/allo-ci:aie-v1.0 bash
+
+The cloned Allo repository will be mounted to `/ryzers/allo` inside the container.
+
+Inside the container, enter `/ryzers/allo` and then activate the pre-configured environment and install Allo:
+
+.. code-block:: bash
+
+   source activate allo
+   python3 -m pip install -v -e .
+
+Verify that XRT can access the NPU:
+
+.. code-block:: bash
+
+   xrt-smi examine
+
+Lastly, you can verify the AIE backend by running the following command under Allo's root directory.
+
+.. code-block:: bash
+
+   python3 tests/dataflow/aie/test_vector.py
+
+
 .. _internal_install:
 
-Internal Installation (Cornell)
--------------------------------
+Internal Setup (Cornell)
+------------------------
 
-For Zhang Group students, please set up environment variables in :ref:`step3` with the following commands.
+For Zhang Group students, an internal shared setup is available.
+
+For Users
+~~~~~~~~~
+
+If you only need to use Allo (not develop it), you can skip the installation steps above and use the pre-configured shared environment by activating it directly:
+
+.. code-block:: console
+
+   conda activate /opt/anaconda3/envs/allo-base
+
+To verify, run the following command under Allo's root directory:
+
+.. code-block:: console
+
+   python3 tests/dataflow/aie/test_vector.py
+
+For Developers
+~~~~~~~~~~~~~~
+
+If you need to build Allo from source, set up environment variables in :ref:`step3` with the following commands.
 
 .. code-block:: console
 
@@ -155,8 +220,7 @@ And set up Vitis and XRT in :ref:`step4` by running the following commands.
 
 .. code-block:: console
 
-   source /opt/common/setupVitis.sh
-   source /opt/common/setupXRT.sh
+   source /opt/common/setup.sh
 
 
 Lastly, to verify the installation, you can run the following command:

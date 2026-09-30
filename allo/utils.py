@@ -75,6 +75,7 @@ ctype_map = {
 # https://pybind11.readthedocs.io/en/stable/advanced/pycpp/numpy.html
 allo2c_type = {
     "bfloat16": "bfloat16",
+    "float16": "half",
     "float32": "float",
     "float64": "double",
     "int1": "bool",

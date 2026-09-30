@@ -462,23 +462,24 @@ def _build_top(s, stream_info, enable_layout=False):
 
     # create argument mapping
     funcs = get_all_df_kernels(s)
-    input_types = []
-    input_signed = ""
     arg_mapping = {}
-    used_args = {}  # {arg_name: arg_idx in top_func}
+    top_args = {}
+    input_types = []
+    for idx, top_arg in enumerate(s.func_args[s.top_func_name]):
+        input_types.append((top_arg.shape, top_arg.dtype))
+        top_args[top_arg.name] = idx
+    input_signed = ["?"] * len(input_types)
     for func in funcs:
         func_name = func.attributes["sym_name"].value
         arg_mapping[func_name] = []
         for i, arg in enumerate(func.arguments):
             if "!allo.stream" not in str(arg.type):
-                arg_name = s.func_args[func_name][i].name
-                if arg_name not in used_args:
-                    used_args[arg_name] = len(input_types)
-                    dtensor = s.func_args[func_name][i]
-                    input_types.append((dtensor.shape, dtensor.dtype))
-                    if "itypes" in func.attributes:
-                        input_signed += func.attributes["itypes"].value[i]
-                arg_mapping[func_name].append(used_args[arg_name])
+                arg_name = s.func_args[func_name][i].top_name
+                if "itypes" in func.attributes:
+                    input_signed[top_args[arg_name]] = func.attributes["itypes"].value[
+                        i
+                    ]
+                arg_mapping[func_name].append(top_args[arg_name])
     # update top function
     top_func = None
     for func in s.module.body.operations:
@@ -497,7 +498,7 @@ def _build_top(s, stream_info, enable_layout=False):
         new_top = func_d.FuncOp(
             name=s.top_func_name, type=func_type, ip=InsertionPoint(top_func)
         )
-        new_top.attributes["itypes"] = StringAttr.get(input_signed)
+        new_top.attributes["itypes"] = StringAttr.get("".join(input_signed))
         new_top.add_entry_block()
         return_op = func_d.ReturnOp([], ip=InsertionPoint(new_top.entry_block))
         for op in top_func.entry_block.operations:
