@@ -7,11 +7,16 @@ on:
     # Run weekly at Sunday 1:00 AM UTC.
     # This corresponds to Saturday 8:00 PM EST and Saturday 9:00 PM EDT.
     - cron: '0 1 * * 0'
-  workflow_dispatch:  # Allow manual triggering from GitHub Actions UI
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "Pull request number to test"
+        required: true
+        type: number
 
 jobs:
   fpga_test:
-    runs-on: [brg-zhang-xcel]
+    runs-on: [fpga]
     container:
       image: chhzh123/allo:latest
       options: >-
@@ -38,7 +43,7 @@ jobs:
         git config --global --add safe.directory "$GITHUB_WORKSPACE"
     - uses: actions/checkout@v4
       with:
-        ref: main
+        ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/pull/{0}/merge', inputs.pr_number) || 'main' }}
         fetch-depth: 0
     - name: Build Allo
       shell: bash
