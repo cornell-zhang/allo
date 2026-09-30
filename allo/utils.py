@@ -8,6 +8,7 @@ import numpy as np
 import numpy.typing as npt
 import ml_dtypes
 from ._mlir.ir import (
+    Context,
     MemRefType,
     RankedTensorType,
     IntegerType,
@@ -74,6 +75,7 @@ ctype_map = {
 # https://pybind11.readthedocs.io/en/stable/advanced/pycpp/numpy.html
 allo2c_type = {
     "bfloat16": "bfloat16",
+    "float16": "half",
     "float32": "float",
     "float64": "double",
     "int1": "bool",
@@ -580,3 +582,7 @@ def allo_to_numpy_dtype(allo_type: AlloType) -> npt.DTypeLike:
             dtype = np.int64 if isinstance(allo_type, Fixed) else np.uint64
 
     return dtype
+
+
+def register_dialect(ctx: Context):
+    allo_d.register_dialect(ctx)

@@ -5,6 +5,7 @@
 import ast
 from .._mlir import InsertionPoint
 from .._mlir.dialects import allo as allo_d
+from ..utils import register_dialect
 
 
 class BlockScopeGuard:
@@ -69,7 +70,7 @@ class ASTContext:
         self.global_vars = global_vars
         self.mlir_ctx = mlir_ctx
         self.file_name = None
-        allo_d.register_dialect(mlir_ctx)
+        register_dialect(mlir_ctx)
         # map from function name to function arguments
         self.func_args = {} if func_args is None else func_args
         self.func_id = None
@@ -120,6 +121,7 @@ class ASTContext:
         self.mapping = None
         # track the current AST node being visited for error reporting
         self.current_node = None
+        self.global_op_cache = {}
 
     def copy(self):
         ctx = ASTContext(
@@ -146,6 +148,7 @@ class ASTContext:
         ctx.current_node = self.current_node
         if hasattr(self, "func_suffix"):
             ctx.func_suffix = self.func_suffix
+        ctx.global_op_cache = self.global_op_cache
         return ctx
 
     def set_ip(self, ip):
@@ -413,8 +416,6 @@ class ReplaceNames(ast.NodeTransformer):
         self.special_symbol = set()
 
     def visit_Name(self, node):
-        if node.id in self.variables:
-            raise ValueError("Fail to resolve the expression as symbolic expression.")
         if node.id in self.symbolic_mapping:
             symbol_var = self.symbolic_mapping[node.id]
             if isinstance(symbol_var, str):
@@ -428,6 +429,8 @@ class ReplaceNames(ast.NodeTransformer):
             return new_node
         if node.id in self.var_map:
             return ast.Constant(self.var_map[node.id])
+        if node.id in self.variables:
+            raise ValueError("Fail to resolve the expression as symbolic expression.")
         return node
 
 

@@ -5,8 +5,6 @@
 import ast
 import copy
 import os
-import inspect
-import textwrap
 import warnings
 import sympy
 import numpy as np
@@ -29,7 +27,7 @@ from .types import (
     float64,
     Struct,
     Stream,
-    stateful,
+    Stateful,
     ConstExpr,
 )
 from .typing_rule import get_typing_rule
@@ -144,7 +142,7 @@ class TypeInferer(ASTVisitor):
             spec = ASTResolver.resolve(node.right, ctx.global_vars)
             if isinstance(spec, list):
                 spec = Layout(spec)
-            if spec is stateful:
+            if spec is Stateful:
                 # Create a copy with stateful=True
                 stateful_dtype = copy.deepcopy(dtype)
                 stateful_dtype.stateful = True
@@ -728,7 +726,7 @@ class TypeInferer(ASTVisitor):
 
     @staticmethod
     def visit_FunctionDef(ctx: ASTContext, node: ast.FunctionDef):
-        # pylint: disable=too-many-nested-blocks
+        # pylint: disable=too-many-nested-blocks,too-many-branches
         if ctx.top_func is not None:
             # Nested function def
             # Create a new context to avoid name collision
@@ -758,6 +756,15 @@ class TypeInferer(ASTVisitor):
                             ), f"Invalid @df.kernel decorator on function '{node.name}': 'args' length mismatch (expected {len(node.args.args)}, got {len(kernel_args)})."
                             for top_arg_name, arg in zip(kernel_args, node.args.args):
                                 top_arg = ctx.get_symbol(name=top_arg_name.id)
+                                if top_arg.shape == ():
+                                    raise ValueError(
+                                        f"Scalar '{top_arg_name.id}' cannot appear in "
+                                        f"`args=[...]` on @df.kernel '{node.name}'. "
+                                        f"Scalars are captured from the enclosing region "
+                                        f"scope automatically; remove it from args, or use "
+                                        f"a 1-element array ({top_arg_name.id}: "
+                                        f"{top_arg.dtype}[1]) instead."
+                                    )
                                 dtype, shape, _ = TypeInferer.visit_type_hint(
                                     ctx, arg.annotation
                                 )
@@ -1249,12 +1256,7 @@ class TypeInferer(ASTVisitor):
         else:
             # Visit arguments in the top-level
             visit_stmts(ctx, node.args)
-            src, starting_line_no = inspect.getsourcelines(func)
-            src = [textwrap.fill(line, tabsize=4, width=9999) for line in src]
-            src = textwrap.dedent("\n".join(src))
-            tree = parse_ast(
-                src, starting_line_no=starting_line_no, verbose=ctx.verbose
-            )
+            tree = parse_ast(func, verbose=ctx.verbose)
             # Create a new context to avoid name collision
             func_ctx = ctx.copy()
             stmts = visit_stmts(func_ctx, tree.body)

@@ -33,11 +33,9 @@ namespace allo {
 bool applyLowerTransformLayoutOps(ModuleOp &mod) {
   for (func::FuncOp func : mod.getOps<func::FuncOp>()) {
     SmallVector<TransformLayoutOp, 8> setTransformLayoutOps;
-    func.walk([&](Operation *op) {
-      if (auto transformLayoutOp = dyn_cast<TransformLayoutOp>(op)) {
-        setTransformLayoutOps.push_back(transformLayoutOp);
-      }
-    });
+    func.walk(
+        [&](TransformLayoutOp op) { setTransformLayoutOps.push_back(op); });
+
     for (auto op : setTransformLayoutOps) {
       Value input = op->getOperands()[0];
       Value output = op->getResults()[0];

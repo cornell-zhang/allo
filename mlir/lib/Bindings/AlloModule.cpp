@@ -109,6 +109,12 @@ static bool loopTransformation(MlirModule &mlir_mod) {
   return applyLoopTransformation(mod);
 }
 
+static bool unrollLoop(MlirOperation &loop, int64_t factor = 0) {
+  nb::gil_scoped_release release;
+  auto op = unwrap(loop);
+  return applyUnroll(op, factor);
+}
+
 //===----------------------------------------------------------------------===//
 // Emission APIs
 //===----------------------------------------------------------------------===//
@@ -188,6 +194,11 @@ static bool lowerBitOps(MlirModule &mlir_mod) {
 static bool lowerTransformLayoutOps(MlirModule &mlir_mod) {
   auto mod = unwrap(mlir_mod);
   return applyLowerTransformLayoutOps(mod);
+}
+
+static bool lowerMemCopyOps(MlirModule &mlir_mod) {
+  auto mod = unwrap(mlir_mod);
+  return applyLowerMemCopyOps(mod);
 }
 
 static bool legalizeCast(MlirModule &mlir_mod) {
@@ -351,6 +362,7 @@ NB_MODULE(_allo, m) {
   allo_m.def("lower_composite_type", &lowerCompositeType);
   allo_m.def("lower_bit_ops", &lowerBitOps);
   allo_m.def("lower_transform_layout_ops", &lowerTransformLayoutOps);
+  allo_m.def("lower_memcopy_ops", &lowerMemCopyOps);
   allo_m.def("legalize_cast", &legalizeCast);
   allo_m.def("remove_stride_map", &removeStrideMap);
   allo_m.def("lower_print_ops", &lowerPrintOps);
@@ -361,6 +373,8 @@ NB_MODULE(_allo, m) {
   allo_m.def("unify_kernels", &UnifyKernels);
 
   allo_m.def("copy_on_write_on_function", &copyOnWriteOnFunction);
+  allo_m.def("explicit_unroll", &unrollLoop, nb::arg("loop"),
+             nb::arg("factor") = 0);
 
   // Utility APIs
   allo_m.def("get_first_use_in_function", &getFirstUseInFunction);

@@ -19,6 +19,8 @@ from .._mlir.ir import (
     RankedTensorType,
     ShapedType,
     IntegerType,
+    F16Type,
+    BF16Type,
     F32Type,
     F64Type,
     UnitAttr,
@@ -266,11 +268,14 @@ class ASTTransformer(ASTBuilder):
             res = tensor_d.ExtractOp(tensor=res, indices=[], ip=ctx.get_ip())
         else:
             res_result = ASTTransformer.get_mlir_op_result(ctx, res)
+            is_unsigned = hasattr(res, "attributes") and "unsigned" in res.attributes
             affine_map = AffineMap.get_identity(0)
             affine_attr = AffineMapAttr.get(affine_map)
             res = affine_d.AffineLoadOp(
                 res_result.type.element_type, res, [], affine_attr, ip=ctx.get_ip()
             )
+            if is_unsigned:
+                res.attributes["unsigned"] = UnitAttr.get()
         return res
 
     @staticmethod
@@ -1782,13 +1787,16 @@ class ASTTransformer(ASTBuilder):
             )
             # pylint: disable=no-else-return
             if isinstance(node.ctx, ast.Load):
-                return allo_d.GetIntSliceOp(
+                op = allo_d.GetIntSliceOp(
                     node.dtype.build(),
                     value_result,
                     upper.result,
                     lower.result,
                     ip=ctx.get_ip(),
                 )
+                # every integer bit slice is unsigned
+                op.attributes["unsigned"] = UnitAttr.get()
+                return op
             else:  # ast.Store
                 set_slice_op = allo_d.SetIntSliceOp(
                     node.value.dtype.build(),
@@ -1990,8 +1998,6 @@ class ASTTransformer(ASTBuilder):
 
     @staticmethod
     def build_FunctionDef(ctx: ASTContext, node: ast.FunctionDef):
-        if not hasattr(ctx, "global_op_cache"):
-            ctx.global_op_cache = {}
         func_name = node.name if ctx.func_id is None else f"{node.name}_{ctx.func_id}"
         # pylint: disable=too-many-nested-blocks
         if ctx.top_func is not None:
@@ -2729,6 +2735,7 @@ class ASTTransformer(ASTBuilder):
                     new_ctx.func_suffix = inst_suffix
 
             func_op = ASTTransformer.build_FunctionDef(new_ctx, func_def)
+            func_op.attributes["dataflow"] = UnitAttr.get()
 
             # Now insert the call
             # Parse arguments
@@ -2736,6 +2743,7 @@ class ASTTransformer(ASTBuilder):
             arg_values = [
                 ASTTransformer.get_mlir_op_result(ctx, arg) for arg in new_args
             ]
+
             call_op = func_d.CallOp(
                 [],
                 FlatSymbolRefAttr.get(func_def.name),
@@ -3118,7 +3126,7 @@ class ASTTransformer(ASTBuilder):
                     if hasattr(arg, "result") and hasattr(arg.result, "type"):
                         arg_types.append(arg.result.type)
             if all(
-                isinstance(arg_type, (F32Type, F64Type, IntegerType))
+                isinstance(arg_type, (F16Type, BF16Type, F32Type, F64Type, IntegerType))
                 for arg_type in arg_types
             ):
                 opcls = {
