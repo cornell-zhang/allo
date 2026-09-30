@@ -54,7 +54,7 @@ jobs:
         export PATH=/opt/xilinx/Vitis/2023.2/bin:/opt/xilinx/Vivado/2023.2/bin:/opt/xilinx/Vitis_HLS/2023.2/bin:$PATH
         cd examples/feather
         python gemm.py
-    -name: Run FlashAttention (csyn)
+    - name: Run FlashAttention (csyn)
       shell: bash
       run: |
         source activate allo
@@ -63,7 +63,7 @@ jobs:
         export PATH=/opt/xilinx/Vitis/2023.2/bin:/opt/xilinx/Vivado/2023.2/bin:/opt/xilinx/Vitis_HLS/2023.2/bin:$PATH
         cd examples/attention/flashattention
         python test_flash.py
-    -name: Run fused MHA systolic (csim and csyn)
+    - name: Run fused MHA systolic (csim and csyn)
       shell: bash
       run: |
         source activate allo
