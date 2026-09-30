@@ -3141,6 +3141,7 @@ class ASTTransformer(ASTBuilder):
                     "tanh": math_d.TanhOp,
                     "power": math_d.PowFOp,
                     "abs": math_d.AbsIOp,
+                    "roundeven": math_d.RoundEvenOp,
                 }.get(fn_name)
                 return opcls(
                     *[ASTTransformer.get_mlir_op_result(ctx, x) for x in new_args],

@@ -82,5 +82,12 @@ jobs:
         source activate allo
         export LLVM_BUILD_DIR=/root/llvm-project/build
         python3 -m pip install torch==2.5.1
+        python3 -m pytest \
+          tests/pytorch/test_native_int8_transformer_ops.py \
+          tests/pytorch/test_review_boundaries.py \
+          tests/pytorch/test_smollm2.py \
+          tests/pytorch/test_smollm2_kv_cache.py \
+          tests/test_full_int8_quant.py \
+          -v
         python3 examples/torch/toy.py
         python3 examples/torch/mlp.py

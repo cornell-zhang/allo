@@ -21,6 +21,10 @@ def bmm(lhs, rhs, name=None):
     return np.einsum("ijk,ikn->ijn", lhs, rhs)
 
 
+def roundeven(x, name=None):
+    return np.rint(x)
+
+
 def add(lhs, rhs, name=None):
     return lhs + rhs
 
