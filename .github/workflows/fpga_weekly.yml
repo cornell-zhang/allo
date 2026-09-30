@@ -54,3 +54,23 @@ jobs:
         export PATH=/opt/xilinx/Vitis/2023.2/bin:/opt/xilinx/Vivado/2023.2/bin:/opt/xilinx/Vitis_HLS/2023.2/bin:$PATH
         cd examples/feather
         python gemm.py
+    -name: Run FlashAttention (csyn)
+      shell: bash
+      run: |
+        source activate allo
+        export PATH=/root/llvm-project/build/bin:${PATH}
+        export LLVM_BUILD_DIR=/root/llvm-project/build
+        export PATH=/opt/xilinx/Vitis/2023.2/bin:/opt/xilinx/Vivado/2023.2/bin:/opt/xilinx/Vitis_HLS/2023.2/bin:$PATH
+        cd examples/attention/flashattention
+        python test_flash.py
+    -name: Run fused MHA systolic (csim and csyn)
+      shell: bash
+      run: |
+        source activate allo
+        export OMP_NUM_THREADS=128
+        export LLVM_BUILD_DIR=/root/llvm-project/build
+        export PATH=/opt/xilinx/Vitis/2023.2/bin:/opt/xilinx/Vivado/2023.2/bin:/opt/xilinx/Vitis_HLS/2023.2/bin:$PATH
+        cd examples/attention/fused_MHA_systolic
+        python test_systolic.py
+        unset OMP_NUM_THREADS
+    
