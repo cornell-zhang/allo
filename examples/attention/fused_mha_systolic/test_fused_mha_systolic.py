@@ -7,7 +7,7 @@ import numpy as np
 import allo.backend.hls as hls
 import allo.dataflow as df
 
-from examples.attention.fused_MHA_systolic.fused_MHA_systolic import get_systolic_top
+from examples.attention.fused_mha_systolic.fused_mha_systolic import get_systolic_top
 
 
 def run_test_with_params(BATCH_SIZE, CONTEXT_LENGTH, HIDDEN_SIZE, NUM_HEADS, BLOCK_T):

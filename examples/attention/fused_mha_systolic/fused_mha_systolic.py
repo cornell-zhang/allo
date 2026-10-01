@@ -17,7 +17,9 @@ def get_systolic_top(
     BLOCK_T: int,
 ):
     assert HIDDEN_SIZE % NUM_HEADS == 0, "HIDDEN_SIZE must be divisible by NUM_HEADS"
-    assert CONTEXT_LENGTH == BLOCK_T * BLOCK_T, "CONTEXT_LENGTH must be square of BLOCK_T"
+    assert (
+        CONTEXT_LENGTH == BLOCK_T * BLOCK_T
+    ), "CONTEXT_LENGTH must be square of BLOCK_T"
 
     HEAD_DIM = HIDDEN_SIZE // NUM_HEADS
     NUM_TC = CONTEXT_LENGTH // BLOCK_T

@@ -6,7 +6,7 @@ import tempfile
 import numpy as np
 import allo.backend.hls as hls
 
-from examples.attention.flashattention.flash_Atten import get_scheduled_flash_attention
+from examples.attention.flash_attention.flash_attention import get_scheduled_flash_attention
 
 
 def run_test_with_params(BATCH_SIZE, CONTEXT_LENGTH, HIDDEN_SIZE, NUM_HEADS, BLOCK_T):
