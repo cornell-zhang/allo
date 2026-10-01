@@ -16,10 +16,11 @@ def get_systolic_top(
     NUM_HEADS: int,
     BLOCK_T: int,
 ):
+    assert HIDDEN_SIZE % NUM_HEADS == 0, "HIDDEN_SIZE must be divisible by NUM_HEADS"
+    assert CONTEXT_LENGTH == BLOCK_T * BLOCK_T, "CONTEXT_LENGTH must be square of BLOCK_T"
+
     HEAD_DIM = HIDDEN_SIZE // NUM_HEADS
     NUM_TC = CONTEXT_LENGTH // BLOCK_T
-
-    assert NUM_TC == BLOCK_T, "This design requires NUM_TC == BLOCK_T"
 
     P0 = BLOCK_T + 2
     P1 = BLOCK_T + 2
@@ -237,10 +238,13 @@ def get_systolic_top(
                             x: float32 = x_f32 * dQ * dK
 
                             # ── Online softmax — all float32 ───────────────
-                            m_new: float32 = m_cur
-                            if x > m_cur:
-                                m_new = x
-                            ep: float32 = allo.exp(m_cur - m_new)
+                            m_new: float32 = x
+                            ep: float32 = 0.0
+                            if d_cur > 0.0:
+                                m_new = m_cur
+                                if x > m_cur:
+                                    m_new = x
+                                ep = allo.exp(m_cur - m_new)
                             ex: float32 = allo.exp(x - m_new)
                             d_new: float32 = d_cur * ep + ex
                             al: float32 = d_cur * ep / d_new

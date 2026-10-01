@@ -61,8 +61,8 @@ jobs:
         export PATH=/root/llvm-project/build/bin:${PATH}
         export LLVM_BUILD_DIR=/root/llvm-project/build
         export PATH=/opt/xilinx/Vitis/2023.2/bin:/opt/xilinx/Vivado/2023.2/bin:/opt/xilinx/Vitis_HLS/2023.2/bin:$PATH
-        cd examples/attention/flashattention
-        python test_flash.py
+        cd examples/attention/flash_attention
+        python test_flash_attention.py
     - name: Run fused MHA systolic (csim and csyn)
       shell: bash
       run: |
@@ -70,7 +70,7 @@ jobs:
         export OMP_NUM_THREADS=128
         export LLVM_BUILD_DIR=/root/llvm-project/build
         export PATH=/opt/xilinx/Vitis/2023.2/bin:/opt/xilinx/Vivado/2023.2/bin:/opt/xilinx/Vitis_HLS/2023.2/bin:$PATH
-        cd examples/attention/fused_MHA_systolic
-        python test_systolic.py
+        cd examples/attention/fused_mha_systolic
+        python test_fused_mha_systolic.py
         unset OMP_NUM_THREADS
     

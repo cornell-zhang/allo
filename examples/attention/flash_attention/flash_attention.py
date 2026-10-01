@@ -12,6 +12,8 @@ def get_scheduled_flash_attention(
     NUM_HEADS: int,
     BLOCK_T: int = 4,
 ):
+    assert HIDDEN_SIZE % NUM_HEADS == 0, "HIDDEN_SIZE must be divisible by NUM_HEADS"
+    assert CONTEXT_LENGTH % BLOCK_T == 0, "CONTEXT_LENGTH must be divisible by BLOCK_T"
     HEAD_DIM = HIDDEN_SIZE // NUM_HEADS
     D_SQRT = float(HEAD_DIM**0.5)
     THREE_H = 3 * HIDDEN_SIZE
