@@ -268,11 +268,14 @@ class ASTTransformer(ASTBuilder):
             res = tensor_d.ExtractOp(tensor=res, indices=[], ip=ctx.get_ip())
         else:
             res_result = ASTTransformer.get_mlir_op_result(ctx, res)
+            is_unsigned = hasattr(res, "attributes") and "unsigned" in res.attributes
             affine_map = AffineMap.get_identity(0)
             affine_attr = AffineMapAttr.get(affine_map)
             res = affine_d.AffineLoadOp(
                 res_result.type.element_type, res, [], affine_attr, ip=ctx.get_ip()
             )
+            if is_unsigned:
+                res.attributes["unsigned"] = UnitAttr.get()
         return res
 
     @staticmethod
@@ -1784,13 +1787,16 @@ class ASTTransformer(ASTBuilder):
             )
             # pylint: disable=no-else-return
             if isinstance(node.ctx, ast.Load):
-                return allo_d.GetIntSliceOp(
+                op = allo_d.GetIntSliceOp(
                     node.dtype.build(),
                     value_result,
                     upper.result,
                     lower.result,
                     ip=ctx.get_ip(),
                 )
+                # every integer bit slice is unsigned
+                op.attributes["unsigned"] = UnitAttr.get()
+                return op
             else:  # ast.Store
                 set_slice_op = allo_d.SetIntSliceOp(
                     node.value.dtype.build(),

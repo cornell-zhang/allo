@@ -23,7 +23,9 @@ def is_hls_top_definition(line, top):
         return False
     signature = line.removeprefix('extern "C" ')
     prefix = f"void {top}"
-    return signature.startswith(prefix) and signature[len(prefix) :].lstrip().startswith("(")
+    if not signature.startswith(prefix):
+        return False
+    return signature[len(prefix) :].lstrip().startswith("(")
 
 
 @contextmanager

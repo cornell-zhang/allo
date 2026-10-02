@@ -48,7 +48,9 @@ def test_pynq_only_wraps_top_function_with_c_linkage():
 
 
 @pytest.mark.parametrize("helper_name", ["top_helper", "top2"])
-@pytest.mark.parametrize("postprocess", [postprocess_hls_code, postprocess_hls_code_pynq])
+@pytest.mark.parametrize(
+    "postprocess", [postprocess_hls_code, postprocess_hls_code_pynq]
+)
 def test_top_name_prefix_does_not_wrap_helper_or_steal_its_arguments(
     helper_name, postprocess
 ):
@@ -71,9 +73,11 @@ void top(
     assert extract_hls_arg_names(result, "top") == ["actual_input", "actual_output"]
 
 
-@pytest.mark.parametrize("postprocess", [postprocess_hls_code, postprocess_hls_code_pynq])
+@pytest.mark.parametrize(
+    "postprocess", [postprocess_hls_code, postprocess_hls_code_pynq]
+)
 def test_top_already_has_c_linkage(postprocess):
-    code = HLS_CODE.replace('void top(', 'extern "C" void top(')
+    code = HLS_CODE.replace("void top(", 'extern "C" void top(')
 
     result = postprocess(code, top="top", pragma=False)
 

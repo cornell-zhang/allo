@@ -4,11 +4,16 @@
 name: "Allo AIE (XDNA1) Weekly Test"
 on:
   schedule:
-    - cron: '0 8 * * 0' # Sunday 08:00 UTC 
+    - cron: '0 8 * * 0' # Sunday 08:00 UTC
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "Pull request number to test"
+        required: true
+        type: number
 
 jobs:
   aie_test:
-    # This job runs on Linux
     runs-on: [aie, xdna1]
     container:
       image: shihanfang/allo-ci:aie-v1.0
@@ -21,7 +26,7 @@ jobs:
         git config --global --add safe.directory "$GITHUB_WORKSPACE"
     - uses: actions/checkout@v4
       with:
-        ref: main 
+        ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/pull/{0}/merge', inputs.pr_number) || 'main' }}
         fetch-depth: 0
     - name: Build Allo
       shell: bash

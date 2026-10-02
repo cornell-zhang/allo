@@ -153,7 +153,9 @@ def postprocess_hls_code_pynq(hls_code, top=None, pragma=True):
             out_str += line + "\n"
         elif is_hls_top_definition(line, top):
             func_decl = True
-            out_str += ("" if line.startswith('extern "C" ') else 'extern "C" ') + line + "\n"
+            if not line.startswith('extern "C" '):
+                line = 'extern "C" ' + line
+            out_str += line + "\n"
         elif func_decl and line.startswith(") {"):
             func_decl = False
             out_str += line + "\n"
