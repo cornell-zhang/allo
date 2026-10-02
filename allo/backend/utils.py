@@ -17,6 +17,15 @@ def format_str(s, indent=4, strip=True):
     return textwrap.indent(s, " " * indent) + "\n"
 
 
+def is_hls_top_definition(line, top):
+    """Match the complete generated top function name, not a helper prefix."""
+    if not top:
+        return False
+    signature = line.removeprefix('extern "C" ')
+    prefix = f"void {top}"
+    return signature.startswith(prefix) and signature[len(prefix) :].lstrip().startswith("(")
+
+
 @contextmanager
 def format_code(indent=4):
     global INDENT

@@ -4,7 +4,7 @@
 import json
 import numpy as np
 
-from .utils import format_str
+from .utils import format_str, is_hls_top_definition
 from ..ir.transform import find_func_in_module
 from ..utils import get_func_inputs_outputs, np_supported_types, get_bitwidth_from_type
 
@@ -384,9 +384,9 @@ def postprocess_hls_code(hls_code, top=None, pragma=True):
     for line in hls_code.split("\n"):
         if line == "using namespace std;" or line.startswith("#ifndef"):
             out_str += line + "\n"
-        elif line.startswith(f"void {top}"):
+        elif is_hls_top_definition(line, top):
             func_decl = True
-            out_str += 'extern "C" ' + line + "\n"
+            out_str += ("" if line.startswith('extern "C" ') else 'extern "C" ') + line + "\n"
         elif func_decl and line.startswith(") {"):
             func_decl = False
             out_str += line + "\n"
@@ -488,7 +488,7 @@ def extract_hls_arg_names(hls_code, top_func_name):
     func_decl = False
     args = []
     for line in hls_code.split("\n"):
-        if line.removeprefix('extern "C" ').startswith(f"void {top_func_name}"):
+        if is_hls_top_definition(line, top_func_name):
             func_decl = True
         elif func_decl and line.startswith(") {"):
             break

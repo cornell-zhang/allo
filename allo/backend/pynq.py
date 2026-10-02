@@ -3,7 +3,7 @@
 import json
 import xml.etree.ElementTree as ET
 
-from .utils import format_str, format_code
+from .utils import format_str, format_code, is_hls_top_definition
 from ..ir.transform import find_func_in_module
 from ..utils import get_func_inputs_outputs
 from ..utils import ctype_map
@@ -151,9 +151,9 @@ def postprocess_hls_code_pynq(hls_code, top=None, pragma=True):
     for line in hls_code.split("\n"):
         if line == "using namespace std;" or line.startswith("#ifndef"):
             out_str += line + "\n"
-        elif line.startswith(f"void {top}"):
+        elif is_hls_top_definition(line, top):
             func_decl = True
-            out_str += 'extern "C" ' + line + "\n"
+            out_str += ("" if line.startswith('extern "C" ') else 'extern "C" ') + line + "\n"
         elif func_decl and line.startswith(") {"):
             func_decl = False
             out_str += line + "\n"
