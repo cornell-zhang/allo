@@ -10,8 +10,19 @@ import allo.dataflow as df
 from examples.attention.fused_mha_systolic.fused_mha_systolic import get_systolic_top
 
 
-def run_test_with_params(BATCH_SIZE, CONTEXT_LENGTH, HIDDEN_SIZE, NUM_HEADS, BLOCK_T):
-
+@pytest.mark.parametrize(
+    "BATCH_SIZE, CONTEXT_LENGTH, HIDDEN_SIZE, NUM_HEADS, BLOCK_T",
+    [
+        (4, 16, 16, 4, 4),
+    ],
+)
+def test_fused_MHA_systolic(
+    BATCH_SIZE,
+    CONTEXT_LENGTH,
+    HIDDEN_SIZE,
+    NUM_HEADS,
+    BLOCK_T,
+):
     assert (
         HIDDEN_SIZE % NUM_HEADS == 0
     ), f"HIDDEN_SIZE ({HIDDEN_SIZE}) must be exactly divisible by NUM_HEADS ({NUM_HEADS})"
@@ -79,72 +90,3 @@ def run_test_with_params(BATCH_SIZE, CONTEXT_LENGTH, HIDDEN_SIZE, NUM_HEADS, BLO
             print("✅ HLS Synthesis Passed!")
     else:
         print("⚠️ Vitis HLS not available, skipping C synthesis.")
-
-
-@pytest.mark.parametrize(
-    "BATCH_SIZE, CONTEXT_LENGTH, HIDDEN_SIZE, NUM_HEADS, BLOCK_T",
-    [
-        (4, 16, 16, 4, 4),
-    ],
-)
-def test_fused_MHA_systolic(
-    BATCH_SIZE,
-    CONTEXT_LENGTH,
-    HIDDEN_SIZE,
-    NUM_HEADS,
-    BLOCK_T,
-):
-    run_test_with_params(
-        BATCH_SIZE=BATCH_SIZE,
-        CONTEXT_LENGTH=CONTEXT_LENGTH,
-        HIDDEN_SIZE=HIDDEN_SIZE,
-        NUM_HEADS=NUM_HEADS,
-        BLOCK_T=BLOCK_T,
-    )
-
-
-if __name__ == "__main__":
-
-    parser = argparse.ArgumentParser(description="Allo Fused MHA Systolic Testbench")
-
-    parser.add_argument(
-        "--BATCH_SIZE",
-        type=int,
-        default=4,
-        required=False,
-        help="Batch size of input data",
-    )
-    parser.add_argument(
-        "--CONTEXT_LENGTH",
-        type=int,
-        default=16,
-        required=False,
-        help="Context length of input data",
-    )
-    parser.add_argument(
-        "--HIDDEN_SIZE",
-        type=int,
-        default=16,
-        required=False,
-        help="Hidden size of input data",
-    )
-    parser.add_argument(
-        "--NUM_HEADS",
-        type=int,
-        default=4,
-        required=False,
-        help="Number of heads of input data",
-    )
-    parser.add_argument(
-        "--BLOCK_T", type=int, default=4, required=False, help="Size of tiles"
-    )
-
-    args = parser.parse_args()
-
-    run_test_with_params(
-        BATCH_SIZE=args.BATCH_SIZE,
-        CONTEXT_LENGTH=args.CONTEXT_LENGTH,
-        HIDDEN_SIZE=args.HIDDEN_SIZE,
-        NUM_HEADS=args.NUM_HEADS,
-        BLOCK_T=args.BLOCK_T,
-    )

@@ -1,7 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-import argparse
 import tempfile
 import pytest
 import numpy as np
@@ -12,8 +11,19 @@ from examples.attention.flash_attention.flash_attention import (
 )
 
 
-def run_test_with_params(BATCH_SIZE, CONTEXT_LENGTH, HIDDEN_SIZE, NUM_HEADS, BLOCK_T):
-
+@pytest.mark.parametrize(
+    "BATCH_SIZE, CONTEXT_LENGTH, HIDDEN_SIZE, NUM_HEADS, BLOCK_T",
+    [
+        (4, 16, 64, 4, 4),
+    ],
+)
+def test_flashattention(
+    BATCH_SIZE,
+    CONTEXT_LENGTH,
+    HIDDEN_SIZE,
+    NUM_HEADS,
+    BLOCK_T,
+):
     assert (
         HIDDEN_SIZE % NUM_HEADS == 0
     ), f"HIDDEN_SIZE ({HIDDEN_SIZE}) must be exactly divisible by NUM_HEADS ({NUM_HEADS})"
@@ -71,8 +81,8 @@ def run_test_with_params(BATCH_SIZE, CONTEXT_LENGTH, HIDDEN_SIZE, NUM_HEADS, BLO
         raise e
 
     if hls.is_available("vitis_hls"):
-        print("Running Vitis HLS Synthesis")
         with tempfile.TemporaryDirectory() as tmpdir:
+            print("Running C Simulation for numerical correctness")
             csim_mod = s.build(target="vitis_hls", mode="csim", project=tmpdir)
             csim_mod(A, B_out)
             try:
@@ -82,77 +92,9 @@ def run_test_with_params(BATCH_SIZE, CONTEXT_LENGTH, HIDDEN_SIZE, NUM_HEADS, BLO
                 print("❌ C Simulation Test Failed!")
                 raise e
 
+            print("Running Vitis HLS Synthesis")
             hls_mod = s.build(target="vitis_hls", mode="csyn", project=tmpdir)
             hls_mod()
             print("✅ HLS Synthesis Passed!")
     else:
         print("⚠️ Vitis HLS not available, skipping C synthesis.")
-
-
-@pytest.mark.parametrize(
-    "BATCH_SIZE, CONTEXT_LENGTH, HIDDEN_SIZE, NUM_HEADS, BLOCK_T",
-    [
-        (4, 16, 64, 4, 4),
-    ],
-)
-def test_flashattention(
-    BATCH_SIZE,
-    CONTEXT_LENGTH,
-    HIDDEN_SIZE,
-    NUM_HEADS,
-    BLOCK_T,
-):
-    run_test_with_params(
-        BATCH_SIZE=BATCH_SIZE,
-        CONTEXT_LENGTH=CONTEXT_LENGTH,
-        HIDDEN_SIZE=HIDDEN_SIZE,
-        NUM_HEADS=NUM_HEADS,
-        BLOCK_T=BLOCK_T,
-    )
-
-
-if __name__ == "__main__":
-
-    parser = argparse.ArgumentParser(description="Allo FlashAttention Testbench")
-
-    parser.add_argument(
-        "--BATCH_SIZE",
-        type=int,
-        default=4,
-        required=False,
-        help="Batch size of input data",
-    )
-    parser.add_argument(
-        "--CONTEXT_LENGTH",
-        type=int,
-        default=16,
-        required=False,
-        help="Context length of input data",
-    )
-    parser.add_argument(
-        "--HIDDEN_SIZE",
-        type=int,
-        default=64,
-        required=False,
-        help="Hidden size of input data",
-    )
-    parser.add_argument(
-        "--NUM_HEADS",
-        type=int,
-        default=4,
-        required=False,
-        help="Number of heads of input data",
-    )
-    parser.add_argument(
-        "--BLOCK_T", type=int, default=4, required=False, help="Size of tiles"
-    )
-
-    args = parser.parse_args()
-
-    run_test_with_params(
-        BATCH_SIZE=args.BATCH_SIZE,
-        CONTEXT_LENGTH=args.CONTEXT_LENGTH,
-        HIDDEN_SIZE=args.HIDDEN_SIZE,
-        NUM_HEADS=args.NUM_HEADS,
-        BLOCK_T=args.BLOCK_T,
-    )

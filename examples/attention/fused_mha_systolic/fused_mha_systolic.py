@@ -2,11 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import allo
-from allo.ir.types import float32, Int, Stream
+from allo.ir.types import float32, int8, int32, Stream
 import allo.dataflow as df
-
-int8 = Int(8)
-int32 = Int(32)
 
 
 def get_systolic_top(

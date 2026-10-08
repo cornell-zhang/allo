@@ -8,7 +8,7 @@ Allo. Both use online softmax, so they never materialize the full attention
 score matrix. They differ in dataflow, precision, and the amount of spatial
 parallelism they expose.
 
-## Tiled FlashAttention (`./flash_attention/flash_attention.py`)
+## [Tiled FlashAttention](./flash_attention/flash_attention.py)
 
 This is a compact, single-engine FlashAttention baseline. For each head, it
 keeps a tile of queries on chip and streams tiles of keys and values past it.
@@ -21,7 +21,7 @@ loads and computation are pipelined, but they are not overlapped. In the
 reported implementation, the Allo version is about 3x faster than the C++ HLS
 version, at the cost of substantially greater FPGA resource use.
 
-## Fused MHA Systolic Array (`./fused_mha_systolic/fused_mha_systolic.py`)
+## [Fused MHA Systolic Array](./fused_mha_systolic/fused_mha_systolic.py)
 
 This design maps attention to a two-dimensional grid of processing elements
 (PEs). Queries and keys use INT8 for score computation; softmax and the
