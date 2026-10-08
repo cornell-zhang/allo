@@ -80,13 +80,13 @@ def run_test_with_params(BATCH_SIZE, CONTEXT_LENGTH, HIDDEN_SIZE, NUM_HEADS, BLO
     else:
         print("⚠️ Vitis HLS not available, skipping C synthesis.")
 
+
 @pytest.mark.parametrize(
     "BATCH_SIZE, CONTEXT_LENGTH, HIDDEN_SIZE, NUM_HEADS, BLOCK_T",
     [
         (4, 16, 16, 4, 4),
     ],
 )
-
 def test_fused_MHA_systolic(
     BATCH_SIZE,
     CONTEXT_LENGTH,
@@ -101,6 +101,7 @@ def test_fused_MHA_systolic(
         NUM_HEADS=NUM_HEADS,
         BLOCK_T=BLOCK_T,
     )
+
 
 if __name__ == "__main__":
 

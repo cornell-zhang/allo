@@ -88,6 +88,7 @@ def run_test_with_params(BATCH_SIZE, CONTEXT_LENGTH, HIDDEN_SIZE, NUM_HEADS, BLO
     else:
         print("⚠️ Vitis HLS not available, skipping C synthesis.")
 
+
 @pytest.mark.parametrize(
     "BATCH_SIZE, CONTEXT_LENGTH, HIDDEN_SIZE, NUM_HEADS, BLOCK_T",
     [
