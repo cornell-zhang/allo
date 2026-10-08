@@ -1,0 +1,92 @@
+# Copyright Allo authors. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+import argparse
+import tempfile
+import numpy as np
+import allo.backend.hls as hls
+import allo.dataflow as df
+
+from examples.attention.fused_mha_systolic.fused_mha_systolic import get_systolic_top
+
+
+@pytest.mark.parametrize(
+    "BATCH_SIZE, CONTEXT_LENGTH, HIDDEN_SIZE, NUM_HEADS, BLOCK_T",
+    [
+        (4, 16, 16, 4, 4),
+    ],
+)
+def test_fused_MHA_systolic(
+    BATCH_SIZE,
+    CONTEXT_LENGTH,
+    HIDDEN_SIZE,
+    NUM_HEADS,
+    BLOCK_T,
+):
+    assert (
+        HIDDEN_SIZE % NUM_HEADS == 0
+    ), f"HIDDEN_SIZE ({HIDDEN_SIZE}) must be exactly divisible by NUM_HEADS ({NUM_HEADS})"
+    assert (
+        CONTEXT_LENGTH % BLOCK_T == 0
+    ), f"CONTEXT_LENGTH ({CONTEXT_LENGTH}) must be exactly divisible by BLOCK_T ({BLOCK_T})"
+    assert (
+        CONTEXT_LENGTH // BLOCK_T == BLOCK_T
+    ), f"CONTEXT_LENGTH ({CONTEXT_LENGTH}) must be exactly square of BLOCK_T ({BLOCK_T})"
+
+    print("=" * 60)
+    print(
+        f"Testing Fused MHA Systolic: BATCH={BATCH_SIZE}, SEQ_LEN={CONTEXT_LENGTH}, "
+        f"HIDDEN={HIDDEN_SIZE}, HEADS={NUM_HEADS}, BLOCK_T={BLOCK_T}"
+    )
+    print("=" * 60)
+
+    HEAD_DIM = HIDDEN_SIZE // NUM_HEADS
+    D_SQRT = HEAD_DIM**0.5
+    THREE_H = 3 * HIDDEN_SIZE
+    IN_ELEMS = BATCH_SIZE * CONTEXT_LENGTH * THREE_H
+    OUT_ELEMS = BATCH_SIZE * CONTEXT_LENGTH * NUM_HEADS * HEAD_DIM
+
+    A = np.random.rand(IN_ELEMS).astype(np.float32)
+    B_out = np.zeros(OUT_ELEMS, dtype=np.float32)
+
+    A_reshaped = A.reshape((BATCH_SIZE, CONTEXT_LENGTH, 3, NUM_HEADS, HEAD_DIM))
+    Q_np = A_reshaped[:, :, 0, :, :].transpose((0, 2, 1, 3))
+    K_np = A_reshaped[:, :, 1, :, :].transpose((0, 2, 1, 3))
+    V_np = A_reshaped[:, :, 2, :, :].transpose((0, 2, 1, 3))
+
+    scores = np.matmul(Q_np, K_np.transpose((0, 1, 3, 2)))
+    scores = scores * (1.0 / D_SQRT)
+    max_scores = np.max(scores, axis=-1, keepdims=True)
+    exp_scores = np.exp(scores - max_scores)
+    attn_weights = exp_scores / np.sum(exp_scores, axis=-1, keepdims=True)
+
+    out_np = np.matmul(attn_weights, V_np)
+    B_golden = out_np.transpose((0, 2, 1, 3)).flatten()
+
+    s = get_systolic_top(
+        BATCH_SIZE=BATCH_SIZE,
+        CONTEXT_LENGTH=CONTEXT_LENGTH,
+        HIDDEN_SIZE=HIDDEN_SIZE,
+        NUM_HEADS=NUM_HEADS,
+        BLOCK_T=BLOCK_T,
+    )
+
+    if hls.is_available("vitis_hls"):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            print("Running Software Simulator for numerical correctness...")
+            sim_mod = df.build(s, target="vitis_hls", mode="csim")
+            sim_mod(A, B_out)
+
+            try:
+                np.testing.assert_allclose(B_out, B_golden, rtol=0.05, atol=1e-2)
+                print("✅ Simulator Test Passed: Outputs match Golden Reference!")
+            except AssertionError as e:
+                print("❌ Simulator Test Failed!")
+                raise e
+
+            print("Running Vitis HLS Synthesis")
+            hls_mod = df.build(s, target="vitis_hls", mode="csyn", project=tmpdir)
+            hls_mod()
+            print("✅ HLS Synthesis Passed!")
+    else:
+        print("⚠️ Vitis HLS not available, skipping C synthesis.")
