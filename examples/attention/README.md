@@ -1,59 +1,50 @@
-<!--- Copyright Allo authors. All Rights Reserved. -->
-<!--- SPDX-License-Identifier: Apache-2.0  -->
+<!-- Copyright Allo authors. All Rights Reserved. -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # Attention Kernels in Allo
 
-This folder contains two FPGA implementations of multi-head attention written
-in Allo. Both compute softmax attention without ever building the full score
-matrix, but they organize the hardware in very different ways. The first is a
-tiled FlashAttention engine. The second is a systolic array that uses
-low-precision arithmetic.
+This directory contains two FPGA implementations of multi-head attention in
+Allo. Both use online softmax, so they never materialize the full attention
+score matrix. They differ in dataflow, precision, and the amount of spatial
+parallelism they expose.
 
-## FlashAttention (`flash_Atten.py`)
+## Tiled FlashAttention (`./flash_attention/flash_attention.py`)
 
-This kernel follows the FlashAttention algorithm. For each head, the sequence
-is split into small tiles of queries and keys. The kernel loads a query tile
-and then streams the key and value tiles past it. For each key/value tile, it
-computes the scores against the current query tile and updates a running
-softmax for every query row: the largest score seen so far, the sum of
-exponentials, and a partial output. When the maximum grows, the older partial
-results are rescaled so they stay consistent. After every key tile has been
-processed, the output is normalized once and written back. All arithmetic is
-in single-precision floating point, so the result matches standard attention.
+This is a compact, single-engine FlashAttention baseline. For each head, it
+keeps a tile of queries on chip and streams tiles of keys and values past it.
+For every key/value tile, the engine updates each query row's running maximum,
+exponential sum, and partial output. It normalizes and stores the output only
+after all key/value tiles have been processed.
 
-In hardware, this is a single engine that repeatedly loads tiles into on-chip
-buffers, computes on them, and writes results out. Scheduling directives
-unroll the inner computation within a tile, including the score calculation,
-the exponentials, and the weighted sum over values, into parallel logic, and
-they pipeline the memory transfers. Loading and computing happen one after the
-other rather than overlapping. The design is a clear, compact baseline.
+The kernel uses FP32 arithmetic and unrolls the compute within a tile. Tile
+loads and computation are pipelined, but they are not overlapped. In the
+reported implementation, the Allo version is about 3x faster than the C++ HLS
+version, at the cost of substantially greater FPGA resource use.
 
-Our allo version is about 3 times faster than C++ HLS version while using much more resources like DSP, LUT, FF.
+## Fused MHA Systolic Array (`./fused_mha_systolic/fused_mha_systolic.py`)
 
-## Fused MHA Systolic Array (`fused_MHA_systolic.py`)
+This design maps attention to a two-dimensional grid of processing elements
+(PEs). Queries and keys use INT8 for score computation; softmax and the
+value-weighted accumulation remain in floating point. Before quantization,
+the mean key is subtracted from every key. This shift cancels in softmax while
+improving the effective INT8 key range.
 
-This kernel maps attention onto a two-dimensional grid of processing elements
-built with Allo's dataflow interface. It uses a mixed-precision scheme: queries
-and keys are quantized to 8-bit integers for the score computation, while
-softmax and the multiplication by values stay in floating point. Before
-quantization, the kernel subtracts the average key from every key. Softmax
-cancels that shift, and removing it lets 8-bit integers represent the keys
-more accurately.
+Queries and their running softmax state travel from left to right. Key/value
+blocks travel from top to bottom. At each PE, a query is scored against the
+local key block, its online-softmax state is updated, and the result moves to
+the next PE. Multiple query rows advance through the array as a wavefront, so
+communication is local and the array can process several queries at once.
 
-Data flows through the grid in two directions. Each row of processing elements
-is responsible for one query, which enters from the left together with an
-empty running softmax state. Each column is responsible for one block of keys
-and values, which enter from the top. As a query moves from left to right, each
-processing element it passes compares the query against its block of keys,
-updates the running softmax state, and hands the query and state to its right
-neighbor. Keys and values move downward so that every row sees them. When a
-query leaves the right edge of the grid, it has seen every key, and its state
-already holds the final output. The processing elements on the edges of the
-grid feed data in and drain it out, while dedicated load and store stages
-connect the grid to memory.
+## Results from the supplied runs
 
-Many queries are processed in parallel across rows, and successive groups of
-queries follow one another through the grid as a wavefront. Every stage stays
-busy, and communication stays local between neighboring elements.
+Resource values are the reported HLS estimates; latency values are the XRT
+kernel wall-clock measurements shown in the supplied logs.
 
-The fused MHA systolic array is about 2 times faster than the first version. 
+| Metric | Fused MHA systolic array | Tiled FlashAttention engine |
+| --- | ---: | ---: |
+| BRAM | 2,196 (54%) | 100 (2%) |
+| DSP | 5,508 (61%) | 572 (6%) |
+| FF | 771,964 (29%) | 75,119 (2%) |
+| LUT | 877,146 (67%) | 52,075 (3%) |
+| URAM | Not used | Not used |
+| Measured kernel wall-clock time |  182,654ns (0.183 ms) | 391,748 ns (0.392 ms) |

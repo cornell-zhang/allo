@@ -3,6 +3,7 @@
 
 import argparse
 import tempfile
+import pytest
 import numpy as np
 import allo.backend.hls as hls
 
@@ -72,16 +73,40 @@ def run_test_with_params(BATCH_SIZE, CONTEXT_LENGTH, HIDDEN_SIZE, NUM_HEADS, BLO
     if hls.is_available("vitis_hls"):
         print("Running Vitis HLS Synthesis")
         with tempfile.TemporaryDirectory() as tmpdir:
+            csim_mod = s.build(target="vitis_hls", mode="csim", project=tmpdir)
+            csim_mod(A, B_out)
+            try:
+                np.testing.assert_allclose(B_out, B_golden, rtol=1e-4, atol=1e-4)
+                print("✅ C Simulation Test Passed: Outputs match Golden Reference!")
+            except AssertionError as e:
+                print("❌ C Simulation Test Failed!")
+                raise e
+
             hls_mod = s.build(target="vitis_hls", mode="csyn", project=tmpdir)
             hls_mod()
             print("✅ HLS Synthesis Passed!")
     else:
         print("⚠️ Vitis HLS not available, skipping C synthesis.")
 
-
-def test_flashattention():
+@pytest.mark.parametrize(
+    "BATCH_SIZE, CONTEXT_LENGTH, HIDDEN_SIZE, NUM_HEADS, BLOCK_T",
+    [
+        (4, 16, 64, 4, 4),
+    ],
+)
+def test_flashattention(
+    BATCH_SIZE,
+    CONTEXT_LENGTH,
+    HIDDEN_SIZE,
+    NUM_HEADS,
+    BLOCK_T,
+):
     run_test_with_params(
-        BATCH_SIZE=4, CONTEXT_LENGTH=16, HIDDEN_SIZE=64, NUM_HEADS=4, BLOCK_T=4
+        BATCH_SIZE=BATCH_SIZE,
+        CONTEXT_LENGTH=CONTEXT_LENGTH,
+        HIDDEN_SIZE=HIDDEN_SIZE,
+        NUM_HEADS=NUM_HEADS,
+        BLOCK_T=BLOCK_T,
     )
 
 
