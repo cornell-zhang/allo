@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import argparse
+import pytest
 import tempfile
 import numpy as np
 import allo.backend.hls as hls
@@ -90,3 +91,49 @@ def test_fused_MHA_systolic(
             print("✅ HLS Synthesis Passed!")
     else:
         print("⚠️ Vitis HLS not available, skipping C synthesis.")
+
+if __name__ == "__main__":
+
+    parser = argparse.ArgumentParser(description="Allo Fused MHA Systolic Testbench")
+
+    parser.add_argument(
+        "--BATCH_SIZE",
+        type=int,
+        default=4,
+        required=False,
+        help="Batch size of input data",
+    )
+    parser.add_argument(
+        "--CONTEXT_LENGTH",
+        type=int,
+        default=16,
+        required=False,
+        help="Context length of input data",
+    )
+    parser.add_argument(
+        "--HIDDEN_SIZE",
+        type=int,
+        default=16,
+        required=False,
+        help="Hidden size of input data",
+    )
+    parser.add_argument(
+        "--NUM_HEADS",
+        type=int,
+        default=4,
+        required=False,
+        help="Number of heads of input data",
+    )
+    parser.add_argument(
+        "--BLOCK_T", type=int, default=4, required=False, help="Size of tiles"
+    )
+
+    args = parser.parse_args()
+
+    test_fused_MHA_systolic(
+        BATCH_SIZE=args.BATCH_SIZE,
+        CONTEXT_LENGTH=args.CONTEXT_LENGTH,
+        HIDDEN_SIZE=args.HIDDEN_SIZE,
+        NUM_HEADS=args.NUM_HEADS,
+        BLOCK_T=args.BLOCK_T,
+    )

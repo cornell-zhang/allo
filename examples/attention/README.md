@@ -47,4 +47,6 @@ kernel wall-clock measurements shown in the supplied logs.
 | FF | 771,964 (29%) | 75,119 (2%) |
 | LUT | 877,146 (67%) | 52,075 (3%) |
 | URAM | Not used | Not used |
-| Measured kernel wall-clock time |  182,654ns (0.183 ms) | 391,748 ns (0.392 ms) |
+| Measured kernel wall-clock time | 182,654 ns (0.183 ms) | 391,748 ns (0.392 ms) |
+| Workload | Batch = 4; heads = 4; sequence length = 144; head dimension = 16 | Batch = 4; heads = 4; sequence length = 144; head dimension = 16 |
+| Target device | Xilinx Alveo U280 | Xilinx Alveo U280 |
