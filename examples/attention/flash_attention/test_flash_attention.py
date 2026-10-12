@@ -100,6 +100,7 @@ def test_flashattention(
     else:
         print("⚠️ Vitis HLS not available, skipping C synthesis.")
 
+
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Allo FlashAttention Testbench")
