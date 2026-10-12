@@ -17,9 +17,7 @@ exponential sum, and partial output. It normalizes and stores the output only
 after all key/value tiles have been processed.
 
 The kernel uses FP32 arithmetic and unrolls the compute within a tile. Tile
-loads and computation are pipelined, but they are not overlapped. In the
-reported implementation, the Allo version is about 3x faster than the C++ HLS
-version, at the cost of substantially greater FPGA resource use.
+loads and computation are pipelined, but they are not overlapped.
 
 ## [Fused MHA Systolic Array](./fused_mha_systolic/fused_mha_systolic.py)
 
