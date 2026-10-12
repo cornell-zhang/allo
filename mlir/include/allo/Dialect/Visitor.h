@@ -51,7 +51,8 @@ public:
             tensor::ExtractOp, tensor::InsertOp, tensor::SplatOp, memref::DimOp,
             memref::RankOp,
             // Unary expressions.
-            math::AbsFOp, math::AbsIOp, math::CeilOp, math::CosOp, math::SinOp,
+            math::AbsFOp, math::AbsIOp, math::CeilOp, math::RoundEvenOp,
+            math::CosOp, math::SinOp,
             math::TanhOp, math::SqrtOp, math::RsqrtOp, math::ExpOp,
             math::Exp2Op, math::PowFOp, math::LogOp, math::Log2Op,
             math::Log10Op, arith::NegFOp,
@@ -161,6 +162,7 @@ public:
   HANDLE(math::AbsFOp);
   HANDLE(math::AbsIOp);
   HANDLE(math::CeilOp);
+  HANDLE(math::RoundEvenOp);
   HANDLE(math::CosOp);
   HANDLE(math::SinOp);
   HANDLE(math::TanhOp);
