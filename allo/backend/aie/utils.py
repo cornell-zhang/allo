@@ -296,12 +296,12 @@ matmul_external_kernel_config_map = {
     ("bf16", "bf16"): {
         "ctype": ("bfloat16", "bfloat16"),
         "aie2": (4, 8, 4),
-        "aie2p": (8, 8, 8),
+        "aie2p": (4, 8, 8),
     },
     ("bf16", "f32"): {
         "ctype": ("bfloat16", "bfloat"),
         "aie2": (4, 8, 4),
-        "aie2p": (8, 8, 8),
+        "aie2p": (4, 8, 8),
     },
 }
 
@@ -455,7 +455,7 @@ def inject_external_kernels(
                         input_idx.extend([0, 1])
                         output_idx.append(2)
                         path = os.environ.get("ALLO_EXTERNAL_KERNEL_DIR")
-                        if path is None or lib_dir != "aie2":
+                        if path is None:
                             kernel_header += f"#define DIM_M {M}\n"
                             kernel_header += f"#define DIM_N {N}\n"
                             kernel_header += f"#define DIM_K {K}\n"
@@ -718,7 +718,7 @@ def codegen_external_kernels(
                 kernel_file_code += mm_kernel
         elif "mm.cc" in src:  # this file is too large to be included
             path = os.environ.get("ALLO_EXTERNAL_KERNEL_DIR")
-            if path is None or lib_dir != "aie2":
+            if path is None:
                 path = os.path.expandvars(
                     f"$MLIR_AIE_EXTERNAL_KERNEL_DIR/{lib_dir}/mm.cc"
                 )
@@ -729,7 +729,11 @@ def codegen_external_kernels(
                         pattern, f'#include "{lib_dir}/zero.cc"', mm_kernel
                     )
             else:
-                with open(f"{path}/mm.cc", "r", encoding="utf-8") as f:
+                with open(
+                    f"{path}/mm{"" if lib_dir == "aie2" else f"_{lib_dir}"}.cc",
+                    "r",
+                    encoding="utf-8",
+                ) as f:
                     mm_kernel = f.read()
             kernel_file_code += mm_kernel
         else:
