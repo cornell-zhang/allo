@@ -484,5 +484,38 @@ def test_nested_compose():
     assert pipeline_count == 2
 
 
+def test_compose_nested_instance_ids():
+    # the top-level lin's mm is "mm_2" (conv and conv_1 hold mm, mm_1):
+    # compose follows lin's calls to it rather than guessing "mm"
+    def mm[N](x: "float32[N]") -> "float32[N]":
+        y: float32[N]
+        for i in range(N):
+            y[i] = x[i] * 2.0
+        return y
+
+    def conv[N](x: "float32[N]") -> "float32[N]":
+        return mm[N](x)
+
+    def lin[N](x: "float32[N]") -> "float32[N]":
+        return mm[N](x)
+
+    N0, N1, N2 = 4, 6, 8
+
+    def top(a: float32[N0], b: float32[N1], c: float32[N2]) -> float32[N2]:
+        d = conv[N0](a)
+        e = conv[N1](b)
+        return lin[N2](c)
+
+    sch = allo.customize(lin, instantiate=[N2])
+    sch.pipeline("mm:i")
+    s = allo.customize(top)
+    s.compose(sch)
+    code = str(s.build(target="vhls"))
+    i = code.index("void mm_2(")
+    assert "#pragma HLS pipeline" in code[i : code.index("\n}\n", i)]
+    j = code.index("void mm(")
+    assert "#pragma HLS pipeline" not in code[j : code.index("\n}\n", j)]
+
+
 if __name__ == "__main__":
     pytest.main([__file__])

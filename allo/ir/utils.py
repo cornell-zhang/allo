@@ -168,6 +168,34 @@ def get_func_id_from_param_types(param_types):
     return None
 
 
+def assign_instance_id(func_name2id, name, inst, parent_id=None):
+    """Instance id of generic function `name` instantiated with `inst`; the
+    instance is named `name` (id None) or `name_<id>`.
+
+    Ids come from one counter per function: an equal instantiation reuses its
+    id, a new one takes the first free of None, 1, 2, ... A call inside a
+    numbered parent instance gets a copy of its own (so each parent instance
+    can be customized apart); Schedule.compose finds it through the parent's
+    calls. Inside a parent with an explicit (string) id, a call takes that id.
+    """
+    ids = func_name2id.setdefault(name, {})
+    key = tuple(inst) if parent_id is None else (tuple(inst), parent_id)
+    if isinstance(parent_id, str):
+        if ids.setdefault(parent_id, key) != key:
+            raise RuntimeError(
+                f"Instance {name}_{parent_id} is already another instantiation"
+            )
+        return parent_id
+    for func_id, value in ids.items():
+        if value == key:
+            return func_id
+    func_id = None
+    while func_id in ids:
+        func_id = 1 if func_id is None else func_id + 1
+    ids[func_id] = key
+    return func_id
+
+
 def get_all_df_kernels(s):
     funcs = []
     for func in s.module.body.operations:
