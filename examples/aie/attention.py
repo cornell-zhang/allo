@@ -94,7 +94,7 @@ def flash_attention(Q, K, V, chunk_size=32):
 )
 @pytest.mark.parametrize(
     "SEQ_LEN, HEAD_DIM, Q_tile_size, q_chunk_size, kv_chunk_size",
-    [(seq_len, 64, seq_len, 32, 32) for seq_len in [64, 256, 1024]],
+    [(seq_len, 64, seq_len) for seq_len in [64, 256, 1024]],
 )
 def test_flash_attention(
     SEQ_LEN, HEAD_DIM, Q_tile_size, q_chunk_size=32, kv_chunk_size=32

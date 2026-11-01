@@ -66,7 +66,7 @@ jobs:
         source activate allo
         export LLVM_BUILD_DIR=/root/llvm-project/build
         export PATH=/opt/xilinx/Vitis/2023.2/bin:/opt/xilinx/Vivado/2023.2/bin:/opt/xilinx/Vitis_HLS/2023.2/bin:$PATH
-        python3 -m pytest examples/feather/gemm.py -v
+        python3 examples/feather/gemm.py
     - name: Run FlashAttention (csyn)
       shell: bash
       run: |
