@@ -88,6 +88,10 @@ def flash_attention(Q, K, V, chunk_size=32):
     return output
 
 
+@pytest.mark.skipif(
+    os.environ.get("NPU2") == "1",
+    reason="Skipped because kernel not supported on XDNA2",
+)
 @pytest.mark.parametrize(
     "SEQ_LEN, HEAD_DIM, Q_tile_size, q_chunk_size, kv_chunk_size",
     [(seq_len, 64, seq_len, 32, 32) for seq_len in [64, 256, 1024]],
