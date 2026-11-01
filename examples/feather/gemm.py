@@ -40,7 +40,8 @@ parser.add_argument("--M", type=int, default=16, required=False, help=help_M)
 parser.add_argument("--N", type=int, default=32, required=False, help=help_N)
 parser.add_argument("--K", type=int, default=16, required=False, help=help_K)
 
-args = parser.parse_args()
+# avoid incorrect parsing when using pytest
+args = parser.parse_args(None if __name__ == "__main__" else [])
 
 Ty = int8
 P_FACTOR = 16
