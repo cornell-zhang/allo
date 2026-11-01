@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import os
+import pytest
 import torch
 import math
 import torch.nn.functional as F
@@ -14,6 +15,22 @@ from allo.library.aie.modules.flash_attn import FA
 # ################################################################
 # Flash Attention
 # ################################################################
+
+
+@pytest.fixture(scope="module", autouse=True)
+def setup_env():
+    dir_path = os.path.dirname(os.path.abspath(__file__))
+    os.environ["ALLO_EXTERNAL_KERNEL_DIR"] = (
+        f"{dir_path}/../../allo/library/aie/kernels/"
+    )
+    os.environ["ENABLE_AGGRESSIVE_PORT_UTILIZATION_PATCH"] = "1"
+    os.environ["COALESCE_MORE"] = "1"
+    os.environ["FORCE_UNROLL_INDEX"] = "0"
+    yield
+    del os.environ["ALLO_EXTERNAL_KERNEL_DIR"]
+    del os.environ["ENABLE_AGGRESSIVE_PORT_UTILIZATION_PATCH"]
+    del os.environ["COALESCE_MORE"]
+    del os.environ["FORCE_UNROLL_INDEX"]
 
 
 def scaled_dot_product_attention(q, k, v):
@@ -71,7 +88,15 @@ def flash_attention(Q, K, V, chunk_size=32):
     return output
 
 
-def _test_flash_attention(
+@pytest.mark.skipif(
+    os.environ.get("NPU2") == "1",
+    reason="Skipped because kernel not supported on XDNA2",
+)
+@pytest.mark.parametrize(
+    "SEQ_LEN, HEAD_DIM, Q_tile_size",
+    [(seq_len, 64, seq_len) for seq_len in [64, 256, 1024]],
+)
+def test_flash_attention(
     SEQ_LEN, HEAD_DIM, Q_tile_size, q_chunk_size=32, kv_chunk_size=32
 ):
 
@@ -120,7 +145,7 @@ if __name__ == "__main__":
 
     seq_len_list = [64, 128, 256, 512, 1024, 2048]
     for seq_len in seq_len_list:
-        _test_flash_attention(seq_len, 64, seq_len, q_chunk_size=32, kv_chunk_size=32)
+        test_flash_attention(seq_len, 64, seq_len, q_chunk_size=32, kv_chunk_size=32)
 
     del os.environ["ALLO_EXTERNAL_KERNEL_DIR"]
     del os.environ["ENABLE_AGGRESSIVE_PORT_UTILIZATION_PATCH"]

@@ -7,15 +7,15 @@ on:
     # Run weekly at Sunday 1:00 AM UTC.
     # This corresponds to Saturday 8:00 PM EST and Saturday 9:00 PM EDT.
     - cron: '0 1 * * 0'
-  workflow_dispatch:
-    inputs:
-      pr_number:
-        description: "Pull request number to test"
-        required: true
-        type: number
+  workflow_dispatch: {}
+  # Apply `run-fpga` label to start a PR run; remove and reapply it after new commits.
+  pull_request:
+    branches: [main]
+    types: [labeled]
 
 jobs:
   fpga_test:
+    if: github.event_name != 'pull_request' || github.event.label.name == 'run-fpga'
     runs-on: [fpga]
     container:
       image: chhzh123/allo:latest
@@ -43,7 +43,6 @@ jobs:
         git config --global --add safe.directory "$GITHUB_WORKSPACE"
     - uses: actions/checkout@v4
       with:
-        ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/pull/{0}/merge', inputs.pr_number) || 'main' }}
         fetch-depth: 0
     - name: Build Allo
       shell: bash
@@ -51,14 +50,23 @@ jobs:
         source activate allo
         export LLVM_BUILD_DIR=/root/llvm-project/build
         python3 -m pip install -v -e .
+    - name: Unit tests
+      shell: bash
+      run: |
+        source activate allo
+        export PATH=/root/llvm-project/build/bin:${PATH}
+        export LLVM_BUILD_DIR=/root/llvm-project/build
+        python3 -m pytest --ignore=tests/dataflow tests -v
+        export OMP_NUM_THREADS=128
+        python3 -m pytest --ignore=tests/dataflow/aie tests/dataflow -v
+        unset OMP_NUM_THREADS
     - name: Run Feather GEMM
       shell: bash
       run: |
         source activate allo
         export LLVM_BUILD_DIR=/root/llvm-project/build
         export PATH=/opt/xilinx/Vitis/2023.2/bin:/opt/xilinx/Vivado/2023.2/bin:/opt/xilinx/Vitis_HLS/2023.2/bin:$PATH
-        cd examples/feather
-        python gemm.py
+        python3 examples/feather/gemm.py
     - name: Run FlashAttention (csyn)
       shell: bash
       run: |
@@ -66,14 +74,11 @@ jobs:
         export PATH=/root/llvm-project/build/bin:${PATH}
         export LLVM_BUILD_DIR=/root/llvm-project/build
         export PATH=/opt/xilinx/Vitis/2023.2/bin:/opt/xilinx/Vivado/2023.2/bin:/opt/xilinx/Vitis_HLS/2023.2/bin:$PATH
-        cd examples/attention/flash_attention
-        python test_flash_attention.py
+        python3 -m pytest examples/attention/flash_attention/test_flash_attention.py -v
     - name: Run fused MHA systolic (csim and csyn)
       shell: bash
       run: |
         source activate allo
         export LLVM_BUILD_DIR=/root/llvm-project/build
         export PATH=/opt/xilinx/Vitis/2023.2/bin:/opt/xilinx/Vivado/2023.2/bin:/opt/xilinx/Vitis_HLS/2023.2/bin:$PATH
-        cd examples/attention/fused_mha_systolic
-        python test_fused_mha_systolic.py
-    
+        python3 -m pytest examples/attention/fused_mha_systolic/test_fused_mha_systolic.py -v
