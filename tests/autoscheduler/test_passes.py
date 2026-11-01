@@ -60,8 +60,7 @@ def test_simple(debug_point, kind):
             target="vitis_hls", mode=MODE, project="test_simple.prj", wrap_io=True
         )
         input = np.zeros((10, 10), dtype=np.int32)
-
-        output = np.zeros((10, 10))
+        output = np.zeros((10, 10), dtype=np.int32)
         mod(input, output)
         np.testing.assert_allclose(output, expected)
     else:
