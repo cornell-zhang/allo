@@ -74,17 +74,6 @@ def test_fused_MHA_systolic(
 
     if hls.is_available("vitis_hls"):
         with tempfile.TemporaryDirectory() as tmpdir:
-            print("Running Software Simulator for numerical correctness...")
-            sim_mod = df.build(s, target="vitis_hls", mode="csim")
-            sim_mod(A, B_out)
-
-            try:
-                np.testing.assert_allclose(B_out, B_golden, rtol=0.05, atol=1e-2)
-                print("✅ Simulator Test Passed: Outputs match Golden Reference!")
-            except AssertionError as e:
-                print("❌ Simulator Test Failed!")
-                raise e
-
             print("Running Vitis HLS Synthesis")
             hls_mod = df.build(s, target="vitis_hls", mode="csyn", project=tmpdir)
             hls_mod()

@@ -298,6 +298,28 @@ def test_fixed_compare():
     # FIXME: FixedType kernels cannot be lowered
 
 
+def test_signed_fixed_compare():
+    def kernel(A: float32[4], B: float32[4]) -> int32[4, 4]:
+        C: int32[4, 4] = 0
+        for i in range(4):
+            a: Fixed(8, 2) = A[i]
+            b: Fixed(8, 2) = B[i]
+            C[i, 0] = a < b
+            C[i, 1] = a <= b
+            C[i, 2] = a > b
+            C[i, 3] = a >= b
+        return C
+
+    s = allo.customize(kernel)
+    for predicate in ("slt", "sle", "sgt", "sge"):
+        assert f"allo.cmp_fixed {predicate}" in str(s.module)
+    mod = s.build(target="llvm")
+    A = np.array([-2, 3, -2, 0], dtype=np.float32)
+    B = np.array([3, -2, -2, 0], dtype=np.float32)
+    expected = np.stack([A < B, A <= B, A > B, A >= B], axis=1)
+    np.testing.assert_array_equal(mod(A, B), expected)
+
+
 def test_fixed_shift():
     # Example from https://docs.amd.com/r/en-US/ug1399-vitis-hls/Class-Methods-Operators-and-Data-Members
     def kernel(A: Fixed(8, 3)[2]) -> float32[2]:

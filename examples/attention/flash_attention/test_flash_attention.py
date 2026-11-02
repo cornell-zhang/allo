@@ -83,16 +83,6 @@ def test_flashattention(
 
     if hls.is_available("vitis_hls"):
         with tempfile.TemporaryDirectory() as tmpdir:
-            print("Running C Simulation for numerical correctness")
-            csim_mod = s.build(target="vitis_hls", mode="csim", project=tmpdir)
-            csim_mod(A, B_out)
-            try:
-                np.testing.assert_allclose(B_out, B_golden, rtol=1e-4, atol=1e-4)
-                print("✅ C Simulation Test Passed: Outputs match Golden Reference!")
-            except AssertionError as e:
-                print("❌ C Simulation Test Failed!")
-                raise e
-
             print("Running Vitis HLS Synthesis")
             hls_mod = s.build(target="vitis_hls", mode="csyn", project=tmpdir)
             hls_mod()

@@ -261,6 +261,9 @@ public:
   bool visitOp(arith::IndexCastOp op) {
     return emitter.emitCast<arith::IndexCastOp>(op), true;
   }
+  bool visitOp(arith::IndexCastUIOp op) {
+    return emitter.emitCast<arith::IndexCastUIOp>(op), true;
+  }
   bool visitOp(arith::UIToFPOp op) {
     return emitter.emitCast<arith::UIToFPOp>(op), true;
   }

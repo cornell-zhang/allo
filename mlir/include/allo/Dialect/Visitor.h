@@ -72,7 +72,7 @@ public:
             // Special operations.
             func::CallOp, func::ReturnOp, arith::SelectOp, arith::ConstantOp,
             arith::TruncIOp, arith::TruncFOp, arith::ExtUIOp, arith::ExtSIOp,
-            arith::ExtFOp, arith::IndexCastOp, arith::UIToFPOp, arith::SIToFPOp,
+            arith::ExtFOp, arith::IndexCastOp, arith::IndexCastUIOp, arith::UIToFPOp, arith::SIToFPOp,
             arith::FPToSIOp, arith::FPToUIOp, arith::BitcastOp,
             allo::FixedToFloatOp, allo::FloatToFixedOp, allo::IntToFixedOp,
             allo::FixedToIntOp, allo::FixedToFixedOp,
@@ -231,6 +231,7 @@ public:
   HANDLE(arith::ExtSIOp);
   HANDLE(arith::ExtFOp);
   HANDLE(arith::IndexCastOp);
+  HANDLE(arith::IndexCastUIOp);
   HANDLE(arith::UIToFPOp);
   HANDLE(arith::SIToFPOp);
   HANDLE(arith::FPToUIOp);

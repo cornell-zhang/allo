@@ -548,9 +548,9 @@ class ASTTransformer(ASTBuilder):
         cast_map = {
             # Index <-> UInt/Int
             (Int, Index): arith_d.IndexCastOp,
-            (UInt, Index): arith_d.IndexCastOp,
+            (UInt, Index): arith_d.IndexCastUIOp,
             (Index, Int): arith_d.IndexCastOp,
-            (Index, UInt): arith_d.IndexCastOp,
+            (Index, UInt): arith_d.IndexCastUIOp,
             # UInt/Int <-> Float
             (Int, Float): arith_d.SIToFPOp,
             (UInt, Float): arith_d.UIToFPOp,
@@ -586,7 +586,7 @@ class ASTTransformer(ASTBuilder):
                 IntegerType.get_signless(32), op_result, ip=ctx.get_ip()
             )
             op_result = op.result
-            opcls = arith_d.IndexCastOp  # proceed to build cast to index
+            opcls = arith_d.IndexCastUIOp  # proceed to build cast to index
         elif isinstance(src_type, Index) and isinstance(res_type, Float):
             op = arith_d.IndexCastOp(
                 IntegerType.get_signless(32), op_result, ip=ctx.get_ip()
@@ -846,7 +846,7 @@ class ASTTransformer(ASTBuilder):
             ast.FloorDiv: {
                 Float: RuntimeError,
                 Int: arith_d.FloorDivSIOp,
-                UInt: RuntimeError,
+                UInt: arith_d.DivUIOp,
                 Fixed: RuntimeError,
                 UFixed: RuntimeError,
             },
@@ -900,7 +900,7 @@ class ASTTransformer(ASTBuilder):
                 UFixed: RuntimeError,
             },
         }.get(type(node.op))
-        ty_cls = Int if isinstance(node.dtype, Index) else type(node.dtype)
+        ty_cls = UInt if isinstance(node.dtype, Index) else type(node.dtype)
         if isinstance(node.op, (ast.LShift, ast.RShift)) and isinstance(
             node.dtype, (Fixed, UFixed)
         ):
@@ -2274,7 +2274,7 @@ class ASTTransformer(ASTBuilder):
     @staticmethod
     def build_Compare(ctx: ASTContext, node: ast.Compare, is_affine: bool = False):
         ATTR_MAP = {
-            "int": {
+            Int: {
                 ast.Eq: 0,
                 ast.NotEq: 1,
                 ast.Lt: 2,
@@ -2282,7 +2282,7 @@ class ASTTransformer(ASTBuilder):
                 ast.Gt: 4,
                 ast.GtE: 5,
             },
-            "uint": {
+            Index: {
                 ast.Eq: 0,
                 ast.NotEq: 1,
                 ast.Lt: 6,
@@ -2290,7 +2290,15 @@ class ASTTransformer(ASTBuilder):
                 ast.Gt: 8,
                 ast.GtE: 9,
             },
-            "float": {
+            UInt: {
+                ast.Eq: 0,
+                ast.NotEq: 1,
+                ast.Lt: 6,
+                ast.LtE: 7,
+                ast.Gt: 8,
+                ast.GtE: 9,
+            },
+            Float: {
                 "false": 0,
                 ast.Eq: 1,
                 ast.Gt: 2,
@@ -2314,7 +2322,7 @@ class ASTTransformer(ASTBuilder):
                 "uno": 14,
                 "true": 15,
             },
-            "fixed": {
+            Fixed: {
                 ast.Eq: 0,
                 ast.NotEq: 1,
                 ast.Lt: 2,
@@ -2322,7 +2330,7 @@ class ASTTransformer(ASTBuilder):
                 ast.Gt: 4,
                 ast.GtE: 5,
             },
-            "ufixed": {
+            UFixed: {
                 ast.Eq: 0,
                 ast.NotEq: 1,
                 ast.Lt: 6,
@@ -2347,35 +2355,29 @@ class ASTTransformer(ASTBuilder):
             attr = IntegerSetAttr.get(if_cond_set)
             return attr, ctx.get_symbol(node.left.id)
         else:
+            operand_type = node.operand_type
             lhs = build_stmt(ctx, node.left)
             rhs = build_stmt(ctx, node.comparators[0])
             # Cast lhs and rhs to the same type
-            lhs = ASTTransformer.build_cast_op(ctx, lhs, node.left.dtype, node.dtype)
+            lhs = ASTTransformer.build_cast_op(ctx, lhs, node.left.dtype, operand_type)
             rhs = ASTTransformer.build_cast_op(
-                ctx, rhs, node.comparators[0].dtype, node.dtype
+                ctx, rhs, node.comparators[0].dtype, operand_type
             )
             # avoid rebuilding the same op
             rhs_res, lhs_res = ASTTransformer.get_mlir_op_result(
                 ctx, rhs
             ), ASTTransformer.get_mlir_op_result(ctx, lhs)
-            dtype = str(rhs_res.type)
-            if dtype.startswith("i") or dtype.startswith("ui"):
-                op = ATTR_MAP["int" if dtype.startswith("i") else "uint"][
-                    type(node.ops[0])
-                ]
-                predicate = IntegerAttr.get(IntegerType.get_signless(64), op)
+            predicate = IntegerAttr.get(
+                IntegerType.get_signless(64),
+                ATTR_MAP[type(operand_type)][type(node.ops[0])],
+            )
+            if isinstance(operand_type, (Int, UInt, Index)):
                 return arith_d.CmpIOp(predicate, lhs_res, rhs_res, ip=ctx.get_ip())
-            if dtype.startswith("!allo.Fixed") or dtype.startswith("!allo.UFixed"):
-                op = ATTR_MAP["fixed" if dtype.startswith("f") else "ufixed"][
-                    type(node.ops[0])
-                ]
-                predicate = IntegerAttr.get(IntegerType.get_signless(64), op)
+            if isinstance(operand_type, (Fixed, UFixed)):
                 return allo_d.CmpFixedOp(predicate, lhs_res, rhs_res, ip=ctx.get_ip())
-            if dtype.startswith("f"):
-                op = ATTR_MAP["float"][type(node.ops[0])]
-                predicate = IntegerAttr.get(IntegerType.get_signless(64), op)
+            if isinstance(operand_type, Float):
                 return arith_d.CmpFOp(predicate, lhs_res, rhs_res, ip=ctx.get_ip())
-            raise RuntimeError(f"Unsupported types for binary op: {dtype}")
+            raise RuntimeError(f"Unsupported types for binary op: {type(operand_type)}")
 
     @staticmethod
     def build_BoolOp(ctx: ASTContext, node: ast.BoolOp):

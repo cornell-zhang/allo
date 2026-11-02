@@ -938,8 +938,8 @@ class TypeInferer(ASTVisitor):
         assert len(node.comparators) == 1, "Only support one comparator for now"
         rhs = visit_stmt(ctx, node.comparators[0])
         typing_rule = get_typing_rule(type(node.ops[0]), ctx.typing_rule_set)
-        operand_type = typing_rule(lhs.dtype, rhs.dtype)
-        node.dtype = operand_type
+        node.operand_type = typing_rule(lhs.dtype, rhs.dtype)
+        node.dtype = uint1
         node.shape = tuple()
         return node
 

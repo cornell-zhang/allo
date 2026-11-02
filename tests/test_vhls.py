@@ -5,7 +5,7 @@ import tempfile
 
 import pytest
 import allo
-from allo.ir.types import bool, int32, float16, float32
+from allo.ir.types import bool, uint8, uint16, int32, float16, float32
 from allo.memory import Memory
 import numpy as np
 import allo.backend.hls as hls
@@ -653,6 +653,30 @@ def test_fp16_half_type_and_hls_math():
         assert "half" in hls_code
         assert "hls::exp" in hls_code
         assert "hls::sqrt" in hls_code
+
+
+def test_index_type_casting():
+    def top(ra: uint8[4], q: uint16[4]):
+        mem: uint16[256] = 0
+        for i in range(256):
+            mem[i] = i
+        for t in range(4):
+            q[t] = mem[ra[t]]
+
+    s = allo.customize(top)
+    print(s.module)
+
+    mod = s.build()
+    result = np.zeros(4, np.uint16)
+    mod(np.array([1, 200, 255, 128], np.uint8), result)
+    assert np.array_equal(result, np.array([1, 200, 255, 128], np.uint16))
+
+    if hls.is_available("vitis_hls"):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mod = s.build(target="vitis_hls", mode="csim", project=tmpdir)
+            mod(np.array([1, 200, 255, 128], np.uint8), result)
+            assert np.array_equal(result, np.array([1, 200, 255, 128], np.uint16))
+            print("Passed!")
 
 
 if __name__ == "__main__":

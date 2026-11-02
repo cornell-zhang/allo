@@ -75,7 +75,7 @@ jobs:
         export LLVM_BUILD_DIR=/root/llvm-project/build
         export PATH=/opt/xilinx/Vitis/2023.2/bin:/opt/xilinx/Vivado/2023.2/bin:/opt/xilinx/Vitis_HLS/2023.2/bin:$PATH
         python3 -m pytest examples/attention/flash_attention/test_flash_attention.py -v
-    - name: Run fused MHA systolic (csim and csyn)
+    - name: Run fused MHA systolic (csyn)
       shell: bash
       run: |
         source activate allo

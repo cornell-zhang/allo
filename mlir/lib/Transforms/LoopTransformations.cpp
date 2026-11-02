@@ -1814,7 +1814,7 @@ LogicalResult runReuseAt(func::FuncOp &f, ReuseAtOp &reuseAtOp) {
   // distance) / stride
   auto iv = nonReductionLoops[loopAxis].getInductionVar();
   // get all uses of the induction variable
-  for (auto &use : iv.getUses()) {
+  for (auto &use : llvm::make_early_inc_range(iv.getUses())) {
     auto user = use.getOwner();
     // we expect a sequence of:
     // %iv = arith.index_cast %iv : index to some integer type
@@ -1823,19 +1823,20 @@ LogicalResult runReuseAt(func::FuncOp &f, ReuseAtOp &reuseAtOp) {
     // We need to replace the %iv_stride with
     // the newly created induction variable expression
 
-    // if the user is an index_cast, we need to check the next user
-    if (auto indexCastOp = dyn_cast<arith::IndexCastOp>(user)) {
-      for (auto &cast_user : indexCastOp.getResult().getUses()) {
+    // Follow either signed or unsigned index casts to their users.
+    if (isa<arith::IndexCastOp, arith::IndexCastUIOp>(user)) {
+      Value castResult = user->getResult(0);
+      for (auto &cast_user : llvm::make_early_inc_range(castResult.getUses())) {
         user = cast_user.getOwner();
         // if the user is a muli op, we have our target
         if (auto muliOp = dyn_cast<arith::MulIOp>(user)) {
-          // bulid a new expression: iv - distance
+          // build a new expression: iv - distance
           OpBuilder builder(muliOp);
           Type dtype = muliOp.getResult().getType();
           auto cstDistance = builder.create<arith::ConstantOp>(
               muliOp.getLoc(), dtype, builder.getIntegerAttr(dtype, distance));
           auto subIOp = builder.create<arith::SubIOp>(muliOp.getLoc(),
-                                                      indexCastOp, cstDistance);
+                                                      castResult, cstDistance);
           // replace the muli op with the new induction variable expression
           muliOp.replaceAllUsesWith(subIOp.getResult());
           // remove the muli op
