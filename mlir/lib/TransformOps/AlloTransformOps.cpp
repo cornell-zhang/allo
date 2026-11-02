@@ -1402,9 +1402,9 @@ transform::ReuseAtOp::apply(transform::TransformRewriter &rewriter,
   auto iv = nonReductionLoops[loopAxis].getInductionVar();
   for (auto &use : llvm::make_early_inc_range(iv.getUses())) {
     auto user = use.getOwner();
-    if (auto indexCastOp = dyn_cast<arith::IndexCastOp>(user)) {
-      for (auto &cast_user :
-           llvm::make_early_inc_range(indexCastOp.getResult().getUses())) {
+    if (isa<arith::IndexCastOp, arith::IndexCastUIOp>(user)) {
+      Value castResult = user->getResult(0);
+      for (auto &cast_user : llvm::make_early_inc_range(castResult.getUses())) {
         auto muliOp = dyn_cast<arith::MulIOp>(cast_user.getOwner());
         if (muliOp) {
           rewriter.setInsertionPoint(muliOp);
@@ -1412,8 +1412,8 @@ transform::ReuseAtOp::apply(transform::TransformRewriter &rewriter,
           auto cst =
               arith::ConstantOp::create(rewriter, muliOp.getLoc(), dtype,
                                         rewriter.getIntegerAttr(dtype, stride));
-          auto subiOp = arith::SubIOp::create(rewriter, muliOp.getLoc(),
-                                              indexCastOp.getResult(), cst);
+          auto subiOp =
+              arith::SubIOp::create(rewriter, muliOp.getLoc(), castResult, cst);
           muliOp.replaceAllUsesWith(subiOp.getResult());
           muliOp.erase();
         }

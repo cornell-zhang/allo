@@ -846,7 +846,7 @@ class ASTTransformer(ASTBuilder):
             ast.FloorDiv: {
                 Float: RuntimeError,
                 Int: arith_d.FloorDivSIOp,
-                UInt: RuntimeError,
+                UInt: arith_d.DivUIOp,
                 Fixed: RuntimeError,
                 UFixed: RuntimeError,
             },

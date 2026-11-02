@@ -4,7 +4,7 @@
 import allo
 import numpy as np
 import pytest
-from allo.ir.types import int32, float32
+from allo.ir.types import int32, uint32, float32
 
 
 def test_reuse_blur_x():
@@ -29,6 +29,26 @@ def test_reuse_blur_x():
     np_B = mod(np_A)
 
     assert np.array_equal(np_B, np_C)
+
+
+@pytest.mark.parametrize("Ty", [int32, uint32])
+def test_reuse_blur_x_index_cast(Ty):
+    def kernel(A: int32[2, 10], factor: Ty[1]) -> int32[2, 8]:
+        B: int32[2, 8] = 0
+        for y, x in allo.grid(2, 8):
+            B[y, x] = A[y, x] + A[y, x + 1] + A[y, x + 2] + x * factor[0]
+        return B
+
+    s = allo.customize(kernel)
+    A = np.arange(20, dtype=np.int32).reshape(2, 10)
+    factor = np.ones(1, dtype=np.int32 if Ty == int32 else np.uint32)
+    expected = A[:, :-2] + A[:, 1:-1] + A[:, 2:] + np.arange(8, dtype=np.int32)
+    baseline = s.build(target="llvm")(A, factor)
+    np.testing.assert_array_equal(baseline, expected)
+
+    s.reuse_at(s.A, "x")
+    result = s.build(target="llvm")(A, factor)
+    np.testing.assert_array_equal(result, baseline)
 
 
 def test_reuse_and_partition():

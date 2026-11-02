@@ -6,7 +6,17 @@ import tempfile
 import numpy as np
 import pytest
 import allo
-from allo.ir.types import bool, int8, uint8, int32, uint32, float32, index, ConstExpr
+from allo.ir.types import (
+    bool,
+    int8,
+    uint1,
+    uint8,
+    int32,
+    uint32,
+    float32,
+    index,
+    ConstExpr,
+)
 import allo.backend.hls as hls
 import io
 from contextlib import redirect_stdout
@@ -1465,6 +1475,40 @@ def test_constant_tensor_slice_2d():
     mod = s.build()
     result = mod()
     np.testing.assert_allclose(result, np_A[1], rtol=1e-5)
+
+
+@pytest.mark.parametrize("Ty", [index, uint32])
+def test_unsigned_floordiv(Ty):
+    def kernel(A: uint32[6], B: uint32[6]) -> uint32[6]:
+        C: uint32[6] = 0
+        for i in range(6):
+            a: Ty = A[i]
+            b: Ty = B[i]
+            C[i] = a // b
+        return C
+
+    s = allo.customize(kernel)
+    assert "arith.divui" in str(s.module)
+    mod = s.build(target="llvm")
+    A = np.array([7, 9, 2**31, 2**32 - 1, 200, 1], dtype=np.uint32)
+    B = np.array([3, 3, 2, 3, 255, 2], dtype=np.uint32)
+    np.testing.assert_array_equal(mod(A, B), A // B)
+
+
+def test_cmp_uint1_assignment():
+    def kernel(A: uint8[4], B: uint8[4]) -> uint8[4]:
+        C: uint8[4] = 0
+        for i in range(4):
+            r: uint1 = A[i] == B[i]
+            C[i] = r
+        return C
+
+    s = allo.customize(kernel)
+    assert ": i1 to i1" not in str(s.module)
+    mod = s.build(target="llvm")
+    A = np.array([200, 200, 0, 255], dtype=np.uint8)
+    B = np.array([200, 100, 0, 128], dtype=np.uint8)
+    np.testing.assert_array_equal(mod(A, B), A == B)
 
 
 def test_cmp():
