@@ -1565,5 +1565,45 @@ def test_generic_nested_and_top_level_instances():
     )
 
 
+def test_generic_numeric_and_explicit_ids():
+    # a numbered instance must not take the name of an explicit id "1"
+    def inc[T, N](x: "T[N]") -> "T[N]":
+        y: T[N]
+        for i in range(N):
+            y[i] = x[i] + 1
+        return y
+
+    def top(a: int32[4], b: int32[8], c: int32[2]) -> int32[2]:
+        d = inc[int32, 4, "1"](a)
+        e = inc[int32, 8](b)
+        return inc[int32, 2](c)
+
+    s = allo.customize(top)
+    c = np.arange(2, dtype=np.int32)
+    np.testing.assert_array_equal(
+        s.build()(np.zeros(4, np.int32), np.zeros(8, np.int32), c), c + 1
+    )
+
+
+def test_generic_explicit_id_in_parent():
+    # inc under a parent with id "A" is the same instance as a direct inc "A"
+    def inc[T, N](x: "T[N]") -> "T[N]":
+        y: T[N]
+        for i in range(N):
+            y[i] = x[i] + 1
+        return y
+
+    def wrap[T, N](x: "T[N]") -> "T[N]":
+        return inc[T, N](x)
+
+    def top(a: int32[4], b: int32[4]) -> int32[4]:
+        d = inc[int32, 4, "A"](a)
+        return wrap[int32, 4, "A"](b)
+
+    s = allo.customize(top)
+    b = np.arange(4, dtype=np.int32)
+    np.testing.assert_array_equal(s.build()(np.zeros(4, np.int32), b), b + 1)
+
+
 if __name__ == "__main__":
     pytest.main([__file__])

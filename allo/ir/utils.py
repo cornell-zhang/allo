@@ -171,18 +171,19 @@ def get_func_id_from_param_types(param_types):
 def assign_instance_id(func_name2id, name, inst, parent_id=None):
     """Returns a unique or reused ID string for a generic function instance."""
     ids = func_name2id.setdefault(name, {})
-    key = tuple(inst) if parent_id is None else (tuple(inst), parent_id)
     if isinstance(parent_id, str):
+        key = tuple(inst)
         if ids.setdefault(parent_id, key) != key:
             raise RuntimeError(
                 f"Instance {name}_{parent_id} is already another instantiation"
             )
         return parent_id
+    key = tuple(inst) if parent_id is None else (tuple(inst), parent_id)
     for func_id, value in ids.items():
         if value == key:
             return func_id
     func_id = None
-    while func_id in ids:
+    while func_id in ids or str(func_id) in ids:
         func_id = 1 if func_id is None else func_id + 1
     ids[func_id] = key
     return func_id
