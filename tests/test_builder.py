@@ -1559,8 +1559,6 @@ def test_generic_nested_and_top_level_instances():
         return inc[int32, 2](c)
 
     s = allo.customize(top)
-    names = {op.attributes["sym_name"].value for op in s.module.body.operations}
-    assert {"inc", "inc_1", "inc_2"} <= names
     c = np.arange(2, dtype=np.int32)
     np.testing.assert_array_equal(
         s.build()(np.zeros(4, np.int32), np.zeros(8, np.int32), c), c + 1

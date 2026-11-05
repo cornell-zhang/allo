@@ -169,15 +169,7 @@ def get_func_id_from_param_types(param_types):
 
 
 def assign_instance_id(func_name2id, name, inst, parent_id=None):
-    """Instance id of generic function `name` instantiated with `inst`; the
-    instance is named `name` (id None) or `name_<id>`.
-
-    Ids come from one counter per function: an equal instantiation reuses its
-    id, a new one takes the first free of None, 1, 2, ... A call inside a
-    numbered parent instance gets a copy of its own (so each parent instance
-    can be customized apart); Schedule.compose finds it through the parent's
-    calls. Inside a parent with an explicit (string) id, a call takes that id.
-    """
+    """Returns a unique or reused ID string for a generic function instance."""
     ids = func_name2id.setdefault(name, {})
     key = tuple(inst) if parent_id is None else (tuple(inst), parent_id)
     if isinstance(parent_id, str):

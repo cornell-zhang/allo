@@ -485,8 +485,8 @@ def test_nested_compose():
 
 
 def test_compose_nested_instance_ids():
-    # the top-level lin's mm is "mm_2" (conv and conv_1 hold mm, mm_1):
-    # compose follows lin's calls to it rather than guessing "mm"
+    # mm is instantiated three times (N = 4, 6, 8); composing lin's schedule
+    # must pipeline only the mm that lin calls, the one of size N2
     def mm[N](x: "float32[N]") -> "float32[N]":
         y: float32[N]
         for i in range(N):
@@ -510,11 +510,9 @@ def test_compose_nested_instance_ids():
     sch.pipeline("mm:i")
     s = allo.customize(top)
     s.compose(sch)
-    code = str(s.build(target="vhls"))
-    i = code.index("void mm_2(")
-    assert "#pragma HLS pipeline" in code[i : code.index("\n}\n", i)]
-    j = code.index("void mm(")
-    assert "#pragma HLS pipeline" not in code[j : code.index("\n}\n", j)]
+    pipelined = [op for op in s.module.body.operations if "pipeline_ii" in str(op)]
+    assert len(pipelined) == 1
+    assert f"memref<{N2}xf32>" in str(pipelined[0])
 
 
 if __name__ == "__main__":

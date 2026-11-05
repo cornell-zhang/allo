@@ -127,18 +127,26 @@ def call_names(func):
     return names
 
 
-def match_call_trees(src, src_name, dst, dst_name, names):
-    """Maps each function `src_name` calls (transitively) in schedule `src`
-    to the instance at the same call site under `dst_name` in `dst`."""
-    if src_name in names:
-        return
-    names[src_name] = dst_name
-    src_func = src._find_function(src_name, error=False)
-    dst_func = dst._find_function(dst_name, error=False)
-    if src_func is None or dst_func is None:
-        return
-    for a, b in zip(call_names(src_func), call_names(dst_func)):
-        match_call_trees(src, a, dst, b, names)
+def func_table(s):
+    """Name -> FuncOp of every function in schedule `s`."""
+    return {
+        op.name.value: op
+        for op in s.module.body.operations
+        if isinstance(op, func_d.FuncOp)
+    }
+
+
+def match_call_trees(src_funcs, src_name, dst_funcs, dst_name, names):
+    """Maps each function `src_name` calls (transitively) to the instance at
+    the same call site under `dst_name`."""
+    stack = [(src_name, dst_name)]
+    while stack:
+        a, b = stack.pop()
+        if a in names:
+            continue
+        names[a] = b
+        if a in src_funcs and b in dst_funcs:
+            stack.extend(zip(call_names(src_funcs[a]), call_names(dst_funcs[b])))
 
 
 class Schedule:
@@ -1173,14 +1181,13 @@ class Schedule:
         """
 
         names = {}  # function of `sch` -> its instance in `self`
+        dst_funcs = {}  # functions of `self` by name
 
         def instance_name(orig_func_name):
             if orig_func_name in names:
                 return names[orig_func_name]
-            func_name = orig_func_name if id is None else orig_func_name + "_" + str(id)
-            if self._find_function(func_name, error=False) is None:
-                func_name = orig_func_name + "_0"
-            return func_name
+            func_name = orig_func_name if id is None else f"{orig_func_name}_{id}"
+            return func_name if func_name in dst_funcs else orig_func_name + "_0"
 
         def get_name(arg):
             if isinstance(arg, (LoopWrapper, MockBuffer)):
@@ -1207,12 +1214,14 @@ class Schedule:
                 raise TypeError("The first argument must be a Schedule object")
             # the functions `sch` calls, matched call by call to their instances
             # here (a nested instance's id may differ from its parent's)
+            dst_funcs.clear()
+            dst_funcs.update(func_table(self))
             names.clear()
-            top = sch.top_func_name if id is None else f"{sch.top_func_name}_{id}"
-            if self._find_function(top, error=False) is None:
-                top = sch.top_func_name + "_0"
-            if self._find_function(top, error=False) is not None:
-                match_call_trees(sch, sch.top_func_name, self, top, names)
+            top = instance_name(sch.top_func_name)
+            if top in dst_funcs:
+                match_call_trees(
+                    func_table(sch), sch.top_func_name, dst_funcs, top, names
+                )
 
             if hasattr(sch, "stateful_var_map") and sch.stateful_var_map:
                 stateful_seen = getattr(self, "_stateful_seen", {})
