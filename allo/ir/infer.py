@@ -40,7 +40,12 @@ from ..utils import (
     construct_kernel_name,
 )
 from ..memory import DTensor, Layout
-from .utils import parse_ast, get_func_id_from_param_types, resolve_generic_types
+from .utils import (
+    parse_ast,
+    get_func_id_from_param_types,
+    resolve_generic_types,
+    assign_instance_id,
+)
 
 
 # pylint: disable=too-many-public-methods
@@ -1010,21 +1015,15 @@ class TypeInferer(ASTVisitor):
             obj_name = obj.__name__
             ctx.global_vars[obj_name] = obj
             ctx.inst = ASTResolver.resolve_param_types(node.func.slice, ctx.global_vars)
-            if ctx.func_id is None:
-                func_id = get_func_id_from_param_types(ctx.inst)
-                if func_id is None:
-                    func_dict = ctx.func_name2id.setdefault(obj_name, {})
-                    for key, value in func_dict.items():
-                        if value == tuple(ctx.inst):
-                            func_id = key
-                            break
-                    else:
-                        func_id = len(func_dict) if len(func_dict) > 0 else None
-                        func_dict[func_id] = tuple(ctx.inst)
-                else:
-                    ctx.inst.remove(func_id)
-                    func_dict = ctx.func_name2id.setdefault(obj_name, {})
-                    func_dict[func_id] = tuple(ctx.inst)
+            func_id = get_func_id_from_param_types(ctx.inst)
+            if func_id is None:
+                ctx.func_id = assign_instance_id(
+                    ctx.func_name2id, obj_name, ctx.inst, ctx.func_id
+                )
+            elif ctx.func_id is None:  # an explicit id in the parameters
+                ctx.inst.remove(func_id)
+                func_dict = ctx.func_name2id.setdefault(obj_name, {})
+                func_dict[func_id] = tuple(ctx.inst)
                 ctx.func_id = func_id
         else:
             raise RuntimeError("Unsupported function call")
