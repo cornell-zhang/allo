@@ -70,3 +70,47 @@ The default target is LLVM. We can also change the backend to other compilers su
     print(mod.hls_code)
 
 For more target device selection, please refer to the `Backend <https://cornell-zhang.github.io/allo/index.html>`_ section of the document.
+
+
+INT8 quantization boundaries
+===========================
+
+Ordinary floating models retain the existing ``op_dtypes`` options, including
+scalar ``linear`` dtypes and ``inputs`` / ``default`` input ABI overrides.
+Quantization is enabled by explicit PyTorch Q/DQ operations or by passing a
+``QuantizationConfig`` to ``from_pytorch``.
+
+Explicit ``torch.quantize_per_tensor`` boundaries support rank-2 and rank-3
+float32 tensors with ``torch.qint8`` or ``torch.quint8`` storage. All three
+``qdq_lowering_mode`` values (``early``, ``delayed``, ``fused``) preserve these
+boundaries before ordinary floating consumers and public floating outputs.
+Return ``dequantize()`` for floating output or ``int_repr()`` for storage codes;
+quantized Tensor objects are not supported as input or output ABI values.
+
+To select native Linear for an explicit Q/DQ graph, use an integer triplet such
+as ``op_dtypes={"linear": ("int8", "int8", "int32")}``. The input storage must
+match the first dtype. Explicit weights must be exactly representable in signed
+int8, either directly or after folding the input scale. Bias must be integral
+at the resulting accumulator scale. Other forms raise ``NotImplementedError``
+instead of silently rounding or clipping the explicitly specified parameters.
+For example, weight 1 with input scale 0.25 keeps weight code 1 and accumulator
+scale 0.25. Ordinary floating Linear remains available without this triplet.
+
+``QuantizationConfig`` supports signed or unsigned 8-bit activations, signed
+8-bit weights, signed 32-bit accumulation, min/max calibration, and per-tensor
+or per-channel weight scales. Unsigned weights and other accumulator or
+activation widths are rejected. ``calibration_inputs`` can supply multiple
+complete input tuples; the example inputs are used when it is omitted.
+The retained SmolLM2 example uses this configured route and per-channel Linear
+weights, with tied embedding/head parameters retaining a shared representation.
+
+Quantization scales must be positive, finite, normal float32 values. Integer
+kernels use int64 fixed-point intermediates; the frontend rejects shifts outside
+[-62, 62] and conservative bounds that could overflow supported accumulators.
+Direct kernel callers must respect the same arithmetic and shape contracts.
+These checks bound the supported lowering rather than extending its widths.
+
+The SmolLM2 execution gate requires successful lowering, LLVM compilation and
+execution, the expected output shape, and finite values. It does not require an
+FP32-versus-INT8 model-quality threshold. The existing integer numerical and
+FP32 frontend regression tests remain required.
