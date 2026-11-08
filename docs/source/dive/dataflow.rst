@@ -26,6 +26,10 @@ This document describes the dataflow programming model in Allo, which enables
 spatial parallelism through explicit kernel decomposition and stream-based
 communication.
 
+Kernel symbols use explicit coordinate and enclosing-scope fields, for example
+``gemm__pe_0_1`` and ``inner__0__fn_gemm__pe_0_1``. See
+:ref:`function-instance-names` for the naming convention and scheduling lookup.
+
 .. contents:: Table of Contents
    :local:
    :depth: 2
