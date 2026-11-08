@@ -268,7 +268,7 @@ def test_vadd():
 
     s = df.customize(top)
     # unroll the lanes
-    nest_loop_i = s.get_loops("VEC_0")["vec_nest"]["i"]
+    nest_loop_i = s.get_loops("VEC__pe_0")["vec_nest"]["i"]
     s.unroll(nest_loop_i)
     print(s.module)
 

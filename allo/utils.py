@@ -1,8 +1,7 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=no-name-in-module, bad-builtin
+# pylint: disable=no-name-in-module
 
-import re
 import ctypes
 import numpy as np
 import numpy.typing as npt
@@ -502,17 +501,22 @@ def freeze_list(x):
 
 
 def construct_kernel_name(prefix: str, ids: tuple[int]):
-    return f"{prefix}_{"_".join(map(str, ids))}"
+    from .ir.names import parse_function_name, format_function_name
+    from dataclasses import replace
+
+    return format_function_name(
+        replace(parse_function_name(prefix), coordinates=tuple(ids))
+    )
 
 
 def parse_kernel_name(name: str):
-    match = re.match(r"(.+?)(_\d+(?:_\d+)*)$", name)
-    if not match:
-        raise ValueError(f"Invalid format: {name}")
+    from .ir.names import parse_function_name, format_function_name
+    from dataclasses import replace
 
-    prefix = match.group(1).rstrip("_")
-    ids = tuple(int(n) for n in match.group(2).split("_") if n != "")
-    return prefix, ids
+    value = parse_function_name(name)
+    if value.coordinates is None:
+        raise ValueError(f"Not a kernel instance: {name}")
+    return format_function_name(replace(value, coordinates=None)), value.coordinates
 
 
 def allo_to_numpy_dtype(allo_type: AlloType) -> npt.DTypeLike:

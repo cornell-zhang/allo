@@ -1,6 +1,9 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import tempfile
+
+import pytest
 from allo.ir.types import float32
 import allo.dataflow as df
 import allo.backend.hls as hls
@@ -89,6 +92,20 @@ def test_wrap_void():
 
 
 def test_nowrap():
+    @df.region()
+    def flat_top(A: float32[M * K], B: float32[K * N], C: float32[M * N]):
+        @df.kernel(mapping=[P0, P1], args=[A, B, C])
+        def gemm(
+            local_A: float32[M * K],
+            local_B: float32[K * N],
+            local_C: float32[M * N],
+        ):
+            pi, pj = df.get_pid()
+            for i in range(pi * Mt, (pi + 1) * Mt):
+                for j in range(pj * Nt, (pj + 1) * Nt):
+                    for k in range(K):
+                        local_C[i * N + j] += local_A[i * K + k] * local_B[k * N + j]
+
     A = np.random.rand(M, K).astype(np.float32)
     B = np.random.rand(K, N).astype(np.float32)
     C = np.zeros((M, N), dtype=np.float32)
@@ -99,10 +116,27 @@ def test_nowrap():
     assert "store_res2" not in module
 
     if hls.is_available("vitis_hls"):
-        mod = df.build(top, target="vitis_hls", mode="csim", wrap_io=False)
-        mod(A, B, C)
-        np.testing.assert_allclose(C, np.dot(A, B), rtol=1e-5, atol=1e-5)
-        print("Functionality Passed!")
+        # Unwrapped top arguments are flattened; nested kernels must also use
+        # one-dimensional arrays. Check the diagnostic and the supported form.
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with pytest.raises(RuntimeError, match="Failed to emit HLS code"):
+                df.build(
+                    top,
+                    target="vitis_hls",
+                    mode="csim",
+                    project=f"{tmpdir}/multidimensional",
+                    wrap_io=False,
+                )
+            mod = df.build(
+                flat_top,
+                target="vitis_hls",
+                mode="csim",
+                project=f"{tmpdir}/flat",
+                wrap_io=False,
+            )
+            mod(A.reshape(-1), B.reshape(-1), C.reshape(-1))
+            np.testing.assert_allclose(C, np.dot(A, B), rtol=1e-5, atol=1e-5)
+            print("Functionality Passed!")
 
 
 if __name__ == "__main__":

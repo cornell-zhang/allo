@@ -476,8 +476,8 @@ def test_nested_compose():
     # only apply to one of the add_const
     s.compose(s_const_5, id="const7")
     mod = s.build(target="vitis_hls").hls_code
-    assert "add_const5" in mod and "add_const_const5" in mod
-    assert "add_const7" in mod and "add_const_const7" in mod
+    assert "add__id_const5" in mod and "add_const__id_const5" in mod
+    assert "add__id_const7" in mod and "add_const__id_const7" in mod
     # Count number of pipeline pragmas in the module
     # including the load/store rewind
     pipeline_count = str(mod).count("#pragma HLS pipeline II=1")
@@ -489,7 +489,7 @@ def test_compose_nested_instance_ids():
     # must pipeline only the mm that lin calls, the one of size N2
     def mm[N](x: "float32[N]") -> "float32[N]":
         y: float32[N]
-        for i in range(N):
+        for i in allo.grid(N, name="scale"):
             y[i] = x[i] * 2.0
         return y
 
@@ -507,7 +507,8 @@ def test_compose_nested_instance_ids():
         return lin[N2](c)
 
     sch = allo.customize(lin, instantiate=[N2])
-    sch.pipeline("mm:i")
+    loops = sch.get_loops(sch.get_functions(mm)[0])
+    sch.pipeline(loops.scale.i)
     s = allo.customize(top)
     s.compose(sch)
     pipelined = [op for op in s.module.body.operations if "pipeline_ii" in str(op)]

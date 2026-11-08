@@ -26,6 +26,7 @@ from .._mlir.dialects import (
 )
 from .types import AlloType, Int, UInt, Fixed, UFixed, Index, Float
 from .symbol_resolver import ASTResolver
+from .names import validate_name
 
 
 def _get_global_vars(_func, skip: set[str] = None, stop: set[str] = None):
@@ -142,6 +143,7 @@ def _adjust_line_numbers(node, offset):
 
 
 def parse_ast(src, verbose=False):
+    origin = src if inspect.isfunction(src) else None
     if isinstance(src, str):
         starting_line_no = 1
     else:
@@ -150,6 +152,21 @@ def parse_ast(src, verbose=False):
         src = textwrap.dedent("\n".join(src))
     tree = ast.parse(src)
     _adjust_line_numbers(tree, starting_line_no - 1)
+
+    def definitions(parent, owner):
+        for child in ast.iter_child_nodes(parent):
+            if isinstance(child, ast.FunctionDef):
+                validate_name(child.name, identifier=True)
+                child.allo_origin = (
+                    owner
+                    if parent is tree and origin
+                    else (owner, child.lineno, child.col_offset)
+                )
+                definitions(child, child.allo_origin)
+            else:
+                definitions(child, owner)
+
+    definitions(tree, origin or (src if isinstance(src, str) else starting_line_no))
     if verbose:
         print(src)
         try:
@@ -161,42 +178,14 @@ def parse_ast(src, verbose=False):
     return tree
 
 
-def get_func_id_from_param_types(param_types):
-    for param_type in param_types:
-        if isinstance(param_type, str):
-            return param_type
-    return None
-
-
-def assign_instance_id(func_name2id, name, inst, parent_id=None):
-    """Returns a unique or reused ID string for a generic function instance."""
-    ids = func_name2id.setdefault(name, {})
-    if isinstance(parent_id, str):
-        key = tuple(inst)
-        if ids.setdefault(parent_id, key) != key:
-            raise RuntimeError(
-                f"Instance {name}_{parent_id} is already another instantiation"
-            )
-        return parent_id
-    key = tuple(inst) if parent_id is None else (tuple(inst), parent_id)
-    for func_id, value in ids.items():
-        if value == key:
-            return func_id
-    func_id = None
-    while func_id in ids or str(func_id) in ids:
-        func_id = 1 if func_id is None else func_id + 1
-    ids[func_id] = key
-    return func_id
-
-
-def get_all_df_kernels(s):
+def get_all_df_kernels(s, include_nested=False):
     funcs = []
     for func in s.module.body.operations:
         # Exclude nested kernels (those inside sub-regions) from top-level calls
         if (
             isinstance(func, func_d.FuncOp)
             and "df.kernel" in func.attributes
-            and "df.nested_kernel" not in func.attributes
+            and (include_nested or "df.nested_kernel" not in func.attributes)
         ):
             funcs.append(func)
     return funcs
@@ -215,6 +204,16 @@ def resolve_generic_types(global_vars, type_var, call_val):
         ):
             return name, call_val
     raise RuntimeError(f"Cannot resolve type {name} with {call_val}")
+
+
+def bind_generic_types(ctx, node):
+    if node.type_params:
+        assert len(ctx.inst) == len(
+            node.type_params
+        ), f"Type parameters mismatch, got {ctx.inst} and {node.type_params}"
+        for type_var, call_val in zip(node.type_params, ctx.inst):
+            name, call_val = resolve_generic_types(ctx.global_vars, type_var, call_val)
+            ctx.global_vars[name] = call_val
 
 
 class MockOp:

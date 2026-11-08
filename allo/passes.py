@@ -318,7 +318,14 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
                 )
 
                 results["outputs"].append(
-                    MockBuffer(top_func_name, arg.owner.attributes["name"].value)
+                    MockBuffer(
+                        top_func_name,
+                        (
+                            arg.owner.attributes["name"].value
+                            if "name" in arg.owner.attributes
+                            else f"result{idx}"
+                        ),
+                    )
                 )
 
         else:
@@ -355,13 +362,16 @@ def analyze_arg_load_store_in_func(func, mapping={}):
         # 10: in, 01: out, 11: both, 00: func
         io_type = 0
         for use in arg.uses:
-            if isinstance(
+            if isinstance(use.owner, allo_d.StreamPutOp):
+                # A put reads its payload and writes the stream container.
+                io_type |= 2 if use.operand_number == 1 else 1
+            elif isinstance(
                 use.owner, (memref_d.LoadOp, affine_d.AffineLoadOp, allo_d.StreamGetOp)
             ):
                 io_type |= 2
             elif isinstance(
                 use.owner,
-                (memref_d.StoreOp, affine_d.AffineStoreOp, allo_d.StreamPutOp),
+                (memref_d.StoreOp, affine_d.AffineStoreOp),
             ):
                 io_type |= 1
             elif isinstance(use.owner, func_d.CallOp):
@@ -410,6 +420,14 @@ def analyze_arg_load_store(mod):
 
 def decompose_library_function(module):
     with module.context, Location.unknown():
+        libraries = {
+            op.name.value: op.attributes["allo.library"].value
+            for op in module.body.operations
+            if isinstance(op, func_d.FuncOp)
+            and op.is_external
+            and "allo.library" in op.attributes
+        }
+        lowered = set()
         # get all functions from origin module and find the function to replace
         body_op_to_remove = []
         for op in module.body.operations:
@@ -421,15 +439,13 @@ def decompose_library_function(module):
                         body_op_to_remove.append(body_op)
                     if isinstance(body_op, func_d.CallOp):
                         callee_value = body_op.attributes["callee"].value
-                        if callee_value.startswith(("gelu", "layernorm", "tril")):
-                            name = callee_value.split("_")[0]
-                        else:
+                        if callee_value not in libraries or callee_value in lowered:
                             continue
+                        name = libraries[callee_value]
                         generate_call_module(body_op, op, name)
+                        lowered.add(callee_value)
                         body_op_to_remove.append(body_op)
-            elif op.attributes["sym_name"].value.startswith(
-                ("gelu", "layernorm", "tril")
-            ):
+            elif isinstance(op, func_d.FuncOp) and "allo.library" in op.attributes:
                 body_op_to_remove.append(op)
         # need to erase at the end
         for op in body_op_to_remove:
@@ -500,7 +516,14 @@ def generate_call_module(target_op, func_op, name):
     mod = Module.parse(template)
     func = mod.body.operations[0]
     if name == "softmax":
-        sym_name = f"{name}_{hash(target_op)}"
+        from .ir.names import fresh_function_name
+
+        occupied = [
+            op.name.value
+            for op in func_op.operation.parent.regions[0].blocks[0].operations
+            if isinstance(op, func_d.FuncOp)
+        ]
+        sym_name = fresh_function_name(occupied, name)
         args = func.arguments
         org_input_type = args[0].type
         args[0].set_type(target_op.input.type)

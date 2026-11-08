@@ -8,6 +8,16 @@ import ast
 class ASTResolver:
     """Provides helper methods to resolve AST nodes."""
 
+    @staticmethod
+    def resolve_call(node, scope):
+        if isinstance(node.func, (ast.Name, ast.Attribute)):
+            return ASTResolver.resolve(node.func, scope), None
+        if isinstance(node.func, ast.Subscript):
+            obj = ASTResolver.resolve(node.func.value, scope)
+            assert obj is not None, "Unsupported function call"
+            return obj, ASTResolver.resolve_param_types(node.func.slice, scope)
+        raise RuntimeError("Unsupported function call")
+
     # pylint: disable=too-many-return-statements
     @staticmethod
     def resolve(node, scope):
@@ -145,7 +155,7 @@ class ASTResolver:
             return list(
                 ASTResolver.resolve_param_type(n, global_vars) for n in node.elts
             )
-        if isinstance(node, ast.Name):
+        if isinstance(node, (ast.Name, ast.Constant)):
             return [ASTResolver.resolve_param_type(node, global_vars)]
         raise RuntimeError(f"Unsupported node type: {type(node)}")
 

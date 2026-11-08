@@ -7,14 +7,16 @@ import re
 import inspect
 import traceback
 import copy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import wraps
+from itertools import product
 from types import FunctionType as PyFunctionType
 from typing import Union
 from collections.abc import Callable
 
 from ._mlir.ir import (
     Context,
+    WalkResult,
     Location,
     InsertionPoint,
     StringAttr,
@@ -52,6 +54,7 @@ from .ir.visitor import ASTContext
 from .ir.utils import MockArg, MockBuffer, parse_ast, get_global_vars
 from .ir.builder import ASTTransformer
 from .ir.infer import TypeInferer
+from .ir import names as naming
 from .ir.transform import (
     get_affine_loop_nests,
     find_loop_in_bands,
@@ -111,20 +114,27 @@ class Partition:
     Cyclic = 2
 
 
-def call_names(func):
-    """Callee names of the func.call ops in `func`, in program order."""
-    names = []
+def attr_value(op, name, default=None):
+    return op.attributes[name].value if name in op.attributes else default
 
-    def visit(op):
-        for region in op.regions:
-            for block in region.blocks:
-                for inner in block.operations:
-                    if inner.operation.name == "func.call":
-                        names.append(inner.attributes["callee"].value)
-                    visit(inner.operation)
 
-    visit(func.operation)
-    return names
+def call_ops(func):
+    """Call operations, including calls nested in loops and branches."""
+    calls = []
+
+    def collect(op):
+        if op.name == "func.call":
+            calls.append(op.opview)
+        return WalkResult(0)
+
+    func.operation.walk(collect)
+    return calls
+
+
+def call_edges(func):
+    return [
+        (op.callee.value, attr_value(op, "allo.callsite", "")) for op in call_ops(func)
+    ]
 
 
 def func_table(s):
@@ -136,17 +146,63 @@ def func_table(s):
     }
 
 
+def function_origin(func):
+    return attr_value(func, "allo.origin", func.name.value)
+
+
+def function_coordinates(func):
+    return (
+        naming.parse_function_name(func.name.value).coordinates
+        if "allo.origin" in func.attributes
+        else None
+    )
+
+
 def match_call_trees(src_funcs, src_name, dst_funcs, dst_name, names):
-    """Maps each function `src_name` calls (transitively) to the instance at
-    the same call site under `dst_name`."""
+    """Match source definitions at corresponding callsites, retaining all copies."""
     stack = [(src_name, dst_name)]
+    seen = set()
     while stack:
         a, b = stack.pop()
-        if a in names:
+        if (a, b) in seen:
             continue
-        names[a] = b
-        if a in src_funcs and b in dst_funcs:
-            stack.extend(zip(call_names(src_funcs[a]), call_names(dst_funcs[b])))
+        seen.add((a, b))
+        names.setdefault(a, set()).add(b)
+        if a in src_funcs and "allo.origin" in src_funcs[a].attributes:
+            value = naming.parse_function_name(a)
+            if value.clone is not None:
+                names.setdefault(
+                    naming.format_function_name(replace(value, clone=None)), set()
+                ).add(b)
+        if a not in src_funcs or b not in dst_funcs:
+            continue
+        destination = call_edges(dst_funcs[b])
+        for callee, site in call_edges(src_funcs[a]):
+            if callee not in src_funcs:
+                continue
+            source = src_funcs[callee]
+            candidates = [
+                name
+                for name, other_site in destination
+                if name in dst_funcs
+                and site == other_site
+                and function_origin(source) == function_origin(dst_funcs[name])
+                and function_coordinates(source)
+                == function_coordinates(dst_funcs[name])
+            ]
+            clone = attr_value(source, "allo.clone")
+            if clone is not None:
+                exact = [
+                    name
+                    for name in candidates
+                    if attr_value(dst_funcs[name], "allo.clone") == clone
+                ]
+                if exact or any(
+                    attr_value(dst_funcs[name], "allo.clone") is not None
+                    for name in candidates
+                ):
+                    candidates = exact
+            stack.extend((callee, name) for name in candidates)
 
 
 class Schedule:
@@ -178,6 +234,7 @@ class Schedule:
                     self.func_args[func_name] = []
         self.func_instances = func_instances
         self.systolic = check_systolic(self)
+        self._clone_counts = {}
 
     def get_loops(self, func=None):
         if isinstance(func, str):
@@ -185,6 +242,15 @@ class Schedule:
         if func is None:
             func = self.top_func
         return get_affine_loop_nests(func)
+
+    def get_functions(self, fn):
+        """Return emitted functions belonging to the original Python callable."""
+        origin = naming.origin_text(fn)
+        return [
+            func
+            for func in func_table(self).values()
+            if function_origin(func) == origin
+        ]
 
     def _find_band(self, band_name, func=None):
         loops = self.get_loops(func)
@@ -287,14 +353,14 @@ class Schedule:
         This function is vardic, accepting each index as a separate argument.
         """
         func, axis = self._get_func_and_axis(args[0])
-        band_name, _ = find_loop_in_bands(func, args[0])
+        band_name, _ = find_loop_in_bands(func, axis)
         ip = InsertionPoint.at_block_terminator(func.entry_block)
         op_hdl = allo_d.CreateOpHandleOp(band_name, ip=ip)
         loop_hdls = []
         axes = []
         for arg in args:
-            func, axis = self._get_func_and_axis(args)
-            band_name, axis = find_loop_in_bands(func, arg)
+            func, axis = self._get_func_and_axis(arg)
+            band_name, axis = find_loop_in_bands(func, axis)
             loop_hdls.append(
                 allo_d.CreateLoopHandleOp(op_hdl.result, StringAttr.get(axis), ip=ip)
             )
@@ -962,16 +1028,19 @@ class Schedule:
             The loop whose body is being appended to.
         """
 
-        from_band, _ = find_loop_in_bands(self.top_func, from_loop)
-        target_band, target_axis = find_loop_in_bands(self.top_func, target_loop)
-        from_hdl = allo_d.CreateOpHandleOp(from_band, ip=self.ip)
-        target_hdl = allo_d.CreateOpHandleOp(target_band, ip=self.ip)
+        func, from_loop = self._get_func_and_axis(from_loop)
+        target_func, target_loop = self._get_func_and_axis(target_loop)
+        if func.name.value != target_func.name.value:
+            raise ValueError("compute_at loops must belong to the same function")
+        from_band, _ = find_loop_in_bands(func, from_loop)
+        target_band, target_axis = find_loop_in_bands(func, target_loop)
+        ip = InsertionPoint.at_block_terminator(func.entry_block)
+        from_hdl = allo_d.CreateOpHandleOp(from_band, ip=ip)
+        target_hdl = allo_d.CreateOpHandleOp(target_band, ip=ip)
         loop_hdl = allo_d.CreateLoopHandleOp(
-            target_hdl.result, StringAttr.get(target_axis), ip=self.ip
+            target_hdl.result, StringAttr.get(target_axis), ip=ip
         )
-        allo_d.ComputeAtOp(
-            from_hdl.result, target_hdl.result, loop_hdl.result, ip=self.ip
-        )
+        allo_d.ComputeAtOp(from_hdl.result, target_hdl.result, loop_hdl.result, ip=ip)
 
     @wrapped_apply
     def reuse_at(self, target, axis):
@@ -1088,6 +1157,7 @@ class Schedule:
             target_outer = band.get_outer_most()
             loops = list(band)
             op_to_remove = []
+            old_callees = set()
             _, loop_wrapper = loops[axis]
             loop = loop_wrapper.loop
             lower_bound = loop.attributes["lowerBoundMap"]
@@ -1100,17 +1170,6 @@ class Schedule:
                 ip = InsertionPoint.at_block_terminator(loops[axis - 1][1].loop.body)
             else:
                 ip = InsertionPoint(target_outer)
-            for op in loop.body.operations:
-                if isinstance(op, affine_d.AffineYieldOp):
-                    break
-
-            def update_operand(op, old, new):
-                if isinstance(op, affine_d.AffineForOp):
-                    # pylint: disable=cell-var-from-loop
-                    for in_op in op.body.operations:
-                        update_operand(in_op, old, new)
-                else:
-                    op.operation.replace_uses_of_with(old, new)
 
             # unfold the body `upper_bound` times
             for idx in range(upper_bound):
@@ -1120,10 +1179,10 @@ class Schedule:
                 # (to preserve a scope for replacing the induction variable),
                 # and replace the induction variable with the constant
                 new_loop = loop.operation.clone(ip)
+                new_loop.induction_variable.replace_all_uses_with(cst_op.result)
                 for op in new_loop.body.operations:
                     if isinstance(op, affine_d.AffineYieldOp):
                         break
-                    update_operand(op, new_loop.induction_variable, cst_op.result)
                     op.move_before(new_loop)
                     if isinstance(op, affine_d.AffineForOp):
                         new_name = (
@@ -1132,28 +1191,49 @@ class Schedule:
                             else f"{op.attributes['op_name'].value}_{idx}"
                         )
                         op.attributes["op_name"] = StringAttr.get(new_name)
-                    if isinstance(op, func_d.CallOp):
+                    for call in call_ops(op):
                         # Also need to duplicate the function outside the top function
                         old_func = self._find_function(
-                            FlatSymbolRefAttr(op.attributes["callee"]).value
+                            FlatSymbolRefAttr(call.attributes["callee"]).value
                         )
+                        if "allo.origin" not in old_func.attributes:
+                            continue  # Foreign symbols retain their own linkage.
                         dup_func = old_func.operation.clone(InsertionPoint(func))
-                        new_name = (
-                            f"{FlatSymbolRefAttr(op.attributes['callee']).value}_{idx}"
+                        base = replace(
+                            naming.parse_function_name(old_func.name.value), clone=None
                         )
+                        base_name = naming.format_function_name(base)
+                        serial = self._clone_counts.get(base_name, 0)
+                        new_name = naming.format_function_name(
+                            replace(base, clone=serial)
+                        )
+                        self._clone_counts[base_name] = serial + 1
                         dup_func.attributes["sym_name"] = StringAttr.get(new_name)
+                        previous = attr_value(old_func, "allo.clone", "")
+                        site = attr_value(call, "allo.callsite", "")
+                        dup_func.attributes["allo.clone"] = StringAttr.get(
+                            f"{previous}/{band_name}:{axis}:{idx}:{site}"
+                        )
                         # extend self.func_args
                         self.func_args[new_name] = self.func_args[
-                            FlatSymbolRefAttr(op.attributes["callee"]).value
+                            FlatSymbolRefAttr(call.attributes["callee"]).value
                         ]
-                        op.attributes["callee"] = FlatSymbolRefAttr.get(new_name)
-                        if old_func not in op_to_remove:
-                            op_to_remove.append(old_func)
+                        call.attributes["callee"] = FlatSymbolRefAttr.get(new_name)
+                        old_callees.add(old_func)
                 op_to_remove.append(new_loop)
             # need to erase at the end
             for op in op_to_remove:
                 op.operation.erase()
             loop.operation.erase()
+            live = {
+                name
+                for func_op in func_table(self).values()
+                for name, _ in call_edges(func_op)
+            }
+            for old_func in old_callees:
+                if old_func.name.value not in live:
+                    self.func_args.pop(old_func.name.value, None)
+                    old_func.operation.erase()
         # TODO: use a class to wrap the results
         return axes
 
@@ -1172,37 +1252,30 @@ class Schedule:
         schs: allo.customize.Schedule
             The schedule of a kernel used in `self`.
 
-        id: str
-            Identifies the schedule to replace contained in `self`.
-            This schedule in `self` must be annotated if `id` is specified.
+        id: int | str | None
+            Select an automatic instance by integer or an explicit string label.
+            None selects the ordinary entry/helper or automatic instance zero.
 
         instantiate: list
             This is a list of objects used to instantiate types `schs` is generic over.
         """
 
-        names = {}  # function of `sch` -> its instance in `self`
-        dst_funcs = {}  # functions of `self` by name
-
-        def instance_name(orig_func_name):
-            if orig_func_name in names:
-                return names[orig_func_name]
-            func_name = orig_func_name if id is None else f"{orig_func_name}_{id}"
-            return func_name if func_name in dst_funcs else orig_func_name + "_0"
-
-        def get_name(arg):
-            if isinstance(arg, (LoopWrapper, MockBuffer)):
-                arg = copy.copy(arg)
-                orig_func_name = arg.func if arg.func is not None else sch.top_func_name
-                arg.func = instance_name(orig_func_name)
-                return arg
-            orig_func_name = arg.split(":")[0] if ":" in arg else sch.top_func_name
-            arg = arg.split(":")[1] if ":" in arg else arg
-            func_name = instance_name(orig_func_name)
-            return f"{func_name}:{arg}"
-
-        if not isinstance(schs, list):
-            schs = [schs]
-        for sch in schs:
+        # Only these arguments carry loop or buffer references.
+        fields = {
+            "split": ("axis",),
+            "unroll": ("axis",),
+            "pipeline": ("axis",),
+            "parallel": ("axis",),
+            "dataflow": ("axis",),
+            "compute_at": ("from_loop", "target_loop"),
+            "buffer_at": ("target", "axis"),
+            "reuse_at": ("target", "axis"),
+            "unfold": ("band_name",),
+            "partition": ("target",),
+            "to": ("target",),
+            "reshape": ("target",),
+        }
+        for sch in schs if isinstance(schs, list) else [schs]:
             if isinstance(sch, PyFunctionType):
                 schedule = customize(sch, instantiate=instantiate)
                 if sch not in KERNEL2SCHEDULE:
@@ -1212,104 +1285,77 @@ class Schedule:
                 sch = KERNEL2SCHEDULE[sch](schedule)
             if not isinstance(sch, Schedule):
                 raise TypeError("The first argument must be a Schedule object")
-            # the functions `sch` calls, matched call by call to their instances
-            # here (a nested instance's id may differ from its parent's)
-            dst_funcs.clear()
-            dst_funcs.update(func_table(self))
-            names.clear()
-            top = instance_name(sch.top_func_name)
-            if top in dst_funcs:
-                match_call_trees(
-                    func_table(sch), sch.top_func_name, dst_funcs, top, names
-                )
+            source_funcs = func_table(sch)
+            source_origin = function_origin(sch.top_func)
 
-            if hasattr(sch, "stateful_var_map") and sch.stateful_var_map:
-                stateful_seen = getattr(self, "_stateful_seen", {})
-                self._stateful_seen = stateful_seen
+            def refresh(
+                source_funcs=source_funcs,
+                source_origin=source_origin,
+                source_top=sch.top_func_name,
+            ):
+                destination = func_table(self)
+                candidates = [
+                    (name, naming.parse_function_name(name).instance)
+                    for name, func in destination.items()
+                    if function_origin(func) == source_origin
+                ]
+                selector = id
+                if selector is None and not any(
+                    value is None for _, value in candidates
+                ):
+                    selector = 0
+                roots = [
+                    name
+                    for name, value in candidates
+                    if type(value) is type(selector) and value == selector
+                ]
+                if not roots:
+                    raise RuntimeError(f"Cannot find instance {id!r} of {source_top}")
+                names = {}
+                for root in roots:
+                    match_call_trees(source_funcs, source_top, destination, root, names)
+                return names
 
-                func_name = f"{sch.top_func_name}_{id}" if id else sch.top_func_name
-                func = self._find_function(func_name)
-
-                for _, (global_name, _) in sch.stateful_var_map.items():
-                    seen = stateful_seen.setdefault(global_name, [])
-
-                    suffix = id if id else f"inst{len(seen)}"
-                    new_name = f"{global_name}_{suffix}"
-
-                    original_global = next(
-                        (
-                            op
-                            for op in self.module.body.operations
-                            if isinstance(op, memref_d.GlobalOp)
-                            and op.attributes["sym_name"].value == global_name
-                        ),
-                        None,
-                    )
-                    if original_global is None:
-                        raise RuntimeError(f"Stateful global {global_name} not found")
-
-                    target = (
-                        original_global
-                        if not seen
-                        else original_global.operation.clone(
-                            InsertionPoint(original_global)
+            refresh()  # Validate even a schedule with no recorded primitives.
+            for kind, original_args, original_kwargs in sch.primitive_sequences:
+                names = refresh()  # Unfolding can create new correspondence targets.
+                # Avoid changing the original schedule.
+                args, kwargs = original_args.copy(), original_kwargs.copy()
+                if kind in {"reorder", "fuse"}:
+                    slots = [(args, index) for index in range(len(args))]
+                    slots.extend((kwargs, key) for key in kwargs)
+                else:
+                    slots = [
+                        (kwargs, key) if key in kwargs else (args, index)
+                        for index, key in enumerate(fields.get(kind, ()))
+                    ]
+                references = []
+                for container, key in slots:
+                    value = container[key]
+                    if isinstance(value, (LoopWrapper, MockBuffer)):
+                        owner = (
+                            value.func if value.func is not None else sch.top_func_name
                         )
-                    )
-                    target.attributes["sym_name"] = StringAttr.get(new_name)
-                    seen.append(new_name)
-
-                    for op in func.entry_block.operations:
-                        if isinstance(op, memref_d.GetGlobalOp) and (
-                            FlatSymbolRefAttr(op.attributes["name"]).value
-                            == global_name
-                        ):
-                            op.attributes["name"] = FlatSymbolRefAttr.get(new_name)
-
-            for primitive in sch.primitive_sequences:
-                args, kwargs = primitive[1:]
-                # Avoid changing the original schedule
-                args = args.copy()
-                kwargs = kwargs.copy()
-                # Update axes
-                if primitive[0] in {"reorder", "fuse"}:
-                    args = [get_name(arg) for arg in args]
-                elif primitive[0] in {
-                    "split",
-                    "unroll",
-                    "pipeline",
-                    "parallel",
-                    "dataflow",
-                }:
-                    if "axis" in kwargs:
-                        kwargs["axis"] = get_name(kwargs["axis"])
+                        target = value
                     else:
-                        args[0] = get_name(args[0])
-                elif primitive[0] in {"buffer_at", "reuse_at"}:
-                    if "axis" in kwargs:
-                        kwargs["axis"] = get_name(kwargs["axis"])
-                    else:
-                        args[1] = get_name(args[1])
-                elif primitive[0] == "unfold":
-                    if "band_name" in kwargs:
-                        kwargs["band_name"] = get_name(kwargs["band_name"])
-                    else:
-                        args[0] = get_name(args[0])
-                # Update target buffers
-                if primitive[0] in {
-                    "partition",
-                    "to",
-                    "buffer_at",
-                    "reuse_at",
-                    "reshape",
-                }:
-                    if "target" in kwargs:
-                        kwargs["target"] = get_name(kwargs["target"])
-                    else:
-                        args[0] = get_name(args[0])
-                with self.module.context, Location.unknown():
-                    primitive_func = getattr(self, primitive[0])
-                    # directly apply primitives to new functions
-                    primitive_func(*args, **kwargs)
+                        owner, separator, target = value.partition(":")
+                        if not separator:
+                            owner, target = sch.top_func_name, owner
+                    if owner not in names:
+                        raise RuntimeError(f"No corresponding function for {owner}")
+                    references.append((container, key, owner, target))
+                choices = {owner: sorted(names[owner]) for _, _, owner, _ in references}
+                for values in product(*choices.values()):
+                    binding = dict(zip(choices, values))
+                    for container, key, owner, target in references:
+                        if isinstance(target, (LoopWrapper, MockBuffer)):
+                            target = copy.copy(target)
+                            target.func = binding[owner]
+                        else:
+                            target = f"{binding[owner]}:{target}"
+                        container[key] = target
+                    with self.module.context, Location.unknown():
+                        getattr(self, kind)(*args, **kwargs)
 
     def get_equivalent_variables(self, name):
         use_def = analyze_use_def(self.module)
@@ -1404,7 +1450,7 @@ def customize(
     if instantiate is None:
         instantiate = []
     if global_vars is None:
-        global_vars = get_global_vars(fn)
+        global_vars = naming.function_environment(get_global_vars(fn), fn)
     # Type construction
     ctx_type_inf = ASTContext(
         tree=tree,
@@ -1431,6 +1477,8 @@ def customize(
         print_error_message(str(e), stmt, tree)
         sys.exit(1)
     # Start building IR
+    for meta_for in ctx_type_inf.meta_fors_to_unroll:
+        meta_for.allo_unroll = True
     ctx = ASTContext(
         tree=tree,
         global_vars=global_vars,
@@ -1442,6 +1490,7 @@ def customize(
         enable_tensor=enable_tensor,
         verbose=verbose,
     )
+    ctx.names = ctx_type_inf.names
     try:
         module = ASTTransformer()(ctx, tree, file_name)
     # pylint: disable=broad-exception-caught
@@ -1465,7 +1514,7 @@ def customize(
     }
     if lower_linalg:
         lower_linalg_and_attach_names(module)
-        ctx.top_func = find_func_in_module(module, fn.__name__)
+        ctx.top_func = find_func_in_module(module, ctx.top_func.name.value)
     sch = Schedule(
         module,
         ctx.top_func,
@@ -1476,6 +1525,7 @@ def customize(
         func_instances=func_instances,
     )
     sch.stateful_var_map = getattr(ctx, "stateful_var_map", {})
+    sch._function_definitions = ctx.names.definitions
     # Attach buffers to schedule:
     # The reason why we do not attach buffers to function is that
     # we may have multiple schedules referring to the same function,
@@ -1486,12 +1536,12 @@ def customize(
                 setattr(
                     sch,
                     name,
-                    MockBuffer(fn.__name__, name, buffer.idx),
+                    MockBuffer(sch.top_func_name, name, buffer.idx),
                 )
             elif isinstance(
                 buffer, (memref_d.AllocOp, func_d.CallOp, memref_d.GetGlobalOp)
             ):  # Intermediate buffers
-                setattr(sch, name, MockBuffer(fn.__name__, name))
+                setattr(sch, name, MockBuffer(sch.top_func_name, name))
     # Check if there are memory leaks
     # All live operations = {top_func} + {top_func_ip}
     buffer = None

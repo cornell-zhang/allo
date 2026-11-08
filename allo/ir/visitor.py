@@ -6,6 +6,7 @@ import ast
 from .._mlir import InsertionPoint
 from .._mlir.dialects import allo as allo_d
 from ..utils import register_dialect
+from .names import NameRegistry
 
 
 class BlockScopeGuard:
@@ -73,10 +74,14 @@ class ASTContext:
         register_dialect(mlir_ctx)
         # map from function name to function arguments
         self.func_args = {} if func_args is None else func_args
-        self.func_id = None
         # instantiation of a template function
         self.inst = inst
-        self.func_name2id = {}
+        self.names = NameRegistry()
+        self.function = None
+        self.origin = None
+        self.callee_name = None
+        self.lexical_parameters = ()
+        self.lexical_bindings = {}
         # used for subfunction call
         self.call_args = []
         # used to count nested loops in a band
@@ -137,8 +142,12 @@ class ASTContext:
             typing_rule_set=self.typing_rule_set,
             verbose=self.verbose,
         )
-        ctx.func_id = self.func_id
-        ctx.func_name2id = self.func_name2id
+        ctx.names = self.names
+        ctx.function = self.function
+        ctx.origin = self.origin
+        ctx.callee_name = self.callee_name
+        ctx.lexical_parameters = self.lexical_parameters
+        ctx.lexical_bindings = self.lexical_bindings.copy()
         ctx.enable_tensor = self.enable_tensor
         ctx.verbose = self.verbose
         ctx.ext_libs = self.ext_libs
@@ -146,8 +155,6 @@ class ASTContext:
         ctx.mapping = self.mapping
         ctx.meta_fors_to_unroll = self.meta_fors_to_unroll
         ctx.current_node = self.current_node
-        if hasattr(self, "func_suffix"):
-            ctx.func_suffix = self.func_suffix
         ctx.global_op_cache = self.global_op_cache
         return ctx
 

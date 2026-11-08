@@ -69,7 +69,7 @@ def test_cascaded_linear():
 
     s = allo.customize(cascaded_linear)
     s.compose(nn.linear2d, instantiate=[float32, float32, float32, BS, M1, M0])
-    s.compose(nn.linear2d, id="1", instantiate=[float32, float32, float32, BS, M2, M1])
+    s.compose(nn.linear2d, id=1, instantiate=[float32, float32, float32, BS, M2, M1])
     print(s.module)
     mod = s.build(target="llvm")
     Z = mod(X, W0, W1, b0, b1)

@@ -99,14 +99,14 @@ def top(X: Ty[BS, M0], Z2: Ty[BS, NUM_CLASSES]):
 
 
 def schedule_linear(s, lid, factor=4):
-    s.pipeline(f"linear{lid}_0:j")
-    s.pipeline(f"linear{lid}_0:j_init")
-    s.pipeline(f"linear{lid}_0:j_back")
-    s.unroll(f"linear{lid}_0:j", factor=factor)
-    s.unroll(f"linear{lid}_0:j_init", factor=factor)
-    # s.unroll(f"linear{lid}_0:j_back", factor=factor)
+    s.pipeline(f"linear{lid}__pe_0:j")
+    s.pipeline(f"linear{lid}__pe_0:j_init")
+    s.pipeline(f"linear{lid}__pe_0:j_back")
+    s.unroll(f"linear{lid}__pe_0:j", factor=factor)
+    s.unroll(f"linear{lid}__pe_0:j_init", factor=factor)
+    # s.unroll(f"linear{lid}__pe_0:j_back", factor=factor)
     s.partition(
-        MockBuffer(f"linear{lid}_0", "buf"), dim=0, partition_type=2, factor=factor
+        MockBuffer(f"linear{lid}__pe_0", "buf"), dim=0, partition_type=2, factor=factor
     )
 
 

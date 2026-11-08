@@ -1,6 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=unused-argument, eval-used, redefined-variable-type, cell-var-from-loop
+# pylint: disable=unused-argument, eval-used, redefined-variable-type
 
 import ast
 import copy
@@ -42,10 +42,9 @@ from ..utils import (
 from ..memory import DTensor, Layout
 from .utils import (
     parse_ast,
-    get_func_id_from_param_types,
-    resolve_generic_types,
-    assign_instance_id,
+    bind_generic_types,
 )
+from . import names as naming
 
 
 # pylint: disable=too-many-public-methods
@@ -731,132 +730,98 @@ class TypeInferer(ASTVisitor):
 
     @staticmethod
     def visit_FunctionDef(ctx: ASTContext, node: ast.FunctionDef):
-        # pylint: disable=too-many-nested-blocks,too-many-branches
+        if naming.defer_definition(ctx, node):
+            return node
+        if (
+            ctx.top_func is not None
+            and ctx.callee_name is None
+            and not getattr(node, "allo_generated", False)
+        ):
+            node.allo_captured = ctx.lexical_parameters
         if ctx.top_func is not None:
             # Nested function def
             # Create a new context to avoid name collision
             old_ctx = ctx
             ctx = old_ctx.copy()
             ctx.scopes = old_ctx.scopes
-            for decorator in node.decorator_list:
-                if isinstance(decorator, ast.Call):
-                    if isinstance(decorator.func, ast.Attribute):
-                        if decorator.func.attr == "kernel":
-                            mapping, kernel_args = None, []
-                            for kw in decorator.keywords:
-                                if kw.arg == "mapping":
-                                    mapping = eval(
-                                        ast.unparse(kw.value),
-                                        ctx.global_vars,
-                                    )
-                                elif kw.arg == "args":
-                                    assert isinstance(kw.value, ast.List)
-                                    kernel_args = kw.value.elts
-                            assert (
-                                mapping is not None
-                            ), f"Invalid @df.kernel decorator on function '{node.name}': missing required 'mapping' parameter."
-                            old_ctx.mapping = mapping
-                            assert len(kernel_args) == len(
-                                node.args.args
-                            ), f"Invalid @df.kernel decorator on function '{node.name}': 'args' length mismatch (expected {len(node.args.args)}, got {len(kernel_args)})."
-                            for top_arg_name, arg in zip(kernel_args, node.args.args):
-                                top_arg = ctx.get_symbol(name=top_arg_name.id)
-                                if top_arg.shape == ():
-                                    raise ValueError(
-                                        f"Scalar '{top_arg_name.id}' cannot appear in "
-                                        f"`args=[...]` on @df.kernel '{node.name}'. "
-                                        f"Scalars are captured from the enclosing region "
-                                        f"scope automatically; remove it from args, or use "
-                                        f"a 1-element array ({top_arg_name.id}: "
-                                        f"{top_arg.dtype}[1]) instead."
-                                    )
-                                dtype, shape, _ = TypeInferer.visit_type_hint(
-                                    ctx, arg.annotation
+            decorator = next(filter(naming.is_kernel, node.decorator_list), None)
+            if decorator is not None:
+                mapping, kernel_args = naming.kernel_arguments(ctx, decorator)
+                old_ctx.mapping = mapping
+                assert len(kernel_args) == len(
+                    node.args.args
+                ), f"Invalid @df.kernel decorator on function '{node.name}': 'args' length mismatch (expected {len(node.args.args)}, got {len(kernel_args)})."
+                for top_arg_name, arg in zip(kernel_args, node.args.args):
+                    top_arg = ctx.get_symbol(name=top_arg_name.id)
+                    if top_arg.shape == ():
+                        raise ValueError(
+                            f"Scalar '{top_arg_name.id}' cannot appear in "
+                            f"`args=[...]` on @df.kernel '{node.name}'. "
+                            f"Scalars are captured from the enclosing region "
+                            f"scope automatically; remove it from args, or use "
+                            f"a 1-element array ({top_arg_name.id}: "
+                            f"{top_arg.dtype}[1]) instead."
+                        )
+                    dtype, shape, _ = TypeInferer.visit_type_hint(ctx, arg.annotation)
+                    assert (
+                        top_arg.dtype == dtype and top_arg.shape == shape
+                    ), f"df.kernel argument {arg.arg} do not match {top_arg_name.id}."
+                    arg.top_arg = top_arg_name.id
+                orig_name = node.name
+                prefix = naming.kernel_prefix(old_ctx, node)
+                old_ctx.func_predicate_tags[prefix] = {}
+                if ctx.unroll:
+                    for dim in np.ndindex(*mapping):
+                        new_ctx = naming.kernel_context(old_ctx, dim)
+                        node.name = construct_kernel_name(prefix, dim)
+                        node.allo_generated = True
+                        # check on a specific df.kernel instance
+                        TypeInferer.visit_FunctionDef(new_ctx, node)
+                        node.name = orig_name
+                        node.allo_generated = False
+                else:
+                    # If not unroll, only visit one 'sample' to get the execution predicates
+
+                    def get_predicate_list(predicate_raw, pid_map):
+                        """
+                        Recursively expand `predicate` based on conditions and pid_map.
+                        Returns a list of results, converted from cond_list:
+                        - If condition evaluates True, recurse into its values.
+                        - If False, put None.
+                        """
+                        _, cond_list = predicate_raw
+                        results = []
+                        for cond, val in cond_list:
+                            if eval(cond, pid_map):
+                                assert all(
+                                    isinstance(v, tuple) and len(v) == 2 for v in val
                                 )
-                                assert (
-                                    top_arg.dtype == dtype and top_arg.shape == shape
-                                ), f"df.kernel argument {arg.arg} do not match {top_arg_name.id}."
-                                arg.top_arg = top_arg_name.id
-                            orig_name = node.name
-                            old_ctx.func_predicate_tags[orig_name] = {}
-                            if ctx.unroll:
-                                for dim in np.ndindex(*mapping):
-                                    new_ctx = old_ctx.copy()
-                                    new_ctx.rank = dim
-                                    new_ctx.scopes = old_ctx.scopes
-                                    new_ctx.global_vars = old_ctx.global_vars.copy()
-                                    for axis, val in enumerate(dim):
-                                        new_ctx.global_vars.update(
-                                            {"df.p" + str(axis): val}
-                                        )
-                                    node.name = construct_kernel_name(orig_name, dim)
-                                    # check on a specific df.kernel instance
-                                    TypeInferer.visit_FunctionDef(new_ctx, node)
-                                    node.name = orig_name
+                                results.append(
+                                    get_predicate_list(("True", val), pid_map)
+                                )
                             else:
-                                # If not unroll, only visit one 'sample' to get the execution predicates
+                                results.append(None)
+                        return results
 
-                                def get_predicate_list(predicate_raw, pid_map):
-                                    """
-                                    Recursively expand `predicate` based on conditions and pid_map.
-                                    Returns a list of results, converted from cond_list:
-                                    - If condition evaluates True, recurse into its values.
-                                    - If False, put None.
-                                    """
-                                    _, cond_list = predicate_raw
-                                    results = []
-                                    for cond, val in cond_list:
-                                        if eval(cond, pid_map):
-                                            assert all(
-                                                isinstance(v, tuple) and len(v) == 2
-                                                for v in val
-                                            )
-                                            results.append(
-                                                get_predicate_list(
-                                                    ("True", val), pid_map
-                                                )
-                                            )
-                                        else:
-                                            results.append(None)
-                                    return results
-
-                                sample_dim = (0,) * len(mapping)
-                                new_ctx = old_ctx.copy()
-                                new_ctx.rank = sample_dim
-                                new_ctx.scopes = old_ctx.scopes
-                                new_ctx.global_vars = old_ctx.global_vars.copy()
-                                for axis, val in enumerate(sample_dim):
-                                    new_ctx.global_vars.update(
-                                        {"df.p" + str(axis): val}
-                                    )
-                                node.name = construct_kernel_name(orig_name, sample_dim)
-                                # check on a specific df.kernel instance
-                                TypeInferer.visit_FunctionDef(new_ctx, node)
-                                node.name = orig_name
-                                for dim in np.ndindex(*mapping):
-                                    pid_map = {
-                                        f"p{idx}": value
-                                        for idx, value in enumerate(dim)
-                                    }
-                                    old_ctx.func_predicate_tags[orig_name][dim] = (
-                                        get_predicate_list(
-                                            new_ctx.predicate_list, pid_map
-                                        )
-                                    )
-                            return node
+                    sample_dim = (0,) * len(mapping)
+                    new_ctx = naming.kernel_context(old_ctx, sample_dim)
+                    node.name = construct_kernel_name(prefix, sample_dim)
+                    node.allo_generated = True
+                    # check on a specific df.kernel instance
+                    TypeInferer.visit_FunctionDef(new_ctx, node)
+                    node.name = orig_name
+                    node.allo_generated = False
+                    for dim in np.ndindex(*mapping):
+                        pid_map = {f"p{idx}": value for idx, value in enumerate(dim)}
+                        old_ctx.func_predicate_tags[prefix][dim] = get_predicate_list(
+                            new_ctx.predicate_list, pid_map
+                        )
+                return node
         else:
             old_ctx = None
 
-        # Generic function
-        if hasattr(node, "type_params") and len(node.type_params) > 0:
-            assert len(ctx.inst) == len(
-                node.type_params
-            ), f"Type parameters mismatch, got {ctx.inst} and {node.type_params}"
-            for type_var, call_val in zip(node.type_params, ctx.inst):
-                name, call_val = resolve_generic_types(
-                    ctx.global_vars, type_var, call_val
-                )
-                ctx.global_vars[name] = call_val
+        func_name = naming.prepare_function(ctx, node)
+        bind_generic_types(ctx, node)
 
         with ctx.block_scope_guard():
             # Input types
@@ -886,9 +851,6 @@ class TypeInferer(ASTVisitor):
                 )
                 ctx.put_symbol(name=arg.arg, val=arg)
 
-            func_name = (
-                node.name if ctx.func_id is None else f"{node.name}_{ctx.func_id}"
-            )
             # Return type
             if not (
                 (isinstance(node.returns, ast.Constant) and node.returns.value is None)
@@ -934,7 +896,7 @@ class TypeInferer(ASTVisitor):
         if old_ctx is not None:
             ctx = old_ctx
         # Add the visited function to global variable for later reference
-        ctx.global_vars[func_name] = node
+        ctx.names.inferred[func_name] = node
         return node
 
     @staticmethod
@@ -1002,31 +964,7 @@ class TypeInferer(ASTVisitor):
     # pylint: disable=too-many-branches
     @staticmethod
     def visit_Call(ctx: ASTContext, node: ast.Call):
-        original_func_id = ctx.func_id
-        if isinstance(node.func, ast.Name):
-            obj = ASTResolver.resolve(node.func, ctx.global_vars)
-            obj_name = node.func.id
-        elif isinstance(node.func, ast.Attribute):
-            obj = ASTResolver.resolve(node.func, ctx.global_vars)
-            obj_name = node.func.attr
-        elif isinstance(node.func, ast.Subscript):
-            obj = ASTResolver.resolve(node.func.value, ctx.global_vars)
-            assert obj is not None, "Unsupported function call"
-            obj_name = obj.__name__
-            ctx.global_vars[obj_name] = obj
-            ctx.inst = ASTResolver.resolve_param_types(node.func.slice, ctx.global_vars)
-            func_id = get_func_id_from_param_types(ctx.inst)
-            if func_id is None:
-                ctx.func_id = assign_instance_id(
-                    ctx.func_name2id, obj_name, ctx.inst, ctx.func_id
-                )
-            elif ctx.func_id is None:  # an explicit id in the parameters
-                ctx.inst.remove(func_id)
-                func_dict = ctx.func_name2id.setdefault(obj_name, {})
-                func_dict[func_id] = tuple(ctx.inst)
-                ctx.func_id = func_id
-        else:
-            raise RuntimeError("Unsupported function call")
+        obj, parameters = ASTResolver.resolve_call(node, ctx.global_vars)
 
         if obj is None:
             if isinstance(node.func, ast.Attribute):
@@ -1248,27 +1186,25 @@ class TypeInferer(ASTVisitor):
             )
 
         # User-defined subfunction
-        func = ctx.global_vars[obj_name]
-        if isinstance(func, ast.FunctionDef):
-            # Has already been defined in the top-level scope
-            stmts = [func]
-        else:
-            # Visit arguments in the top-level
-            visit_stmts(ctx, node.args)
-            tree = parse_ast(func, verbose=ctx.verbose)
-            # Create a new context to avoid name collision
-            func_ctx = ctx.copy()
-            stmts = visit_stmts(func_ctx, tree.body)
-            # Attach type-inferenced tree to the top-level AST
-            node.tree = tree
+        func = obj
+        value = naming.resolve_instance(ctx, func, node, parameters)
         visit_stmts(ctx, node.args)
+        func_ctx = ctx.copy()
+        func_ctx.global_vars = naming.function_environment(ctx, func)
+        func_ctx.callee_name = value
+        func_ctx.inst = node.allo_parameters
+        if isinstance(func, ast.FunctionDef):
+            tree = ast.Module(body=[copy.deepcopy(func)], type_ignores=[])
+        else:
+            tree = parse_ast(func, verbose=ctx.verbose)
+        stmts = visit_stmts(func_ctx, tree.body)
+        node.tree = tree
         if not isinstance(stmts[-1], ast.FunctionDef):
             node.dtype = None
             node.shape = None
         else:
             node.dtype = stmts[-1].dtype
             node.shape = stmts[-1].shape
-        ctx.func_id = original_func_id
         return node
 
     @staticmethod
@@ -1500,25 +1436,17 @@ class TypeInferer(ASTVisitor):
                 len(node.items[0].context_expr.args) <= 3
             ), "Only support three arguments (lower, upper bound, and step) for `allo.meta_for()`"
             rargs = [
-                ASTResolver.resolve_constant(node.items[0].context_expr.args[0], ctx)
+                ASTResolver.resolve_constant(arg, ctx)
+                for arg in node.items[0].context_expr.args
             ]
-            if len(node.items[0].context_expr.args) > 1:
-                rargs.append(
-                    ASTResolver.resolve_constant(
-                        node.items[0].context_expr.args[1], ctx
-                    )
-                )
-            if len(node.items[0].context_expr.args) > 2:
-                rargs.append(
-                    ASTResolver.resolve_constant(
-                        node.items[0].context_expr.args[2], ctx
-                    )
-                )
             var = node.items[0].optional_vars.id
+            if any(isinstance(stmt, ast.FunctionDef) for stmt in ast.walk(node)):
+                ctx.meta_fors_to_unroll.add(node)
+                node.allo_unroll = True
             for i in range(*rargs):
                 ctx.global_vars[var] = i
                 ctx.symbolic[var] = (i, node)
-                with ctx.block_scope_guard():
+                with ctx.block_scope_guard(), naming.meta_iteration(ctx, node, var, i):
                     visit_stmts(ctx, node.body)
                 ctx.global_vars.pop(var)
                 ctx.symbolic.pop(var)

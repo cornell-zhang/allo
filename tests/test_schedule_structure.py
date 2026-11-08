@@ -3,6 +3,7 @@
 
 import numpy as np
 import pytest
+import re
 import allo
 from allo.ir.types import index, int32
 
@@ -47,14 +48,13 @@ def test_matrix_add_function(axes):
     print(s.module)
     s.unfold("PE", axes=axes)
     print(s.module)
-    if axes == [0]:
-        target_str = ["kernel"]
-    elif axes == [1]:
-        target_str = ["kernel_0", "kernel_1"]
-    else:
-        target_str = ["kernel_0_0", "kernel_0_1", "kernel_1_0", "kernel_1_1"]
-    for t in target_str:
-        assert f"call @{t}" in str(s.module)
+    targets = re.findall(r"call @(kernel[^ (]*)", str(s.module))
+    assert len(targets) == 2 ** len(axes)
+    assert len(set(targets)) == len(targets)
+    for target in targets:
+        assert re.fullmatch(r"kernel__clone_(0|[1-9][0-9]*)", target)
+    if len(axes) == 1:
+        assert set(targets) == {"kernel__clone_0", "kernel__clone_1"}
     np_A = np.random.randint(0, 10, size=(M, N))
     np_B = np_A + 1
     mod = s.build()
@@ -105,14 +105,13 @@ def test_matmul_function(axes):
     print(s.module)
     s.unfold("PE", axes=axes)
     print(s.module)
-    if axes == [0]:
-        target_str = ["kernel"]
-    elif axes == [1]:
-        target_str = ["kernel_0", "kernel_1"]
-    else:
-        target_str = ["kernel_0_0", "kernel_0_1", "kernel_1_0", "kernel_1_1"]
-    for t in target_str:
-        assert f"call @{t}" in str(s.module)
+    targets = re.findall(r"call @(kernel[^ (]*)", str(s.module))
+    assert len(targets) == 2 ** len(axes)
+    assert len(set(targets)) == len(targets)
+    for target in targets:
+        assert re.fullmatch(r"kernel__clone_(0|[1-9][0-9]*)", target)
+    if len(axes) == 1:
+        assert set(targets) == {"kernel__clone_0", "kernel__clone_1"}
     np_A = np.random.randint(0, 10, size=(M, K))
     np_B = np.random.randint(0, 10, size=(K, N))
     mod = s.build()
