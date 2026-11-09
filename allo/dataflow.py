@@ -398,14 +398,7 @@ def _build_top(s, stream_info, enable_layout=False):
                     ]
                 arg_mapping[func_name].append(top_args[arg_name])
     # update top function
-    top_func = None
-    for func in s.module.body.operations:
-        if (
-            isinstance(func, func_d.FuncOp)
-            and func.attributes["sym_name"].value == s.top_func_name
-        ):
-            top_func = func
-            break
+    top_func = s._find_function(s.top_func_name, error=False)
     assert top_func is not None, "Top function not found"
     with s.module.context, Location.unknown():
         # create new func

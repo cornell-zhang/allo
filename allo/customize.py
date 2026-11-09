@@ -89,16 +89,7 @@ def wrapped_apply(fn):
         sch = args[0]
         with sch.module.context, Location.unknown():
             res = fn(*args, **kwargs)
-        _mlir_lower_pipeline(sch.module)
-        # Update top function in the current context
-        for op in sch.module.body.operations:
-            if isinstance(op, func_d.FuncOp) and op.name.value == sch.top_func_name:
-                sch.top_func = op
-                break
-        else:
-            raise RuntimeError("Top function not found")
-        # Update insertion point
-        sch.ip = InsertionPoint.at_block_terminator(sch.top_func.entry_block)
+        sch._refresh_top()
         # Record primitive sequences
         if fn.__name__ != "compose":
             sch.primitive_sequences.append((fn.__name__, list(args[1:]), kwargs))
@@ -223,18 +214,20 @@ class Schedule:
         self.func_args = func_args
         self.ip = ip
         self.primitive_sequences = []
-        if ext_libs is None:
-            ext_libs = []
-        self.ext_libs = ext_libs
+        self.ext_libs = [] if ext_libs is None else ext_libs
         self.partitioned_arrays = {}
         self.inst_list = inst_list if inst_list is not None else []
-        if func_args:
-            for func_name, _ in func_args.items():
-                if func_name not in self.func_args:
-                    self.func_args[func_name] = []
         self.func_instances = func_instances
         self.systolic = check_systolic(self)
         self._clone_counts = {}
+
+    def _refresh_top(self):
+        """Lower the module and refresh handles replaced by transformation passes."""
+        _mlir_lower_pipeline(self.module)
+        self.top_func = self._find_function(self.top_func_name, error=False)
+        if self.top_func is None:
+            raise RuntimeError("Top function not found")
+        self.ip = InsertionPoint.at_block_terminator(self.top_func.entry_block)
 
     def get_loops(self, func=None):
         if isinstance(func, str):
@@ -823,18 +816,10 @@ class Schedule:
 
         with self.module.context, Location.unknown():
             self.buffer_at_regular(target, axis)
-        _mlir_lower_pipeline(self.module)
-        # Update top function in the current context
-        for op in self.module.body.operations:
-            if isinstance(op, func_d.FuncOp) and op.name.value == self.top_func_name:
-                self.top_func = op
-                break
-        else:
-            raise RuntimeError("Top function not found")
-        # Update insertion point
-        self.ip = InsertionPoint.at_block_terminator(self.top_func.entry_block)
+        self._refresh_top()
         # Record primitive sequences
         self.primitive_sequences.append(("buffer_at", [target, axis], {}))
+        return None
 
     def buffer_at_systolic(self, target, axis):
         """
@@ -855,26 +840,14 @@ class Schedule:
         band_name, axis = find_loop_in_bands(func, axis)
         band = self._find_band(band_name, func)
         loops = list(band)
-        outer_loop = loops[0][1].loop
-        middle_loop = loops[1][1].loop  # Middle loop
-        inner_loop = loops[-1][1].loop  # Last/innermost loop
-        i_size = int(
-            re.findall(
-                r"affine_map<\(\) -> \(([0-9]*)\)>",
-                str(outer_loop.attributes["upperBoundMap"]),
-            )[0]
-        )
-        j_size = int(
-            re.findall(
-                r"affine_map<\(\) -> \(([0-9]*)\)>",
-                str(middle_loop.attributes["upperBoundMap"]),
-            )[0]
-        )
-        k_size = int(
-            re.findall(
-                r"affine_map<\(\) -> \(([0-9]*)\)>",
-                str(inner_loop.attributes["upperBoundMap"]),
-            )[0]
+        i_size, j_size, k_size = (
+            int(
+                re.findall(
+                    r"affine_map<\(\) -> \(([0-9]*)\)>",
+                    str(loops[index][1].loop.attributes["upperBoundMap"]),
+                )[0]
+            )
+            for index in (0, 1, -1)
         )
         load_type = MemRefType(target.result.type).element_type
         with self.module.context, Location.unknown():

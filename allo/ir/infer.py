@@ -770,18 +770,18 @@ class TypeInferer(ASTVisitor):
                 orig_name = node.name
                 prefix = naming.kernel_prefix(old_ctx, node)
                 old_ctx.func_predicate_tags[prefix] = {}
-                if ctx.unroll:
-                    for dim in np.ndindex(*mapping):
-                        new_ctx = naming.kernel_context(old_ctx, dim)
-                        node.name = construct_kernel_name(prefix, dim)
-                        node.allo_generated = True
-                        # check on a specific df.kernel instance
-                        TypeInferer.visit_FunctionDef(new_ctx, node)
-                        node.name = orig_name
-                        node.allo_generated = False
-                else:
-                    # If not unroll, only visit one 'sample' to get the execution predicates
-
+                dimensions = (
+                    np.ndindex(*mapping) if ctx.unroll else [(0,) * len(mapping)]
+                )
+                for dim in dimensions:
+                    new_ctx = naming.kernel_context(old_ctx, dim)
+                    node.name = construct_kernel_name(prefix, dim)
+                    node.allo_generated = True
+                    TypeInferer.visit_FunctionDef(new_ctx, node)
+                    node.name = orig_name
+                    node.allo_generated = False
+                if not ctx.unroll:
+                    # The single sample above determines every PE's predicates.
                     def get_predicate_list(predicate_raw, pid_map):
                         """
                         Recursively expand `predicate` based on conditions and pid_map.
@@ -803,14 +803,6 @@ class TypeInferer(ASTVisitor):
                                 results.append(None)
                         return results
 
-                    sample_dim = (0,) * len(mapping)
-                    new_ctx = naming.kernel_context(old_ctx, sample_dim)
-                    node.name = construct_kernel_name(prefix, sample_dim)
-                    node.allo_generated = True
-                    # check on a specific df.kernel instance
-                    TypeInferer.visit_FunctionDef(new_ctx, node)
-                    node.name = orig_name
-                    node.allo_generated = False
                     for dim in np.ndindex(*mapping):
                         pid_map = {f"p{idx}": value for idx, value in enumerate(dim)}
                         old_ctx.func_predicate_tags[prefix][dim] = get_predicate_list(
@@ -852,27 +844,24 @@ class TypeInferer(ASTVisitor):
                 ctx.put_symbol(name=arg.arg, val=arg)
 
             # Return type
-            if not (
-                (isinstance(node.returns, ast.Constant) and node.returns.value is None)
-                or node.returns is None
-            ):
-                if isinstance(node.returns, ast.Tuple):
-                    # Multiple return values
-                    node.returns.shape = []
-                    node.returns.dtype = []
-                    node.returns.spec = []
-                    for elt in node.returns.elts:
-                        elt.dtype, elt.shape, elt.spec = TypeInferer.visit_type_hint(
-                            ctx, elt
-                        )
-                        node.returns.dtype += [elt.dtype]
-                        node.returns.shape += [elt.shape]
-                        node.returns.spec += [elt.spec]
-                else:
-                    # Single return value
-                    node.returns.dtype, node.returns.shape, node.returns.spec = (
-                        TypeInferer.visit_type_hint(ctx, node.returns)
+            has_return = node.returns is not None and not (
+                isinstance(node.returns, ast.Constant) and node.returns.value is None
+            )
+            node.allo_returns = []
+            if has_return:
+                node.allo_returns = (
+                    node.returns.elts
+                    if isinstance(node.returns, ast.Tuple)
+                    else [node.returns]
+                )
+                for ret in node.allo_returns:
+                    ret.dtype, ret.shape, ret.spec = TypeInferer.visit_type_hint(
+                        ctx, ret
                     )
+                if isinstance(node.returns, ast.Tuple):
+                    node.returns.dtype = [ret.dtype for ret in node.allo_returns]
+                    node.returns.shape = [ret.shape for ret in node.allo_returns]
+                    node.returns.spec = [ret.spec for ret in node.allo_returns]
                 assert ctx.get_symbol(name=func_name, allow_missing=True) is None, (
                     f"Function name '{func_name}' conflicts with an existing symbol. "
                     f"Please choose a different name to avoid the conflict."
@@ -884,14 +873,8 @@ class TypeInferer(ASTVisitor):
             ctx.top_func_tree = node
             visit_stmts(ctx, node.body)
             # Note that the result type may be different from the return type
-            if node.returns is None or (
-                isinstance(node.returns, ast.Constant) and node.returns.value is None
-            ):
-                node.dtype = None
-                node.shape = None
-            else:
-                node.dtype = node.returns.dtype
-                node.shape = node.returns.shape
+            node.dtype = node.returns.dtype if has_return else None
+            node.shape = node.returns.shape if has_return else None
         # Recover the old context
         if old_ctx is not None:
             ctx = old_ctx

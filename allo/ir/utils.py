@@ -134,14 +134,6 @@ def get_kwarg_value(kwargs, name, default=None):
     return default
 
 
-def _adjust_line_numbers(node, offset):
-    for child in ast.walk(node):
-        if hasattr(child, "lineno"):
-            child.lineno += offset
-        if hasattr(child, "end_lineno"):
-            child.end_lineno += offset
-
-
 def parse_ast(src, verbose=False):
     origin = src if inspect.isfunction(src) else None
     if isinstance(src, str):
@@ -151,7 +143,7 @@ def parse_ast(src, verbose=False):
         src = [textwrap.fill(line, tabsize=4, width=9999) for line in src]
         src = textwrap.dedent("\n".join(src))
     tree = ast.parse(src)
-    _adjust_line_numbers(tree, starting_line_no - 1)
+    ast.increment_lineno(tree, starting_line_no - 1)
 
     def definitions(parent, owner):
         for child in ast.iter_child_nodes(parent):

@@ -228,12 +228,7 @@ def function_environment(ctx, obj):
         obj = inspect.unwrap(obj)
         values.update(obj.__globals__)
         if obj.__closure__:
-            values.update(
-                zip(
-                    obj.__code__.co_freevars,
-                    (cell.cell_contents for cell in obj.__closure__),
-                )
-            )
+            values.update(inspect.getclosurevars(obj).nonlocals)
     elif hasattr(obj, "allo_environment"):
         values.update(obj.allo_environment.values)
         values.update(obj.allo_bindings)

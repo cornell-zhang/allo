@@ -2096,25 +2096,11 @@ class ASTTransformer(ASTBuilder):
         # Build return type
         output_types = []
         output_typehints = []
-        if not (
-            (isinstance(node.returns, ast.Constant) and node.returns.value is None)
-            or node.returns is None
-        ):
-            if isinstance(node.returns, ast.Tuple):
-                # Multiple returns
-                for ret in node.returns.elts:
-                    output_types.append(
-                        ASTTransformer.build_shaped_type(ctx, ret.dtype, ret.shape)
-                    )
-                    output_typehints.append(get_extra_type_hints(ret.dtype))
-            else:
-                # Single return
-                output_types.append(
-                    ASTTransformer.build_shaped_type(
-                        ctx, node.returns.dtype, node.returns.shape
-                    )
-                )
-                output_typehints.append(get_extra_type_hints(node.returns.dtype))
+        for ret in node.allo_returns:
+            output_types.append(
+                ASTTransformer.build_shaped_type(ctx, ret.dtype, ret.shape)
+            )
+            output_typehints.append(get_extra_type_hints(ret.dtype))
 
         # Build function
         with ctx.block_scope_guard():

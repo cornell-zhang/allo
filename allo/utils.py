@@ -3,6 +3,7 @@
 # pylint: disable=no-name-in-module
 
 import ctypes
+from dataclasses import replace
 import numpy as np
 import numpy.typing as npt
 import ml_dtypes
@@ -20,6 +21,7 @@ from ._mlir.ir import (
 from ._mlir.exceptions import DTypeWarning
 from ._mlir.runtime import to_numpy
 from ._mlir.dialects import allo as allo_d
+from .ir.names import parse_function_name, format_function_name
 from .ir.types import (
     AlloType,
     Int,
@@ -501,18 +503,12 @@ def freeze_list(x):
 
 
 def construct_kernel_name(prefix: str, ids: tuple[int]):
-    from .ir.names import parse_function_name, format_function_name
-    from dataclasses import replace
-
     return format_function_name(
         replace(parse_function_name(prefix), coordinates=tuple(ids))
     )
 
 
 def parse_kernel_name(name: str):
-    from .ir.names import parse_function_name, format_function_name
-    from dataclasses import replace
-
     value = parse_function_name(name)
     if value.coordinates is None:
         raise ValueError(f"Not a kernel instance: {name}")
