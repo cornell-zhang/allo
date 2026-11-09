@@ -3,11 +3,23 @@
 
 import os
 import allo
+from allo.utils import construct_kernel_name
 from allo.ir.types import int16, int32, Stream
 import allo.dataflow as df
 import numpy as np
 from allo.memory import Layout
 from allo.backend.aie import is_available
+
+
+def _pe(prefix, *coordinates):
+    """Resolve a frontend processing element used by the AIE mapping graph."""
+    return construct_kernel_name(prefix, coordinates)
+
+
+def _bundle_name(node, count):
+    """Name a bundled AIE graph node from its first member and size."""
+    return f"{node}x{count}"
+
 
 S = Layout.Shard
 R = Layout.Replicate
@@ -74,13 +86,7 @@ def test_gather():
             top,
             target="aie",
             mapping_primitives=[
-                (
-                    "bundle",
-                    [
-                        "partial_gemm_0",
-                        "partial_gemm_1",
-                    ],
-                ),
+                ("bundle", [_pe("partial_gemm", 0), _pe("partial_gemm", 1)])
             ],
         )
         mod_v2(A, B, C)
@@ -124,7 +130,10 @@ def test_scatter():
             top,
             target="aie",
             mapping_primitives=[
-                ("bundle", ["core_0", "core_1", "core_2", "core_3"]),
+                (
+                    "bundle",
+                    [_pe("core", 0), _pe("core", 1), _pe("core", 2), _pe("core", 3)],
+                )
             ],
         )
         mod_v2(A, B)
@@ -136,8 +145,11 @@ def test_scatter():
             top,
             target="aie",
             mapping_primitives=[
-                ("bundle", ["core_0", "core_1", "core_2", "core_3"]),
-                ("chain", ["prod_0", "core_0x4"]),
+                (
+                    "bundle",
+                    [_pe("core", 0), _pe("core", 1), _pe("core", 2), _pe("core", 3)],
+                ),
+                ("chain", [_pe("prod", 0), _bundle_name(_pe("core", 0), 4)]),
             ],
         )
         mod_v3(A, B)
@@ -181,7 +193,10 @@ def test_scatter2():
             top,
             target="aie",
             mapping_primitives=[
-                ("bundle", ["core_0", "core_1", "core_2", "core_3"]),
+                (
+                    "bundle",
+                    [_pe("core", 0), _pe("core", 1), _pe("core", 2), _pe("core", 3)],
+                )
             ],
         )
         mod_v2(Inc, A, B)
@@ -193,8 +208,11 @@ def test_scatter2():
             top,
             target="aie",
             mapping_primitives=[
-                ("bundle", ["core_0", "core_1", "core_2", "core_3"]),
-                ("chain", ["prod_0", "core_0x4"]),
+                (
+                    "bundle",
+                    [_pe("core", 0), _pe("core", 1), _pe("core", 2), _pe("core", 3)],
+                ),
+                ("chain", [_pe("prod", 0), _bundle_name(_pe("core", 0), 4)]),
             ],
         )
         mod_v3(Inc, A, B)

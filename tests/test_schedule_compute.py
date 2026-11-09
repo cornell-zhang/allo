@@ -303,18 +303,18 @@ def test_multiband():
 def test_compute_at():
     def kernel(A: int32[10, 20, 30]) -> int32[10, 20, 30]:
         B: int32[10, 20, 30] = 0
-        for i, j, m in allo.grid(10, 20, 30):
+        for i, j, m in allo.grid(10, 20, 30, name="scale"):
             B[i, j, m] = A[i, j, m] * 2
 
         C: int32[10, 20, 30] = 0
-        for ii, jj, mm in allo.grid(10, 20, 30):
+        for ii, jj, mm in allo.grid(10, 20, 30, name="shift"):
             C[ii, jj, mm] = B[ii, jj, mm] + 1
         return C
 
     # axis 2
     s2 = allo.customize(kernel)
     loops = s2.get_loops()
-    s2.compute_at(loops.S_i_j_m_0.m, loops.S_ii_jj_mm_1.mm)
+    s2.compute_at(loops.scale.m, loops.shift.mm)
     # _verify_build(s2)
     print(s2.module)
     print(s2.build("vhls"))
@@ -325,7 +325,7 @@ def test_access_imperfect_loops():
 
     def gemm(inp: float32[M, K], W: float32[K, N], B: float32[N]) -> float32[M, N]:
         outp: float32[M, N] = 0.0
-        for i in range(M):
+        for i in allo.grid(M, name="update"):
             for j in range(N):
                 for k in allo.reduction(K):
                     outp[i, j] += inp[i, k] * W[k, j]
@@ -335,14 +335,14 @@ def test_access_imperfect_loops():
 
     s = allo.customize(gemm)
     loops = s.get_loops()
-    s.split(loops.S_i_0.i, 8)
+    s.split(loops.update.i, 8)
     print(s.module)
     loops = s.get_loops()
-    s.reorder(loops.S_i_0["i.outer"], loops.S_i_0.j, loops.S_i_0["i.inner"])
-    s.unroll(loops.S_i_0.k)
+    s.reorder(loops.update["i.outer"], loops.update.j, loops.update["i.inner"])
+    s.unroll(loops.update.k)
     print(s.module)
-    s.fuse(loops.S_i_0["i.outer"], loops.S_i_0.j)
-    s.pipeline(loops.S_i_0.j0)
+    s.fuse(loops.update["i.outer"], loops.update.j)
+    s.pipeline(loops.update.j0)
     print(s.build("vhls"))
 
     s1 = allo.customize(gemm)
@@ -468,14 +468,14 @@ def test_inline_unroll_list():
 
     def kernel(A: int32[10, 20, 30]) -> int32[10, 20, 30]:
         B: int32[10, 20, 30] = 0
-        for i, j, k in allo.grid(10, 20, 30, unroll=[True, False, True]):
+        for i, j, k in allo.grid(10, 20, 30, name="update", unroll=[True, False, True]):
             B[i, j, k] = A[i, j, k] + 1
         return B
 
     s = allo.customize(kernel)
     ir = str(s.module)
     # i and k loops should have unroll = 0 (fully unroll)
-    assert 'loop_name = "i", op_name = "S_i_j_k_0", unroll = 0' in ir
+    assert 'loop_name = "i", op_name = "update", unroll = 0' in ir
     assert 'loop_name = "k", unroll = 0' in ir
 
 

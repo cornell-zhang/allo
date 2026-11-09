@@ -6,6 +6,7 @@ import tempfile
 
 from allo.ir.types import float32, Stream
 from allo.ir.utils import MockBuffer
+from allo.utils import construct_kernel_name
 import allo.dataflow as df
 import allo.backend.hls as hls
 import numpy as np
@@ -99,15 +100,14 @@ def top(X: Ty[BS, M0], Z2: Ty[BS, NUM_CLASSES]):
 
 
 def schedule_linear(s, lid, factor=4):
-    s.pipeline(f"linear{lid}__pe_0:j")
-    s.pipeline(f"linear{lid}__pe_0:j_init")
-    s.pipeline(f"linear{lid}__pe_0:j_back")
-    s.unroll(f"linear{lid}__pe_0:j", factor=factor)
-    s.unroll(f"linear{lid}__pe_0:j_init", factor=factor)
-    # s.unroll(f"linear{lid}__pe_0:j_back", factor=factor)
-    s.partition(
-        MockBuffer(f"linear{lid}__pe_0", "buf"), dim=0, partition_type=2, factor=factor
-    )
+    function = construct_kernel_name(f"linear{lid}", (0,))
+    s.pipeline(f"{function}:j")
+    s.pipeline(f"{function}:j_init")
+    s.pipeline(f"{function}:j_back")
+    s.unroll(f"{function}:j", factor=factor)
+    s.unroll(f"{function}:j_init", factor=factor)
+    # s.unroll(f"{function}:j_back", factor=factor)
+    s.partition(MockBuffer(function, "buf"), dim=0, partition_type=2, factor=factor)
 
 
 def test_mlp():

@@ -5,62 +5,41 @@ import allo
 from allo.ir.types import Stream
 import allo.dataflow as df
 from allo.memory import Layout
+from allo.utils import construct_kernel_name
 
 S = Layout.Shard
 R = Layout.Replicate
 
 
 def gen_gemm_mapping_primitive(Pm, Pn, Pk, col_num=4, row_num=4):
-    # chain on k dimension
-    mapping_primitives = []
-    bases: list[list[str]] = []
-    for i in range(Pm):
-        bases.append([])
-        for j in range(Pn):
-            base = f"gemm_0_{i}_{j}"
-            for k in range(1, Pk):
-                mapping_primitives.append(("chain", [base, f"gemm_{k}_{i}_{j}"]))
-                base += f"-gemm_{k}_{i}_{j}"
-            bases[i].append(base)
-
-    if Pn // col_num < 1 or Pm // row_num < 1:
-        col_num, row_num = row_num, col_num
-    if Pn < col_num:
-        col_num = Pn
-    if Pm < row_num:
-        row_num = Pm
-    if Pn // col_num > 1 or Pm // row_num > 1:
-        for i in range(row_num):
-            for j in range(col_num):
-                bundle_list = []
-                for p in range(Pm // row_num):
-                    for q in range(Pn // col_num):
-                        bundle_list.append(bases[i + row_num * p][j + col_num * q])
-                mapping_primitives.append(("bundle", bundle_list))
-
-    return mapping_primitives
+    return _gemm_mapping(Pm, Pn, Pk, col_num, row_num, split=False)
 
 
 def gen_gemm_mapping_primitive_v2(Pm, Pn, Pk, col_num=4, row_num=4):
+    return _gemm_mapping(Pm, Pn, Pk, col_num, row_num, split=True)
+
+
+def _gemm_mapping(Pm, Pn, Pk, col_num, row_num, split):
     # chain on k dimension
     mapping_primitives = []
-    bases: list[list[str]] = []
+    bases = []
+    length = Pk // 2 if split else Pk
     for i in range(Pm):
         bases.append([])
         for j in range(Pn):
-            base_ping = f"gemm_0_{i}_{j}"
-            for k in range(1, Pk // 2):
-                mapping_primitives.append(("chain", [base_ping, f"gemm_{k}_{i}_{j}"]))
-                base_ping += f"-gemm_{k}_{i}_{j}"
-            base_pong = f"gemm_{Pk//2}_{i}_{j}"
-            for k in range(1, Pk // 2):
-                mapping_primitives.append(
-                    ("chain", [base_pong, f"gemm_{Pk//2+ k}_{i}_{j}"])
-                )
-                base_pong += f"-gemm_{Pk//2 + k}_{i}_{j}"
-            bases[i].append((base_ping, base_pong))
+            groups = []
+            for offset in (0, length) if split else (0,):
+                offset = int(offset)
+                base = construct_kernel_name("gemm", (offset, i, j))
+                for k in range(1, length):
+                    node = construct_kernel_name("gemm", (offset + k, i, j))
+                    mapping_primitives.append(("chain", [base, node]))
+                    base = "-".join((base, node))
+                groups.append(base)
+            bases[i].append(tuple(groups) if split else groups[0])
 
-    col_num //= 2
+    if split:
+        col_num //= 2
     if Pn // col_num < 1 or Pm // row_num < 1:
         col_num, row_num = row_num, col_num
     if Pn < col_num:

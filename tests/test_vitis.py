@@ -6,7 +6,7 @@ import tempfile
 import numpy as np
 import allo
 from allo.ir.types import uint64, uint256, int32, float32, int512, bool, UInt
-from allo.utils import get_np_struct_type
+from allo.utils import construct_kernel_name, get_np_struct_type
 import allo.dataflow as df
 from allo.backend import hls
 
@@ -268,7 +268,7 @@ def test_vadd():
 
     s = df.customize(top)
     # unroll the lanes
-    nest_loop_i = s.get_loops("VEC__pe_0")["vec_nest"]["i"]
+    nest_loop_i = s.get_loops(construct_kernel_name("VEC", (0,)))["vec_nest"]["i"]
     s.unroll(nest_loop_i)
     print(s.module)
 

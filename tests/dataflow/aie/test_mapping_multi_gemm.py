@@ -4,12 +4,24 @@
 import os
 import pytest
 import allo
+from allo.utils import construct_kernel_name
 from allo.ir.types import int8, int16, bfloat16, Stream
 import allo.dataflow as df
 import numpy as np
 from allo.memory import Layout
 from ml_dtypes import bfloat16 as np_bfloat16
 from allo.backend.aie import is_available
+
+
+def _pe(prefix, *coordinates):
+    """Resolve a frontend processing element used by the AIE mapping graph."""
+    return construct_kernel_name(prefix, coordinates)
+
+
+def _chain_name(*nodes):
+    """Name the AIE graph node formed by chaining these ordered nodes."""
+    return "-".join(nodes)
+
 
 S = Layout.Shard
 R = Layout.Replicate
@@ -33,10 +45,11 @@ def gen_gemm_mapping_primitive(prefix, Pm, Pn, Pk, col_num=4, row_num=4):
     for i in range(Pm):
         bases.append([])
         for j in range(Pn):
-            base = f"{prefix}_0_{i}_{j}"
+            base = _pe(prefix, 0, i, j)
             for k in range(1, Pk):
-                mapping_primitives.append(("chain", [base, f"{prefix}_{k}_{i}_{j}"]))
-                base += f"-{prefix}_{k}_{i}_{j}"
+                node = _pe(prefix, k, i, j)
+                mapping_primitives.append(("chain", [base, node]))
+                base = _chain_name(base, node)
             bases[i].append(base)
 
     if Pn // col_num < 1 or Pm // row_num < 1:
@@ -62,10 +75,7 @@ def gen_gemm_mapping_primitive(prefix, Pm, Pn, Pk, col_num=4, row_num=4):
     reason="Skipped because this test is not supported on XDNA2",
 )
 @pytest.mark.parametrize(
-    "M, N, K, Pm, Pn, Pk, TyI, TyO",
-    [
-        (512, 512, 512, 8, 8, 8, int16, int16),
-    ],
+    "M, N, K, Pm, Pn, Pk, TyI, TyO", [(512, 512, 512, 8, 8, 8, int16, int16)]
 )
 def test_batched_gemm(M, N, K, Pm, Pn, Pk, TyI, TyO):
     assert TyI == TyO

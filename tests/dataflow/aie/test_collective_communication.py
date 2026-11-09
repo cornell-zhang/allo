@@ -3,11 +3,18 @@
 
 import os
 import allo
+from allo.utils import construct_kernel_name
 from allo.ir.types import int16, int32, Stream
 import allo.dataflow as df
 import numpy as np
 from allo.memory import Layout
 from allo.backend.aie import is_available
+
+
+def _pe(prefix, *coordinates):
+    """Resolve a frontend processing element used by the AIE mapping graph."""
+    return construct_kernel_name(prefix, coordinates)
+
 
 S = Layout.Shard
 R = Layout.Replicate
@@ -48,7 +55,9 @@ def test_gather():
         mod_v2 = df.build(
             top_v1,
             target="aie",
-            mapping_primitives=[("bundle", ["src_0", "src_1", "src_2", "src_3"])],
+            mapping_primitives=[
+                ("bundle", [_pe("src", 0), _pe("src", 1), _pe("src", 2), _pe("src", 3)])
+            ],
         )
         mod_v2(A, B)
         np.testing.assert_allclose(A, B[0, :], atol=1e-5)
@@ -87,7 +96,9 @@ def test_gather():
         mod_v2 = df.build(
             top_v2,
             target="aie",
-            mapping_primitives=[("bundle", ["src_0", "src_1", "src_2", "src_3"])],
+            mapping_primitives=[
+                ("bundle", [_pe("src", 0), _pe("src", 1), _pe("src", 2), _pe("src", 3)])
+            ],
         )
         mod_v2(A, B)
         np.testing.assert_allclose(A, B[0, :], atol=1e-5)
@@ -170,12 +181,12 @@ def test_split_k_explicit_gather_gemm_1x1x4():
                 (
                     "bundle",
                     [
-                        "partial_gemm_0",
-                        "partial_gemm_1",
-                        "partial_gemm_2",
-                        "partial_gemm_3",
+                        _pe("partial_gemm", 0),
+                        _pe("partial_gemm", 1),
+                        _pe("partial_gemm", 2),
+                        _pe("partial_gemm", 3),
                     ],
-                ),
+                )
             ],
         )
         A = np.random.randint(0, 64, (M, K)).astype(np.int16)
@@ -215,12 +226,12 @@ def test_split_k_explicit_gather_gemm_1x1x4():
                 (
                     "bundle",
                     [
-                        "partial_gemm_0",
-                        "partial_gemm_1",
-                        "partial_gemm_2",
-                        "partial_gemm_3",
+                        _pe("partial_gemm", 0),
+                        _pe("partial_gemm", 1),
+                        _pe("partial_gemm", 2),
+                        _pe("partial_gemm", 3),
                     ],
-                ),
+                )
             ],
         )
         A = np.random.randint(0, 64, (M, K)).astype(np.int16)
@@ -269,7 +280,7 @@ def test_scatter():
         mod_v2 = df.build(
             top_v1,
             target="aie",
-            mapping_primitives=[("bundle", ["inter_0", "inter_1"])],
+            mapping_primitives=[("bundle", [_pe("inter", 0), _pe("inter", 1)])],
         )
         mod_v2(A, B)
         np.testing.assert_allclose(A + 1, B, atol=1e-5)
@@ -306,7 +317,7 @@ def test_scatter():
         mod_v2 = df.build(
             top_v2,
             target="aie",
-            mapping_primitives=[("bundle", ["inter_0", "inter_1"])],
+            mapping_primitives=[("bundle", [_pe("inter", 0), _pe("inter", 1)])],
         )
         mod_v2(A, B)
         np.testing.assert_allclose(A + 1, B, atol=1e-5)

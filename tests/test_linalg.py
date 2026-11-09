@@ -189,20 +189,22 @@ def test_linalg_batch_matmul_nested():
     print(s1.module)
 
     loops = s1.get_loops()
-    s1.split(loops.bmm1.L_0, 8)
+    s1.split(next(iter(loops.bmm1))[1], 8)
     print(s1.module)
 
     loops = s1.get_loops()
-    s1.reorder(loops.bmm1["L_0.outer"], loops.bmm1.L_1, loops.bmm1["L_0.inner"])
-    s1.unroll(loops.bmm2.L_2)
-    s1.fuse(loops.bmm1["L_0.outer"], loops.bmm1.L_1)
+    batch_outer, batch_inner, row, *_ = [axis for _, axis in loops.bmm1]
+    s1.reorder(batch_outer, row, batch_inner)
+    column = [axis for _, axis in loops.bmm2][2]
+    s1.unroll(column)
+    s1.fuse(batch_outer, row)
     print(s1.module)
 
     # Top-level
     s = allo.customize(top, lower_linalg=True)
     s.compose(s1)
     loops_ = s.get_loops()
-    s.pipeline(loops_.bmm4.L_0)
+    s.pipeline(next(iter(loops_.bmm4))[1])
     f = s.build()
     print(s.module)
     print(s.build("vhls"))
@@ -278,13 +280,14 @@ def test_linalg_Linear_layer():
     s_q = allo.customize(Linear_layer, lower_linalg=True)
     print(s_q.module)
     loops = s_q.get_loops()
-    s_q.pipeline(loops.bias.L_1)
-    s_q.split(loops.gemm.L_1, Max_size)
+    bias_column = [axis for _, axis in loops.bias][1]
+    gemm_column = [axis for _, axis in loops.gemm][1]
+    s_q.pipeline(bias_column)
+    s_q.split(gemm_column, Max_size)
     loops = s_q.get_loops()
-    s_q.reorder(
-        loops.gemm["L_1.outer"], loops.gemm.L_2, loops.gemm.L_0, loops.gemm["L_1.inner"]
-    )
-    s_q.pipeline(loops.gemm.L_2)
+    row, column_outer, column_inner, reduction = [axis for _, axis in loops.gemm]
+    s_q.reorder(column_outer, reduction, row, column_inner)
+    s_q.pipeline(reduction)
     print(s_q.module)
     print(s_q.build("vhls"))
     f = s_q.build()

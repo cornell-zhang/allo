@@ -2,11 +2,26 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import allo
+from allo.utils import construct_kernel_name
 from allo.ir.types import int16, int32, Stream
 import allo.dataflow as df
 import numpy as np
 from allo.memory import Layout
 from allo.backend.aie import is_available
+
+
+def _gemm(*coordinates):
+    return construct_kernel_name("gemm", coordinates)
+
+
+def _partial_gemm(*coordinates):
+    return construct_kernel_name("partial_gemm", coordinates)
+
+
+def _chain_name(*coordinates):
+    """Name an ordered chain of GEMM PEs selected by coordinates."""
+    return "-".join(_gemm(*point) for point in coordinates)
+
 
 S = Layout.Shard
 R = Layout.Replicate
@@ -34,8 +49,8 @@ def test_gemm_2D_v1():
             top,
             target="aie",
             mapping_primitives=[
-                ("bundle", ["gemm_0_0", "gemm_0_1"]),
-                ("bundle", ["gemm_1_0", "gemm_1_1"]),
+                ("bundle", [_gemm(0, 0), _gemm(0, 1)]),
+                ("bundle", [_gemm(1, 0), _gemm(1, 1)]),
             ],
         )
         A = np.random.randint(0, 64, (M, K)).astype(np.int32)
@@ -51,7 +66,7 @@ def test_gemm_2D_v1():
         top,
         target="aie",
         mapping_primitives=[
-            ("bundle", [("gemm_0_0", "gemm_1_0"), ("gemm_0_1", "gemm_1_1")]),
+            ("bundle", [(_gemm(0, 0), _gemm(1, 0)), (_gemm(0, 1), _gemm(1, 1))])
         ],
     )
     C = np.zeros((M, N)).astype(np.int32)
@@ -82,9 +97,9 @@ def test_gemm_2D_v2():
             top,
             target="aie",
             mapping_primitives=[
-                ("chain", ["gemm_0_0", "gemm_0_1"]),
-                ("chain", ["gemm_1_0", "gemm_1_1"]),
-                ("bundle", ["gemm_0_0-gemm_0_1", "gemm_1_0-gemm_1_1"]),
+                ("chain", [_gemm(0, 0), _gemm(0, 1)]),
+                ("chain", [_gemm(1, 0), _gemm(1, 1)]),
+                ("bundle", [_chain_name((0, 0), (0, 1)), _chain_name((1, 0), (1, 1))]),
             ],
         )
         A = np.random.randint(0, 64, (M, K)).astype(np.int32)
@@ -133,10 +148,10 @@ def test_pingpong_gemm_2x2x2():
             top,
             target="aie",
             mapping_primitives=[
-                ("chain", ["gemm_0_0_0", "gemm_1_0_0"]),
-                ("chain", ["gemm_0_0_1", "gemm_1_0_1"]),
-                ("chain", ["gemm_0_1_0", "gemm_1_1_0"]),
-                ("chain", ["gemm_0_1_1", "gemm_1_1_1"]),
+                ("chain", [_gemm(0, 0, 0), _gemm(1, 0, 0)]),
+                ("chain", [_gemm(0, 0, 1), _gemm(1, 0, 1)]),
+                ("chain", [_gemm(0, 1, 0), _gemm(1, 1, 0)]),
+                ("chain", [_gemm(0, 1, 1), _gemm(1, 1, 1)]),
             ],
         )
         A = np.random.randint(0, 64, (M, K)).astype(np.int16)
@@ -155,12 +170,12 @@ def test_pingpong_gemm_2x2x2():
             (
                 "bundle",
                 [
-                    ("gemm_0_0_0", "gemm_1_0_0"),
-                    ("gemm_0_0_1", "gemm_1_0_1"),
-                    ("gemm_0_1_0", "gemm_1_1_0"),
-                    ("gemm_0_1_1", "gemm_1_1_1"),
+                    (_gemm(0, 0, 0), _gemm(1, 0, 0)),
+                    (_gemm(0, 0, 1), _gemm(1, 0, 1)),
+                    (_gemm(0, 1, 0), _gemm(1, 1, 0)),
+                    (_gemm(0, 1, 1), _gemm(1, 1, 1)),
                 ],
-            ),
+            )
         ],
     )
     A = np.random.randint(0, 64, (M, K)).astype(np.int16)
@@ -207,8 +222,8 @@ def test_pingpong_gemm_2x2x2_partial_chain():
             top,
             target="aie",
             mapping_primitives=[
-                ("chain", ["gemm_0_0_0", "gemm_1_0_0"]),
-                ("chain", ["gemm_0_0_1", "gemm_1_0_1"]),
+                ("chain", [_gemm(0, 0, 0), _gemm(1, 0, 0)]),
+                ("chain", [_gemm(0, 0, 1), _gemm(1, 0, 1)]),
             ],
         )
         A = np.random.randint(0, 64, (M, K)).astype(np.int16)
@@ -261,9 +276,12 @@ def test_pingpong_gemm_1x1x4():
             top,
             target="aie",
             mapping_primitives=[
-                ("chain", ["gemm_0_0_0", "gemm_1_0_0"]),
-                ("chain", ["gemm_0_0_0-gemm_1_0_0", "gemm_2_0_0"]),
-                ("chain", ["gemm_0_0_0-gemm_1_0_0-gemm_2_0_0", "gemm_3_0_0"]),
+                ("chain", [_gemm(0, 0, 0), _gemm(1, 0, 0)]),
+                ("chain", [_chain_name((0, 0, 0), (1, 0, 0)), _gemm(2, 0, 0)]),
+                (
+                    "chain",
+                    [_chain_name((0, 0, 0), (1, 0, 0), (2, 0, 0)), _gemm(3, 0, 0)],
+                ),
             ],
         )
         mod_v1(A, B, C)
@@ -274,8 +292,8 @@ def test_pingpong_gemm_1x1x4():
             top,
             target="aie",
             mapping_primitives=[
-                ("chain", ["gemm_0_0_0", "gemm_1_0_0"]),
-                ("chain", ["gemm_2_0_0", "gemm_3_0_0"]),
+                ("chain", [_gemm(0, 0, 0), _gemm(1, 0, 0)]),
+                ("chain", [_gemm(2, 0, 0), _gemm(3, 0, 0)]),
             ],
         )
         mod_v2(A, B, C)
@@ -324,18 +342,30 @@ def test_pingpong_gemm_2x2x4():
             top,
             target="aie",
             mapping_primitives=[
-                ("chain", ["gemm_0_0_0", "gemm_1_0_0"]),
-                ("chain", ["gemm_0_0_0-gemm_1_0_0", "gemm_2_0_0"]),
-                ("chain", ["gemm_0_0_0-gemm_1_0_0-gemm_2_0_0", "gemm_3_0_0"]),
-                ("chain", ["gemm_0_0_1", "gemm_1_0_1"]),
-                ("chain", ["gemm_0_0_1-gemm_1_0_1", "gemm_2_0_1"]),
-                ("chain", ["gemm_0_0_1-gemm_1_0_1-gemm_2_0_1", "gemm_3_0_1"]),
-                ("chain", ["gemm_0_1_0", "gemm_1_1_0"]),
-                ("chain", ["gemm_0_1_0-gemm_1_1_0", "gemm_2_1_0"]),
-                ("chain", ["gemm_0_1_0-gemm_1_1_0-gemm_2_1_0", "gemm_3_1_0"]),
-                ("chain", ["gemm_0_1_1", "gemm_1_1_1"]),
-                ("chain", ["gemm_0_1_1-gemm_1_1_1", "gemm_2_1_1"]),
-                ("chain", ["gemm_0_1_1-gemm_1_1_1-gemm_2_1_1", "gemm_3_1_1"]),
+                ("chain", [_gemm(0, 0, 0), _gemm(1, 0, 0)]),
+                ("chain", [_chain_name((0, 0, 0), (1, 0, 0)), _gemm(2, 0, 0)]),
+                (
+                    "chain",
+                    [_chain_name((0, 0, 0), (1, 0, 0), (2, 0, 0)), _gemm(3, 0, 0)],
+                ),
+                ("chain", [_gemm(0, 0, 1), _gemm(1, 0, 1)]),
+                ("chain", [_chain_name((0, 0, 1), (1, 0, 1)), _gemm(2, 0, 1)]),
+                (
+                    "chain",
+                    [_chain_name((0, 0, 1), (1, 0, 1), (2, 0, 1)), _gemm(3, 0, 1)],
+                ),
+                ("chain", [_gemm(0, 1, 0), _gemm(1, 1, 0)]),
+                ("chain", [_chain_name((0, 1, 0), (1, 1, 0)), _gemm(2, 1, 0)]),
+                (
+                    "chain",
+                    [_chain_name((0, 1, 0), (1, 1, 0), (2, 1, 0)), _gemm(3, 1, 0)],
+                ),
+                ("chain", [_gemm(0, 1, 1), _gemm(1, 1, 1)]),
+                ("chain", [_chain_name((0, 1, 1), (1, 1, 1)), _gemm(2, 1, 1)]),
+                (
+                    "chain",
+                    [_chain_name((0, 1, 1), (1, 1, 1), (2, 1, 1)), _gemm(3, 1, 1)],
+                ),
             ],
         )
         mod(A, B, C)
@@ -348,21 +378,33 @@ def test_pingpong_gemm_2x2x4():
         top,
         target="aie",
         mapping_primitives=[
-            ("chain", ["gemm_0_0_0", "gemm_1_0_0"]),
-            ("chain", ["gemm_2_0_0", "gemm_3_0_0"]),
-            ("chain", ["gemm_0_0_1", "gemm_1_0_1"]),
-            ("chain", ["gemm_2_0_1", "gemm_3_0_1"]),
-            ("chain", ["gemm_0_1_0", "gemm_1_1_0"]),
-            ("chain", ["gemm_2_1_0", "gemm_3_1_0"]),
-            ("chain", ["gemm_0_1_1", "gemm_1_1_1"]),
-            ("chain", ["gemm_2_1_1", "gemm_3_1_1"]),
+            ("chain", [_gemm(0, 0, 0), _gemm(1, 0, 0)]),
+            ("chain", [_gemm(2, 0, 0), _gemm(3, 0, 0)]),
+            ("chain", [_gemm(0, 0, 1), _gemm(1, 0, 1)]),
+            ("chain", [_gemm(2, 0, 1), _gemm(3, 0, 1)]),
+            ("chain", [_gemm(0, 1, 0), _gemm(1, 1, 0)]),
+            ("chain", [_gemm(2, 1, 0), _gemm(3, 1, 0)]),
+            ("chain", [_gemm(0, 1, 1), _gemm(1, 1, 1)]),
+            ("chain", [_gemm(2, 1, 1), _gemm(3, 1, 1)]),
             (
                 "bundle",
                 [
-                    ("gemm_0_0_0-gemm_1_0_0", "gemm_2_0_0-gemm_3_0_0"),
-                    ("gemm_0_0_1-gemm_1_0_1", "gemm_2_0_1-gemm_3_0_1"),
-                    ("gemm_0_1_0-gemm_1_1_0", "gemm_2_1_0-gemm_3_1_0"),
-                    ("gemm_0_1_1-gemm_1_1_1", "gemm_2_1_1-gemm_3_1_1"),
+                    (
+                        _chain_name((0, 0, 0), (1, 0, 0)),
+                        _chain_name((2, 0, 0), (3, 0, 0)),
+                    ),
+                    (
+                        _chain_name((0, 0, 1), (1, 0, 1)),
+                        _chain_name((2, 0, 1), (3, 0, 1)),
+                    ),
+                    (
+                        _chain_name((0, 1, 0), (1, 1, 0)),
+                        _chain_name((2, 1, 0), (3, 1, 0)),
+                    ),
+                    (
+                        _chain_name((0, 1, 1), (1, 1, 1)),
+                        _chain_name((2, 1, 1), (3, 1, 1)),
+                    ),
                 ],
             ),
         ],
@@ -408,54 +450,102 @@ def test_pingpong_gemm_4x4x4():
             top,
             target="aie",
             mapping_primitives=[
-                ("chain", ["gemm_0_0_0", "gemm_1_0_0"]),
-                ("chain", ["gemm_0_0_0-gemm_1_0_0", "gemm_2_0_0"]),
-                ("chain", ["gemm_0_0_0-gemm_1_0_0-gemm_2_0_0", "gemm_3_0_0"]),
-                ("chain", ["gemm_0_0_1", "gemm_1_0_1"]),
-                ("chain", ["gemm_0_0_1-gemm_1_0_1", "gemm_2_0_1"]),
-                ("chain", ["gemm_0_0_1-gemm_1_0_1-gemm_2_0_1", "gemm_3_0_1"]),
-                ("chain", ["gemm_0_0_2", "gemm_1_0_2"]),
-                ("chain", ["gemm_0_0_2-gemm_1_0_2", "gemm_2_0_2"]),
-                ("chain", ["gemm_0_0_2-gemm_1_0_2-gemm_2_0_2", "gemm_3_0_2"]),
-                ("chain", ["gemm_0_0_3", "gemm_1_0_3"]),
-                ("chain", ["gemm_0_0_3-gemm_1_0_3", "gemm_2_0_3"]),
-                ("chain", ["gemm_0_0_3-gemm_1_0_3-gemm_2_0_3", "gemm_3_0_3"]),
-                ("chain", ["gemm_0_1_0", "gemm_1_1_0"]),
-                ("chain", ["gemm_0_1_0-gemm_1_1_0", "gemm_2_1_0"]),
-                ("chain", ["gemm_0_1_0-gemm_1_1_0-gemm_2_1_0", "gemm_3_1_0"]),
-                ("chain", ["gemm_0_1_1", "gemm_1_1_1"]),
-                ("chain", ["gemm_0_1_1-gemm_1_1_1", "gemm_2_1_1"]),
-                ("chain", ["gemm_0_1_1-gemm_1_1_1-gemm_2_1_1", "gemm_3_1_1"]),
-                ("chain", ["gemm_0_1_2", "gemm_1_1_2"]),
-                ("chain", ["gemm_0_1_2-gemm_1_1_2", "gemm_2_1_2"]),
-                ("chain", ["gemm_0_1_2-gemm_1_1_2-gemm_2_1_2", "gemm_3_1_2"]),
-                ("chain", ["gemm_0_1_3", "gemm_1_1_3"]),
-                ("chain", ["gemm_0_1_3-gemm_1_1_3", "gemm_2_1_3"]),
-                ("chain", ["gemm_0_1_3-gemm_1_1_3-gemm_2_1_3", "gemm_3_1_3"]),
-                ("chain", ["gemm_0_2_0", "gemm_1_2_0"]),
-                ("chain", ["gemm_0_2_0-gemm_1_2_0", "gemm_2_2_0"]),
-                ("chain", ["gemm_0_2_0-gemm_1_2_0-gemm_2_2_0", "gemm_3_2_0"]),
-                ("chain", ["gemm_0_2_1", "gemm_1_2_1"]),
-                ("chain", ["gemm_0_2_1-gemm_1_2_1", "gemm_2_2_1"]),
-                ("chain", ["gemm_0_2_1-gemm_1_2_1-gemm_2_2_1", "gemm_3_2_1"]),
-                ("chain", ["gemm_0_2_2", "gemm_1_2_2"]),
-                ("chain", ["gemm_0_2_2-gemm_1_2_2", "gemm_2_2_2"]),
-                ("chain", ["gemm_0_2_2-gemm_1_2_2-gemm_2_2_2", "gemm_3_2_2"]),
-                ("chain", ["gemm_0_2_3", "gemm_1_2_3"]),
-                ("chain", ["gemm_0_2_3-gemm_1_2_3", "gemm_2_2_3"]),
-                ("chain", ["gemm_0_2_3-gemm_1_2_3-gemm_2_2_3", "gemm_3_2_3"]),
-                ("chain", ["gemm_0_3_0", "gemm_1_3_0"]),
-                ("chain", ["gemm_0_3_0-gemm_1_3_0", "gemm_2_3_0"]),
-                ("chain", ["gemm_0_3_0-gemm_1_3_0-gemm_2_3_0", "gemm_3_3_0"]),
-                ("chain", ["gemm_0_3_1", "gemm_1_3_1"]),
-                ("chain", ["gemm_0_3_1-gemm_1_3_1", "gemm_2_3_1"]),
-                ("chain", ["gemm_0_3_1-gemm_1_3_1-gemm_2_3_1", "gemm_3_3_1"]),
-                ("chain", ["gemm_0_3_2", "gemm_1_3_2"]),
-                ("chain", ["gemm_0_3_2-gemm_1_3_2", "gemm_2_3_2"]),
-                ("chain", ["gemm_0_3_2-gemm_1_3_2-gemm_2_3_2", "gemm_3_3_2"]),
-                ("chain", ["gemm_0_3_3", "gemm_1_3_3"]),
-                ("chain", ["gemm_0_3_3-gemm_1_3_3", "gemm_2_3_3"]),
-                ("chain", ["gemm_0_3_3-gemm_1_3_3-gemm_2_3_3", "gemm_3_3_3"]),
+                ("chain", [_gemm(0, 0, 0), _gemm(1, 0, 0)]),
+                ("chain", [_chain_name((0, 0, 0), (1, 0, 0)), _gemm(2, 0, 0)]),
+                (
+                    "chain",
+                    [_chain_name((0, 0, 0), (1, 0, 0), (2, 0, 0)), _gemm(3, 0, 0)],
+                ),
+                ("chain", [_gemm(0, 0, 1), _gemm(1, 0, 1)]),
+                ("chain", [_chain_name((0, 0, 1), (1, 0, 1)), _gemm(2, 0, 1)]),
+                (
+                    "chain",
+                    [_chain_name((0, 0, 1), (1, 0, 1), (2, 0, 1)), _gemm(3, 0, 1)],
+                ),
+                ("chain", [_gemm(0, 0, 2), _gemm(1, 0, 2)]),
+                ("chain", [_chain_name((0, 0, 2), (1, 0, 2)), _gemm(2, 0, 2)]),
+                (
+                    "chain",
+                    [_chain_name((0, 0, 2), (1, 0, 2), (2, 0, 2)), _gemm(3, 0, 2)],
+                ),
+                ("chain", [_gemm(0, 0, 3), _gemm(1, 0, 3)]),
+                ("chain", [_chain_name((0, 0, 3), (1, 0, 3)), _gemm(2, 0, 3)]),
+                (
+                    "chain",
+                    [_chain_name((0, 0, 3), (1, 0, 3), (2, 0, 3)), _gemm(3, 0, 3)],
+                ),
+                ("chain", [_gemm(0, 1, 0), _gemm(1, 1, 0)]),
+                ("chain", [_chain_name((0, 1, 0), (1, 1, 0)), _gemm(2, 1, 0)]),
+                (
+                    "chain",
+                    [_chain_name((0, 1, 0), (1, 1, 0), (2, 1, 0)), _gemm(3, 1, 0)],
+                ),
+                ("chain", [_gemm(0, 1, 1), _gemm(1, 1, 1)]),
+                ("chain", [_chain_name((0, 1, 1), (1, 1, 1)), _gemm(2, 1, 1)]),
+                (
+                    "chain",
+                    [_chain_name((0, 1, 1), (1, 1, 1), (2, 1, 1)), _gemm(3, 1, 1)],
+                ),
+                ("chain", [_gemm(0, 1, 2), _gemm(1, 1, 2)]),
+                ("chain", [_chain_name((0, 1, 2), (1, 1, 2)), _gemm(2, 1, 2)]),
+                (
+                    "chain",
+                    [_chain_name((0, 1, 2), (1, 1, 2), (2, 1, 2)), _gemm(3, 1, 2)],
+                ),
+                ("chain", [_gemm(0, 1, 3), _gemm(1, 1, 3)]),
+                ("chain", [_chain_name((0, 1, 3), (1, 1, 3)), _gemm(2, 1, 3)]),
+                (
+                    "chain",
+                    [_chain_name((0, 1, 3), (1, 1, 3), (2, 1, 3)), _gemm(3, 1, 3)],
+                ),
+                ("chain", [_gemm(0, 2, 0), _gemm(1, 2, 0)]),
+                ("chain", [_chain_name((0, 2, 0), (1, 2, 0)), _gemm(2, 2, 0)]),
+                (
+                    "chain",
+                    [_chain_name((0, 2, 0), (1, 2, 0), (2, 2, 0)), _gemm(3, 2, 0)],
+                ),
+                ("chain", [_gemm(0, 2, 1), _gemm(1, 2, 1)]),
+                ("chain", [_chain_name((0, 2, 1), (1, 2, 1)), _gemm(2, 2, 1)]),
+                (
+                    "chain",
+                    [_chain_name((0, 2, 1), (1, 2, 1), (2, 2, 1)), _gemm(3, 2, 1)],
+                ),
+                ("chain", [_gemm(0, 2, 2), _gemm(1, 2, 2)]),
+                ("chain", [_chain_name((0, 2, 2), (1, 2, 2)), _gemm(2, 2, 2)]),
+                (
+                    "chain",
+                    [_chain_name((0, 2, 2), (1, 2, 2), (2, 2, 2)), _gemm(3, 2, 2)],
+                ),
+                ("chain", [_gemm(0, 2, 3), _gemm(1, 2, 3)]),
+                ("chain", [_chain_name((0, 2, 3), (1, 2, 3)), _gemm(2, 2, 3)]),
+                (
+                    "chain",
+                    [_chain_name((0, 2, 3), (1, 2, 3), (2, 2, 3)), _gemm(3, 2, 3)],
+                ),
+                ("chain", [_gemm(0, 3, 0), _gemm(1, 3, 0)]),
+                ("chain", [_chain_name((0, 3, 0), (1, 3, 0)), _gemm(2, 3, 0)]),
+                (
+                    "chain",
+                    [_chain_name((0, 3, 0), (1, 3, 0), (2, 3, 0)), _gemm(3, 3, 0)],
+                ),
+                ("chain", [_gemm(0, 3, 1), _gemm(1, 3, 1)]),
+                ("chain", [_chain_name((0, 3, 1), (1, 3, 1)), _gemm(2, 3, 1)]),
+                (
+                    "chain",
+                    [_chain_name((0, 3, 1), (1, 3, 1), (2, 3, 1)), _gemm(3, 3, 1)],
+                ),
+                ("chain", [_gemm(0, 3, 2), _gemm(1, 3, 2)]),
+                ("chain", [_chain_name((0, 3, 2), (1, 3, 2)), _gemm(2, 3, 2)]),
+                (
+                    "chain",
+                    [_chain_name((0, 3, 2), (1, 3, 2), (2, 3, 2)), _gemm(3, 3, 2)],
+                ),
+                ("chain", [_gemm(0, 3, 3), _gemm(1, 3, 3)]),
+                ("chain", [_chain_name((0, 3, 3), (1, 3, 3)), _gemm(2, 3, 3)]),
+                (
+                    "chain",
+                    [_chain_name((0, 3, 3), (1, 3, 3), (2, 3, 3)), _gemm(3, 3, 3)],
+                ),
             ],
         )
         A = np.random.randint(0, 64, (M, K)).astype(np.int16)
@@ -501,12 +591,12 @@ def test_split_k_gemm_1x1x4():
                 (
                     "bundle",
                     [
-                        "partial_gemm_0",
-                        "partial_gemm_1",
-                        "partial_gemm_2",
-                        "partial_gemm_3",
+                        _partial_gemm(0),
+                        _partial_gemm(1),
+                        _partial_gemm(2),
+                        _partial_gemm(3),
                     ],
-                ),
+                )
             ],
         )
         A = np.random.randint(0, 64, (M, K)).astype(np.int16)
@@ -556,37 +646,37 @@ def test_split_k_gemm_2x2x4():
                 (
                     "bundle",
                     [
-                        "partial_gemm_0_0_0",
-                        "partial_gemm_1_0_0",
-                        "partial_gemm_2_0_0",
-                        "partial_gemm_3_0_0",
+                        _partial_gemm(0, 0, 0),
+                        _partial_gemm(1, 0, 0),
+                        _partial_gemm(2, 0, 0),
+                        _partial_gemm(3, 0, 0),
                     ],
                 ),
                 (
                     "bundle",
                     [
-                        "partial_gemm_0_0_1",
-                        "partial_gemm_1_0_1",
-                        "partial_gemm_2_0_1",
-                        "partial_gemm_3_0_1",
+                        _partial_gemm(0, 0, 1),
+                        _partial_gemm(1, 0, 1),
+                        _partial_gemm(2, 0, 1),
+                        _partial_gemm(3, 0, 1),
                     ],
                 ),
                 (
                     "bundle",
                     [
-                        "partial_gemm_0_1_0",
-                        "partial_gemm_1_1_0",
-                        "partial_gemm_2_1_0",
-                        "partial_gemm_3_1_0",
+                        _partial_gemm(0, 1, 0),
+                        _partial_gemm(1, 1, 0),
+                        _partial_gemm(2, 1, 0),
+                        _partial_gemm(3, 1, 0),
                     ],
                 ),
                 (
                     "bundle",
                     [
-                        "partial_gemm_0_1_1",
-                        "partial_gemm_1_1_1",
-                        "partial_gemm_2_1_1",
-                        "partial_gemm_3_1_1",
+                        _partial_gemm(0, 1, 1),
+                        _partial_gemm(1, 1, 1),
+                        _partial_gemm(2, 1, 1),
+                        _partial_gemm(3, 1, 1),
                     ],
                 ),
             ],

@@ -423,8 +423,8 @@ def test_unfold_refreshes_handles_and_preserves_other_callers():
         "leaf__clone_0",
         "leaf__clone_1",
     }
-    unfolded.unfold("tile_0", [0])
-    unfolded.unfold("tile_1", [0])
+    for band_name, _ in list(unfolded.get_loops()):
+        unfolded.unfold(band_name, [0])
     expected = {"leaf"} | {f"leaf__clone_{i}" for i in range(2, 6)}
     assert set(_functions(unfolded)) == {"top"} | expected
     assert set(_functions(untouched)) == {"top", "leaf"}
