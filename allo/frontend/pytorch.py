@@ -80,9 +80,9 @@ def from_pytorch(
     if getattr(builder, "extra_types", None):
         global_vars.update(builder.extra_types)
     s = customize(code, global_vars=global_vars, enable_tensor=enable_tensor)
-    # composition
+    # Generated library calls use explicit string labels.
     for func, idx, inst in builder.composition:
-        s.compose(getattr(nn, func), id=idx, instantiate=inst)
+        s.compose(getattr(nn, func), id=str(idx), instantiate=inst)
     if verbose:
         print(s.module)
     if target == "mlir":

@@ -27,6 +27,7 @@ from ..._mlir.dialects import (
 )
 
 from ..._mlir.ir import InsertionPoint, MemRefType, IntegerType
+from ...utils import construct_kernel_name
 
 from ..utils import format_str
 from ...memory import (
@@ -1752,9 +1753,7 @@ class CodeGenerator:
                 for virtual_name in node.meta_data.df_kernels:
                     virtual_to_logical[virtual_name] = node_name
             for traced_tile in trace:
-                func_name = (
-                    traced_tile[0] + f"_{'_'.join([str(x) for x in traced_tile[1]])}"
-                )
+                func_name = construct_kernel_name(*traced_tile)
                 assert func_name in virtual_to_logical
                 traced_logical_tile.add(virtual_to_logical[func_name])
 
