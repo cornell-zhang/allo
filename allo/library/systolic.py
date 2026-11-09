@@ -287,18 +287,22 @@ def packed_int8xint8_systolic[
 def schedule_systolic(s):
     if s.top_func_name == "systolic":
         assert len(s.inst_list) == 8
-        tile_name = "systolic_tile"
+        tile_name = s.get_functions(systolic_tile)[0].name.value
         M0, M1 = s.inst_list[-2], s.inst_list[-1]
-        kernel_loop = s.get_loops(f"PE_kernel")["reduction"]["k"]
+        kernel_loop = s.get_loops(s.get_functions(PE_kernel)[0].name.value)[
+            "reduction"
+        ]["k"]
     elif s.top_func_name == "packed_systolic":
         assert len(s.inst_list) == 9
-        tile_name = "systolic_tile"
+        tile_name = s.get_functions(systolic_tile)[0].name.value
         M0, M1 = s.inst_list[-3], s.inst_list[-2]
     elif s.top_func_name == "packed_int8xint8_systolic":
         assert len(s.inst_list) == 6
-        tile_name = "systolic_tile"
+        tile_name = s.get_functions(systolic_tile)[0].name.value
         M0, M1 = s.inst_list[-3], s.inst_list[-2]
-        kernel_loop = s.get_loops(f"PE_kernel_packed_int8xint8")["reduction"]["k"]
+        kernel_loop = s.get_loops(
+            s.get_functions(PE_kernel_packed_int8xint8)[0].name.value
+        )["reduction"]["k"]
     else:
         raise ValueError(
             f"Cannot apply `schedule_systolic` to function: {s.top_func_name}"
@@ -316,9 +320,12 @@ def schedule_systolic(s):
     outer_tile_loop = s.get_loops(s.top_func_name)["outer_tile"]["mi"]
     tile_loop = s.fuse(outer_tile_loop, inner_tile_loop)
     kernel_loop = None
-    for kernel_name in {"PE_kernel", "PE_kernel_packed_int8xint8"}:
+    for kernel_fn in (PE_kernel, PE_kernel_packed_int8xint8):
         try:
-            kernel_loop = s.get_loops(kernel_name)["reduction"]["k"]
+            functions = s.get_functions(kernel_fn)
+            if not functions:
+                continue
+            kernel_loop = s.get_loops(functions[0].name.value)["reduction"]["k"]
             break
         except RuntimeError:
             continue

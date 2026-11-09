@@ -922,6 +922,220 @@ Allo supports parameterized kernels using type parameters:
 For more details on templates, see the :doc:`../gallery/dive_02_template` documentation.
 
 
+.. _function-instance-names:
+
+Function Instance Names
+=======================
+
+Allo names a compiled function instance by starting with its Python function name and appending optional fields separated by ``__``. 
+The fields appear in this order: definition (``__def_D``), instance (``__N`` or ``__id_LABEL``), processing-element coordinates (``__pe_I_J``), and unfolded copy (``__clone_C``). 
+Enclosing dataflow scopes precede the function and are joined with ``__fn_``; an ordinary outermost dataflow entry is omitted.
+
+Users are allowed to use customized names:
+
+* A source function name must be a valid Python identifier without ``__``. Unicode identifiers and single underscores are allowed. For example, ``foo_1`` and ``_foo_`` are valid; ``foo__bar`` is not.
+* An explicit instance label must be a string containing only ASCII letters, digits, and single underscores, without ``__``. Empty strings are allowed. Labels such as ``"a-b"``, ``"a b"``, and ``"é"`` are invalid. Supply at most one label as an additional generic argument, such as ``foo[int32, 4, "A"](x)``. Labels appear unchanged after ``__id_``. 
+
+Reading Generated Names
+-----------------------
+
+.. list-table::
+   :header-rows: 1
+
+   * - Example
+     - Generated name
+     - Explanation
+   * - Ordinary helper or standalone entry ``foo``
+     - ``foo``
+     - No instance suffix is needed, even for an entry with ``instantiate=[...]``.
+   * - Automatic instances of ``foo``
+     - ``foo__0``, ``foo__1``
+     - The integer (non-negative decimal without leading zeros) distinguishes compiled instances of the same function.
+   * - Explicit label ``"A"``
+     - ``foo__id_A``
+     - ``id_`` marks a user-supplied string label.
+   * - Explicit label ``"0"``
+     - ``foo__id_0``
+     - The string label is distinct from automatic instance ``foo__0``.
+   * - Explicit label ``""``
+     - ``foo__id_``
+     - The empty label is distinct from having no label.
+   * - Source name ``foo_`` with automatic ID 0
+     - ``foo___0``
+     - The trailing underscore is preserved before the ``__`` separator.
+   * - Explicit label ``"_fn_x"``
+     - ``foo__id__fn_x``
+     - The label's leading underscore is preserved after ``__id_``.
+   * - Automatic instance of another definition spelled ``foo``
+     - ``foo__def_1__0``
+     - ``def_1`` distinguishes a different function with the same source name.
+   * - Dataflow kernel at grid coordinates (0, 1)
+     - ``gemm__pe_0_1``
+     - ``pe_`` gives each grid coordinate in mapping order.
+   * - Dataflow kernel inside region instance ``inner__0``
+     - ``inner__0__fn_gemm__pe_0_1``
+     - ``fn_`` separates the enclosing region instance from its kernel.
+   * - Helper called by a PE
+     - ``worker__pe_0__fn_helper__0``
+     - The enclosing PE distinguishes this helper's instance.
+   * - Unfolded copy of ``foo__0``
+     - ``foo__0__clone_0``
+     - ``clone_0`` distinguishes a copy created by unfolding.
+
+.. note::
+
+   The compiler assigns numeric IDs automatically if no explicit labels are provided. These IDs may change when the program changes and should not be treated as stable identifiers.
+   Use **explicit instance labels** to distinguish instances in scheduling code.
+   For optional implementation details, see :ref:`function-instance-numbering-internals`.
+
+Choosing Instance Labels
+------------------------
+
+Append a label after the generic arguments to give an instance a recognizable name. For example:
+
+.. code-block:: python
+
+    import allo
+    from allo.ir.types import int32
+
+    def worker[Offset](A: int32[4], B: int32[4]):
+        for i in allo.grid(4, name="update"):
+            B[i] = A[i] + Offset
+
+    def top(A: int32[4], B: int32[4], C: int32[4]):
+        worker[1](A, B)
+        worker[2, "A"](A, C)
+
+    s = allo.customize(top)
+
+The first call creates ``worker__0``. The second creates ``worker__id_A``: ``2`` is the generic argument, and ``"A"`` is the instance label.
+
+Child calls inherit the parent's string label, including through nongeneric helpers. 
+An explicit child label overrides inheritance for that call and its descendants; other calls in the parent still inherit the parent's label.
+An explicit empty label (``""``) also overrides inheritance.
+
+.. _instance-label-inheritance-example:
+
+For example, ``helper`` has no generic parameters, but it passes its inherited
+label on to ``leaf``:
+
+.. code-block:: python
+
+    import allo
+    from allo.ir.types import int32
+
+    def leaf[Offset](x: int32) -> int32:
+        return x + Offset
+
+    def helper(x: int32) -> int32:
+        return leaf[4](x)
+
+    def parent[Offset](x: int32) -> int32:
+        return helper(x) + leaf[Offset, "B"](x)
+
+    def labeled_top(x: int32) -> int32:
+        return parent[4, "A"](x)
+
+    labeled_schedule = allo.customize(labeled_top)
+
+The call to ``parent[4, "A"]`` creates ``parent__id_A``. 
+Its call to ``helper`` inherits ``"A"``, creating ``helper__id_A``, whose call to ``leaf[4]`` creates ``leaf__id_A``. 
+The explicit label in ``leaf[Offset, "B"]`` overrides ``"A"`` for that call, creating ``leaf__id_B``. 
+Both leaf instances use ``Offset=4``; the different labels keep them separate.
+
+Compatible calls with the same label share an instance of the same function in the same dataflow scope, whether the label is direct or inherited. 
+Reusing that label with incompatible generic arguments or enclosing compile-time values produces a compilation error.
+
+Scheduling Through Handles
+--------------------------
+
+Create ``s`` with ``allo.customize(top)``. It is the ``Schedule`` for the entry function ``top`` and the function instances it calls. 
+This complete example creates the schedule and pipelines both compiled instances of ``worker``:
+
+.. code-block:: python
+
+    import allo
+    from allo.ir.types import int32
+
+    def worker[Offset](A: int32[4], B: int32[4]):
+        for i in allo.grid(4, name="update"):
+            B[i] = A[i] + Offset
+
+    def top(A: int32[4], B: int32[4], C: int32[4]):
+        worker[1](A, B)
+        worker[2, "A"](A, C)
+
+    s = allo.customize(top)
+
+    for function in s.get_functions(worker):
+        loops = s.get_loops(function)
+        s.pipeline(loops.update.i)
+
+Here, ``s`` contains the compiled entry ``top``, ``worker__0`` with ``Offset=1``, and ``worker__id_A`` with ``Offset=2`` and label ``"A"``.
+``s.get_functions(worker)`` returns handles to the two worker instances.
+For each handle, ``s.get_loops(function)`` returns that instance's loop handles; ``loops.update.i`` identifies loop ``i`` in its ``update`` band.
+``s.pipeline(loops.update.i)`` updates ``s`` to pipeline that loop, so both worker instances are scheduled.
+
+Schedules can also be applied on objects identified by name.
+A qualified string such as ``s.pipeline("worker__id_A:i")`` selects just the labeled instance's loop.
+
+Use each function handle with the schedule that returned it. 
+After a transformation such as unfolding changes the compiled function instances, call ``s.get_functions(worker)`` again to obtain current handles.
+
+Selecting Instances for Composition
+-----------------------------------
+
+``destination.compose(source, id=...)`` applies ``source`` schedule to selected instances of its original Python function in ``destination``. 
+
+.. list-table::
+   :header-rows: 1
+
+   * - Selector
+     - Selected instances
+   * - Omitted ``id`` or ``id=None``
+     - Instances with no automatic ID or string label, if any exist. If not, use automatic instance 0.
+   * - ``id=0``, ``id=1``, etc.
+     - The specified automatic integer ID.
+   * - ``id="A"``, ``id="0"``, ``id=""``, etc.
+     - The string label, whether direct or inherited.
+   * - Omitted ``id`` when only labeled instances exist
+     - ``RuntimeError``; specify a label explicitly.
+   * - A selector with no matching instance
+     - ``RuntimeError``; there is no fallback to another ID or label.
+
+Use ``None``, a non-negative integer, or a valid string label as the selector.
+Selection includes all matching instances across dataflow scopes and surviving unfolded copies; ``id`` does not select a particular PE coordinate or copy number.
+
+Using the ``worker`` and ``top`` definitions above:
+
+.. code-block:: python
+
+    source = allo.customize(worker, instantiate=[2])
+    source.pipeline("i")
+    destination = allo.customize(top)
+    destination.compose(source, id="A")
+
+This pipelines ``worker__id_A`` and leaves ``worker__0`` unchanged.
+``instantiate=[2]`` supplies the generic argument for preparing the source schedule; ``id="A"`` selects the destination instance. 
+For the broader composition workflow, see :doc:`../gallery/dive_03_composition`.
+
+
+.. _function-instance-numbering-internals:
+
+Compiler Internals: Numbering Rules (Optional)
+---------------------------------------------
+
+This section describes how the compiler allocates numeric IDs. It is optional reference material; users do not need these rules to write or schedule Allo programs.
+
+Automatic IDs start at zero per function definition, in first-encounter order within a compilation. 
+Calls with matching generic arguments and enclosing compile-time values under the same parent instance reuse an ID; calls under different parent instances get separate instances. 
+Explicit labels do not consume automatic IDs. These numbers reset between compilations and can change when the program changes.
+
+Distinct definitions sharing a source name are numbered in first-encounter order: the first has no definition suffix, followed by ``__def_1``, ``__def_2``, and so on. 
+Aliases of the same Python function share a definition.
+Unfolded copies are numbered from zero per original instance; unfolding a copy uses the next copy number.
+
+
 Building and Execution
 ======================
 

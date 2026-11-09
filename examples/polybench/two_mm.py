@@ -78,11 +78,14 @@ def two_mm(concrete_type, p, r, q, s):
     sch.compose(sch1)
     sch.compose(sch2)
 
-    # sch.to(sch.out_AB, "mm2")
-    # sch.to(sch.out_ABC, "ele_add")
+    # for instance in sch.get_functions(mm2):
+    #     sch.to(sch.out_AB, instance.name.value)
+    # for instance in sch.get_functions(ele_add):
+    #     sch.to(sch.out_ABC, instance.name.value)
 
-    sch.dataflow("mm1")
-    sch.dataflow("mm2")
+    for function in (mm1, mm2):
+        for instance in sch.get_functions(function):
+            sch.dataflow(instance.name.value)
 
     return sch
 

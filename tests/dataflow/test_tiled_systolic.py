@@ -5,6 +5,7 @@ import os
 import pytest
 import re
 import allo
+from allo.utils import construct_kernel_name
 from allo.ir.types import int32, Stream
 import allo.dataflow as df
 import allo.backend.hls as hls
@@ -62,8 +63,9 @@ def top(A: int32[M, K], B: int32[K, N], C: int32[M, N]):
 
 
 def check_function_arguments(code, kernel_name, arg_count):
-    pattern = rf"{kernel_name}\((.*?)\);"
+    pattern = rf"{re.escape(kernel_name)}\((.*?)\);"
     matches = re.findall(pattern, code)
+    assert matches, f"Expected calls to {kernel_name} in HLS code"
     for match in matches:
         args = match.split(",")
         assert (
@@ -94,14 +96,22 @@ def test_tiled_systolic():
     P0, P1 = Mt + 2, Nt + 2
     mod = df.build(top, target="vhls")
     code = mod.hls_code
-    unused_kernels = {"gemm_0_0", "gemm_0_2", "gemm_2_0", "gemm_2_2"}
+    unused_kernels = {
+        construct_kernel_name("gemm", coordinates)
+        for coordinates in ((0, 0), (0, 2), (2, 0), (2, 2))
+    }
     for kernel in unused_kernels:
         assert kernel not in code, f"Expected {kernel} not in hls code"
-    check_function_arguments(code, "gemm_0_1", 4)
-    check_function_arguments(code, "gemm_1_0", 4)
-    check_function_arguments(code, "gemm_1_1", 7)
-    check_function_arguments(code, "gemm_1_2", 4)
-    check_function_arguments(code, "gemm_2_1", 4)
+    for coordinates, arg_count in (
+        ((0, 1), 4),
+        ((1, 0), 4),
+        ((1, 1), 7),
+        ((1, 2), 4),
+        ((2, 1), 4),
+    ):
+        check_function_arguments(
+            code, construct_kernel_name("gemm", coordinates), arg_count
+        )
     print("Passed!")
 
 

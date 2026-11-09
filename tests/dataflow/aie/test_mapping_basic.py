@@ -2,11 +2,23 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import allo
+from allo.utils import construct_kernel_name
 from allo.ir.types import Stream, int32
 import allo.dataflow as df
 import numpy as np
 from allo.memory import Layout
 from allo.backend.aie import is_available
+
+
+def _pe(prefix, *coordinates):
+    """Resolve a frontend processing element used by the AIE mapping graph."""
+    return construct_kernel_name(prefix, coordinates)
+
+
+def _bundle_name(node, count):
+    """Name a bundled AIE graph node from its first member and size."""
+    return f"{node}x{count}"
+
 
 S = Layout.Shard
 R = Layout.Replicate
@@ -30,7 +42,12 @@ def test_vector_scalar_add_v1():
         mod = df.build(
             top,
             target="aie",
-            mapping_primitives=[("bundle", ["core_0", "core_1", "core_2", "core_3"])],
+            mapping_primitives=[
+                (
+                    "bundle",
+                    [_pe("core", 0), _pe("core", 1), _pe("core", 2), _pe("core", 3)],
+                )
+            ],
         )
         mod(A, B)
         np.testing.assert_allclose(B, A + 1)
@@ -58,8 +75,8 @@ def test_vector_scalar_add_v2():
             top,
             target="aie",
             mapping_primitives=[
-                ("bundle", ["core_0", "core_1"]),
-                ("bundle", ["core_2", "core_3"]),
+                ("bundle", [_pe("core", 0), _pe("core", 1)]),
+                ("bundle", [_pe("core", 2), _pe("core", 3)]),
             ],
         )
         mod(A, B)
@@ -88,11 +105,17 @@ def test_vector_scalar_add_v3():
             top,
             target="aie",
             mapping_primitives=[
-                ("bundle", ["core_0", "core_1"]),  # -> bundled_node_name: core_0
-                ("bundle", ["core_2", "core_3"]),  # -> bundled_node_name: core_2
                 (
                     "bundle",
-                    ["core_0x2", "core_2x2"],
+                    [_pe("core", 0), _pe("core", 1)],
+                ),  # First group of PEs.
+                (
+                    "bundle",
+                    [_pe("core", 2), _pe("core", 3)],
+                ),  # Second group of PEs.
+                (
+                    "bundle",
+                    [_bundle_name(_pe("core", 0), 2), _bundle_name(_pe("core", 2), 2)],
                 ),  # name after bundled, may be confusing
             ],
         )
@@ -128,7 +151,7 @@ def test_producer_consumer():
         mod = df.build(
             top,
             target="aie",
-            mapping_primitives=[("chain", ["producer_0", "consumer_0"])],
+            mapping_primitives=[("chain", [_pe("producer", 0), _pe("consumer", 0)])],
         )
         mod(A, B)
         np.testing.assert_allclose(A + 1, B, atol=1e-5)

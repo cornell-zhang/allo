@@ -1,6 +1,8 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import tempfile
+
 import numpy as np
 import allo
 from allo.ir.types import float32, int32, Stream
@@ -114,12 +116,18 @@ def test_convolution():
 
     print("Simulation passed!")
 
-    mod = df.build(top, target="vitis_hls", mode="hw_emu")
-    if hls.is_available("vitis_hls"):
-        C_sys = np.zeros((OR, OC), dtype=np.float32)
-        mod(A, B, C_sys)
-        np.testing.assert_allclose(C_sys, test_C, atol=1e-5)
-        print("Passed!")
+    schedule = df.customize(top)
+    # PEs share input reads and update distinct output elements. Partitioning
+    # supplies independent elements instead of shared dataflow RAM channels.
+    for name in ("A", "B", "C"):
+        schedule.partition(f"{schedule.top_func_name}:{name}", dim=0)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        mod = schedule.build(target="vitis_hls", mode="hw_emu", project=tmpdir)
+        if hls.is_available("vitis_hls"):
+            C_sys = np.zeros((OR, OC), dtype=np.float32)
+            mod(A, B, C_sys)
+            np.testing.assert_allclose(C_sys, test_C, atol=1e-5)
+            print("Passed!")
 
 
 if __name__ == "__main__":

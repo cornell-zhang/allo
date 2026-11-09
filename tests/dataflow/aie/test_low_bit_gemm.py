@@ -6,10 +6,22 @@ import os
 
 import pytest
 import allo
+from allo.utils import construct_kernel_name
 from allo.ir.types import int4, int8, Stream
 import allo.dataflow as df
 from allo.memory import Layout
 from allo.backend.aie import is_available
+
+
+def _pe(prefix, *coordinates):
+    """Resolve a frontend processing element used by the AIE mapping graph."""
+    return construct_kernel_name(prefix, coordinates)
+
+
+def _chain_name(*nodes):
+    """Name the AIE graph node formed by chaining these ordered nodes."""
+    return "-".join(nodes)
+
 
 S = Layout.Shard
 R = Layout.Replicate
@@ -164,10 +176,11 @@ def gen_gemm_mapping_primitive(Pm, Pn, Pk, col_num=4, row_num=4):
     for i in range(Pm):
         bases.append([])
         for j in range(Pn):
-            base = f"gemm_0_{i}_{j}"
+            base = _pe("gemm", 0, i, j)
             for k in range(1, Pk):
-                mapping_primitives.append(("chain", [base, f"gemm_{k}_{i}_{j}"]))
-                base += f"-gemm_{k}_{i}_{j}"
+                node = _pe("gemm", k, i, j)
+                mapping_primitives.append(("chain", [base, node]))
+                base = _chain_name(base, node)
             bases[i].append(base)
 
     if Pn // col_num < 1 or Pm // row_num < 1:
@@ -192,12 +205,7 @@ def gen_gemm_mapping_primitive(Pm, Pn, Pk, col_num=4, row_num=4):
     os.environ.get("NPU2") == "1",
     reason="Skipped because external kernel not supported on XDNA2",
 )
-@pytest.mark.parametrize(
-    "M, N, K, Pm, Pn, Pk",
-    [
-        (512, 512, 512, 8, 4, 4),
-    ],
-)
+@pytest.mark.parametrize("M, N, K, Pm, Pn, Pk", [(512, 512, 512, 8, 4, 4)])
 def test_pingpong_mixed_gemm(M, N, K, Pm, Pn, Pk):
     TyI = int8
     TyI_l = int4

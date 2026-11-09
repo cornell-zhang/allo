@@ -82,16 +82,17 @@ def three_mm(concrete_type, p, r, q, t, s):
     sch.compose(sch1)
     sch.compose(sch2)
 
-    # sch.to(sch.out_AB, "mm3")
-    # sch.to(sch.out_CD, "mm3")
+    # for instance in sch.get_functions(mm3):
+    #     sch.to(sch.out_AB, instance.name.value)
+    #     sch.to(sch.out_CD, instance.name.value)
 
     sch.partition(sch.B, dim=2)
     sch.partition(sch.C, dim=2)
     sch.partition(sch.out_CD, dim=0)
 
-    sch.dataflow("mm1")
-    sch.dataflow("mm2")
-    sch.dataflow("mm3")
+    for function in (mm1, mm2, mm3):
+        for instance in sch.get_functions(function):
+            sch.dataflow(instance.name.value)
 
     return sch
 

@@ -6,7 +6,6 @@
 import gc
 import ast
 import copy
-import inspect
 import itertools
 import numpy as np
 from .._mlir.ir import (
@@ -60,12 +59,9 @@ from .utils import (
     MockBuffer,
     get_extra_type_hints,
     get_kwarg_value,
-    get_func_id_from_param_types,
-    assign_instance_id,
-    resolve_generic_types,
-    parse_ast,
+    bind_generic_types,
 )
-from .infer import TypeInferer
+from . import names as naming
 from .types import (
     AlloType,
     Int,
@@ -217,7 +213,9 @@ class ASTTransformer(ASTBuilder):
                 return op_
             return ret
         if node.id in ctx.global_vars:
-            return MockConstant(ctx.global_vars[node.id], ctx)
+            return MockConstant(
+                ctx.global_vars[node.id], ctx, dtype=getattr(node, "dtype", None)
+            )
         raise RuntimeError("Unsupported Name")
 
     @staticmethod
@@ -1884,9 +1882,9 @@ class ASTTransformer(ASTBuilder):
             if not hasattr(ctx, "stateful_counter"):
                 ctx.stateful_counter = 0
             ctx.stateful_counter += 1
-            func_name = ctx.top_func_tree.name if ctx.top_func_tree else "kernel"
+            func_name = ctx.top_func.name.value
             global_name = (
-                f"__stateful_{func_name}_{node.target.id}_{ctx.stateful_counter}"
+                f"__stateful_{func_name}__var_{node.target.id}_{ctx.stateful_counter}"
             )
 
             # Check if already in stateful_var_map (avoid redeclaration)
@@ -1999,8 +1997,8 @@ class ASTTransformer(ASTBuilder):
 
     @staticmethod
     def build_FunctionDef(ctx: ASTContext, node: ast.FunctionDef):
-        func_name = node.name if ctx.func_id is None else f"{node.name}_{ctx.func_id}"
-        # pylint: disable=too-many-nested-blocks
+        if naming.defer_definition(ctx, node):
+            return None
         if ctx.top_func is not None:
             # Nested function def
             # Create a new context to avoid name collision
@@ -2010,112 +2008,56 @@ class ASTTransformer(ASTBuilder):
             ctx.top_func_tree = node
             ctx.buffers = old_ctx.buffers.copy()
             ctx.scopes = old_ctx.scopes
-            for decorator in node.decorator_list:
-                if isinstance(decorator, ast.Call):
-                    if isinstance(decorator.func, ast.Attribute):
-                        if decorator.func.attr == "kernel":
-                            assert len(decorator.keywords) > 0, "Missing kernel mapping"
-                            mapping = eval(
-                                ast.unparse(decorator.keywords[0].value),
-                                ctx.global_vars,
-                            )
-                            orig_name = node.name
-                            if orig_name not in ctx.func_tag2instance:
-                                ctx.func_tag2instance[orig_name] = {}
-                            # Initialize dict to store kernel instance names for call insertion
-                            if not hasattr(ctx, "_kernel_instance_names"):
-                                ctx._kernel_instance_names = {}
-                            for dim in np.ndindex(*mapping):
-                                if not ctx.unroll:
-                                    # If not unrolled, assign tag to each instance.
-                                    # Different tags indeicate different execution (control flow only)
-                                    predicate_tag = freeze_list(
-                                        ctx.func_predicate_tags[orig_name][dim]
-                                    )
-                                    if (
-                                        predicate_tag
-                                        in ctx.func_tag2instance[orig_name]
-                                    ):
-                                        continue
-                                new_ctx = old_ctx.copy()
-                                new_ctx.top_func = old_ctx.top_func
-                                new_ctx.set_ip(old_ctx.top_func)
-                                new_ctx.top_func_tree = node
-                                new_ctx.buffers = old_ctx.buffers.copy()
-                                new_ctx.scopes = old_ctx.scopes
-                                new_ctx.global_vars = old_ctx.global_vars.copy()
-                                for axis, val in enumerate(dim):
-                                    new_ctx.global_vars.update(
-                                        {"df.p" + str(axis): val}
-                                    )
-                                # Set the current rank for np_values_for_pid lookup
-                                new_ctx.rank = dim
-                                node.name = construct_kernel_name(orig_name, dim)
-                                # Append suffix from parent context to ensure uniqueness
-                                if hasattr(ctx, "func_suffix"):
-                                    node.name = f"{node.name}_{ctx.func_suffix}"
-                                # Store the kernel name for later call insertion
-                                # Use ctx since AST is reparsed for each region call
-                                ctx._kernel_instance_names[(orig_name, dim)] = node.name
+            decorator = next(filter(naming.is_kernel, node.decorator_list), None)
+            if decorator is not None:
+                mapping, _ = naming.kernel_arguments(ctx, decorator)
+                orig_name = node.name
+                prefix = naming.kernel_prefix(old_ctx, node)
+                if prefix not in ctx.func_tag2instance:
+                    ctx.func_tag2instance[prefix] = {}
+                for dim in np.ndindex(*mapping):
+                    if not ctx.unroll:
+                        # If not unrolled, assign tag to each instance.
+                        # Different tags indeicate different execution (control flow only)
+                        predicate_tag = freeze_list(
+                            ctx.func_predicate_tags[prefix][dim]
+                        )
+                        if predicate_tag in ctx.func_tag2instance[prefix]:
+                            continue
+                    new_ctx = naming.kernel_context(old_ctx, dim)
+                    new_ctx.top_func = old_ctx.top_func
+                    new_ctx.set_ip(old_ctx.top_func)
+                    new_ctx.top_func_tree = node
+                    new_ctx.buffers = old_ctx.buffers.copy()
+                    node.name = construct_kernel_name(prefix, dim)
+                    node.allo_generated = True
 
-                                # Update func_suffix for children
-                                instance_suffix = "_".join([str(x) for x in dim])
-                                if hasattr(ctx, "func_suffix"):
-                                    new_ctx.func_suffix = (
-                                        f"{instance_suffix}_{ctx.func_suffix}"
-                                    )
-                                else:
-                                    new_ctx.func_suffix = instance_suffix
+                    # Create a copy of the node to avoid modifying the original AST
+                    # and remove the kernel decorator to prevent infinite recursion
+                    new_node = copy.copy(node)
+                    new_node.decorator_list = [
+                        d for d in node.decorator_list if not naming.is_kernel(d)
+                    ]
 
-                                # Create a copy of the node to avoid modifying the original AST
-                                # and remove the kernel decorator to prevent infinite recursion
-                                new_node = copy.copy(node)
-                                new_node.decorator_list = [
-                                    d
-                                    for d in node.decorator_list
-                                    if not (
-                                        isinstance(d, ast.Call)
-                                        and isinstance(d.func, ast.Attribute)
-                                        and d.func.attr == "kernel"
-                                    )
-                                ]
-
-                                func_op = ASTTransformer.build_FunctionDef(
-                                    new_ctx, new_node
-                                )
-                                func_op.attributes["df.kernel"] = UnitAttr.get()
-                                # Mark kernels inside sub-regions so they aren't called from top
-                                if hasattr(ctx, "func_suffix"):
-                                    func_op.attributes["df.nested_kernel"] = (
-                                        UnitAttr.get()
-                                    )
-                                if not ctx.unroll:
-                                    func_op.attributes["tag"] = StringAttr.get(
-                                        f"{orig_name}_{str(predicate_tag)}"
-                                    )
-                                    ctx.func_tag2instance[orig_name][
-                                        predicate_tag
-                                    ] = func_op
-                                # Restore original name for next iteration
-                                node.name = orig_name
-                            return
-
-                        if decorator.func.attr == "region":
-                            # If it is a region, we should insert the calls to the kernels
-                            pass
+                    func_op = ASTTransformer.build_FunctionDef(new_ctx, new_node)
+                    func_op.attributes["df.kernel"] = UnitAttr.get()
+                    # Mark kernels inside sub-regions so they aren't called from top
+                    if ctx.function and ctx.function.scope:
+                        func_op.attributes["df.nested_kernel"] = UnitAttr.get()
+                    if not ctx.unroll:
+                        func_op.attributes["tag"] = StringAttr.get(
+                            f"{prefix}_{str(predicate_tag)}"
+                        )
+                        ctx.func_tag2instance[prefix][predicate_tag] = func_op
+                    # Restore original name for next iteration
+                    node.name = orig_name
+                    node.allo_generated = False
+                return
         else:
             old_ctx = None
 
-        # Generic function
-        if hasattr(node, "type_params") and len(node.type_params) > 0:
-            assert len(ctx.inst) == len(
-                node.type_params
-            ), f"Type parameters mismatch, got {ctx.inst} and {node.type_params}"
-            for type_var, call_val in zip(node.type_params, ctx.inst):
-                name, call_val = resolve_generic_types(
-                    ctx.global_vars, type_var, call_val
-                )
-                ctx.global_vars[name] = call_val
+        func_name = naming.prepare_function(ctx, node)
+        bind_generic_types(ctx, node)
 
         # Build input types
         dtensors = []
@@ -2154,31 +2096,20 @@ class ASTTransformer(ASTBuilder):
         # Build return type
         output_types = []
         output_typehints = []
-        if not (
-            (isinstance(node.returns, ast.Constant) and node.returns.value is None)
-            or node.returns is None
-        ):
-            if isinstance(node.returns, ast.Tuple):
-                # Multiple returns
-                for ret in node.returns.elts:
-                    output_types.append(
-                        ASTTransformer.build_shaped_type(ctx, ret.dtype, ret.shape)
-                    )
-                    output_typehints.append(get_extra_type_hints(ret.dtype))
-            else:
-                # Single return
-                output_types.append(
-                    ASTTransformer.build_shaped_type(
-                        ctx, node.returns.dtype, node.returns.shape
-                    )
-                )
-                output_typehints.append(get_extra_type_hints(node.returns.dtype))
+        for ret in node.allo_returns:
+            output_types.append(
+                ASTTransformer.build_shaped_type(ctx, ret.dtype, ret.shape)
+            )
+            output_typehints.append(get_extra_type_hints(ret.dtype))
 
         # Build function
         with ctx.block_scope_guard():
             # pylint: disable=unexpected-keyword-arg, no-value-for-parameter
             func_type = FunctionType.get(input_types, output_types)
             func_op = func_d.FuncOp(name=func_name, type=func_type, ip=ctx.get_ip())
+            func_op.attributes["allo.origin"] = StringAttr.get(
+                naming.origin_text(ctx.origin)
+            )
             func_op.add_entry_block()
             # attach type hints
             func_op.attributes["otypes"] = StringAttr.get("".join(output_typehints))
@@ -2198,62 +2129,26 @@ class ASTTransformer(ASTBuilder):
             # Insert calls to the kernels in the region (must be inside scope where args are visible)
             if getattr(node, "is_region", False):
                 for stmt in node.body:
-                    if isinstance(stmt, ast.FunctionDef):
-                        # Check if it is a kernel
-                        for decorator in stmt.decorator_list:
-                            if (
-                                isinstance(decorator, ast.Call)
-                                and isinstance(decorator.func, ast.Attribute)
-                                and decorator.func.attr == "kernel"
-                            ):
-                                # It is a kernel, insert calls
-                                assert (
-                                    len(decorator.keywords) > 0
-                                ), "Missing kernel mapping"
-                                mapping = eval(
-                                    ast.unparse(decorator.keywords[0].value),
-                                    ctx.global_vars,
-                                )
-                                # Get arguments
-                                args_kw = get_kwarg_value(decorator.keywords, "args")
-                                if args_kw is not None:
-                                    args = build_stmts(ctx, args_kw)
-                                    arg_values = [
-                                        ASTTransformer.get_mlir_op_result(ctx, arg)
-                                        for arg in args
-                                    ]
-                                else:
-                                    arg_values = []
-                                # Insert calls
-                                for dim in np.ndindex(*mapping):
-                                    # Use stored kernel name from ctx (set during kernel definition)
-                                    # This ensures call uses the exact same name as definition
-                                    key = (stmt.name, dim)
-                                    if (
-                                        hasattr(ctx, "_kernel_instance_names")
-                                        and key in ctx._kernel_instance_names
-                                    ):
-                                        kernel_name = ctx._kernel_instance_names[key]
-                                    else:
-                                        kernel_name = construct_kernel_name(
-                                            stmt.name, dim
-                                        )
-                                        # Append suffix from parent context to match kernel definition
-                                        if hasattr(ctx, "func_suffix"):
-                                            kernel_name = (
-                                                f"{kernel_name}_{ctx.func_suffix}"
-                                            )
-                                    # We need to resolve the tag for the kernel
-                                    # FIXME: checking the tag mapping is tricky here,
-                                    # we assume there is no tag mismatch for now
-                                    # if stmt.name in ctx.func_tag2instance:
-                                    #     ...
-                                    func_d.CallOp(
-                                        [],
-                                        FlatSymbolRefAttr.get(kernel_name),
-                                        arg_values,
-                                        ip=ctx.get_ip(),
-                                    )
+                    if not isinstance(stmt, ast.FunctionDef):
+                        continue
+                    decorator = next(
+                        filter(naming.is_kernel, stmt.decorator_list), None
+                    )
+                    if decorator is None:
+                        continue
+                    mapping, args = naming.kernel_arguments(ctx, decorator)
+                    arg_values = [
+                        ASTTransformer.get_mlir_op_result(ctx, arg)
+                        for arg in build_stmts(ctx, args)
+                    ]
+                    prefix = naming.kernel_prefix(ctx, stmt)
+                    for dim in np.ndindex(*mapping):
+                        func_d.CallOp(
+                            [],
+                            FlatSymbolRefAttr.get(construct_kernel_name(prefix, dim)),
+                            arg_values,
+                            ip=ctx.get_ip(),
+                        )
 
             # node.returns is the function definition, not the actual return operation
             if len(stmts) > 0 and not ctx.has_return:
@@ -2268,7 +2163,7 @@ class ASTTransformer(ASTBuilder):
         if old_ctx is not None:
             ctx = old_ctx
         # Add the built function to global variable for later reference
-        ctx.global_vars[func_name] = func_op
+        ctx.names.built[func_name] = func_op
 
         return func_op
 
@@ -2533,36 +2428,62 @@ class ASTTransformer(ASTBuilder):
             new_name = vid
         return new_name, symbolic_slice, iterator_infos
 
+    @staticmethod
+    def build_function_arguments(ctx, node, signature):
+        if len(node.args) != len(signature.args.args):
+            raise ValueError(f"Argument count mismatch for {signature.name}")
+        arguments = []
+        for actual, formal in zip(node.args, signature.args.args):
+            value = build_stmt(ctx, actual)
+            if formal.shape == ():
+                value = ASTTransformer.build_cast_op(
+                    ctx, value, actual.dtype, formal.dtype
+                )
+            arguments.append(ASTTransformer.get_mlir_op_result(ctx, value))
+        return arguments
+
+    @staticmethod
+    def build_user_call(ctx, obj, node, parameters, is_region=False):
+        # Resolve the callee before evaluating nested argument calls.
+        value = naming.resolve_instance(ctx, obj, node, parameters)
+        func_name = naming.format_function_name(value)
+        arguments = ASTTransformer.build_function_arguments(
+            ctx, node, ctx.names.inferred[func_name]
+        )
+        func_op = ctx.names.built.get(func_name)
+        if func_op is None:
+            func_ctx = ctx.copy()
+            func_ctx.global_vars = naming.function_environment(ctx, obj)
+            func_ctx.callee_name = value
+            func_ctx.inst = node.allo_parameters
+            func_node = copy.deepcopy(ctx.names.inferred[func_name])
+            if is_region:
+                func_ctx.top_func = None
+                func_node.is_region = True
+                func_ctx.ip_stack = [ctx.ip_stack[0]]
+            else:
+                func_ctx.call_args = arguments
+                func_ctx.set_ip(ctx.top_func)
+            func_op = ASTTransformer.build_FunctionDef(func_ctx, func_node)
+            if is_region:
+                func_op.attributes["dataflow"] = UnitAttr.get()
+            else:
+                for name, buffer in func_ctx.buffers.items():
+                    if isinstance(buffer, (memref_d.AllocOp, MockArg)):
+                        setattr(obj, name, MockBuffer(func_name, name))
+        call_op = func_d.CallOp(
+            [] if is_region else func_op.type.results,
+            FlatSymbolRefAttr.get(func_name),
+            arguments,
+            ip=ctx.get_ip(),
+        )
+        call_op.attributes["allo.callsite"] = StringAttr.get(naming.callsite(ctx, node))
+        return call_op
+
     # pylint: disable=too-many-return-statements, too-many-function-args, too-many-nested-blocks
     @staticmethod
     def build_Call(ctx: ASTContext, node: ast.Call, out_buffer: OpView = None):
-        original_func_id = ctx.func_id
-        if isinstance(node.func, ast.Name):
-            obj = ASTResolver.resolve(node.func, ctx.global_vars)
-            obj_name = node.func.id
-        elif isinstance(node.func, ast.Attribute):
-            obj = ASTResolver.resolve(node.func, ctx.global_vars)
-            obj_name = node.func.attr
-        elif isinstance(node.func, ast.Subscript):
-            obj = ASTResolver.resolve(node.func.value, ctx.global_vars)
-            assert obj is not None, "Unsupported function call"
-            obj_name = (
-                node.func.value.id if isinstance(obj, func_d.FuncOp) else obj.__name__
-            )
-            ctx.global_vars[obj_name] = obj
-            ctx.inst = ASTResolver.resolve_param_types(node.func.slice, ctx.global_vars)
-            func_id = get_func_id_from_param_types(ctx.inst)
-            if func_id is None:
-                ctx.func_id = assign_instance_id(
-                    ctx.func_name2id, obj_name, ctx.inst, ctx.func_id
-                )
-            elif ctx.func_id is None:  # an explicit id in the parameters
-                ctx.inst.remove(func_id)
-                func_dict = ctx.func_name2id.setdefault(obj_name, {})
-                func_dict[func_id] = tuple(ctx.inst)
-                ctx.func_id = func_id
-        else:
-            raise RuntimeError("Unsupported function call")
+        obj, parameters = ASTResolver.resolve_call(node, ctx.global_vars)
 
         if obj is None:
             if isinstance(node.func, ast.Attribute):
@@ -2665,89 +2586,10 @@ class ASTTransformer(ASTBuilder):
                 )
             raise RuntimeError(f"Cannot resolve function `{node.func.id}`")
 
-        # Check if it is a Allo dataflow region/kernel (has mappings attribute from @df.region decorator)
         if hasattr(obj, "mappings"):
-
-            # It is a dataflow region/kernel
-            # We need to build it first
-            src = inspect.getsource(obj)
-            tree = parse_ast(src)
-            # Find the function definition
-            # The structure should be Module -> FunctionDef
-            assert isinstance(tree, ast.Module)
-            assert isinstance(tree.body[0], ast.FunctionDef)
-            func_def = tree.body[0]
-            original_name = func_def.name
-
-            # Run type inference on the tree before building
-            # We need a fresh type inference context
-            type_inf_ctx = ASTContext(
-                tree=tree,
-                global_vars=ctx.global_vars.copy(),
-                mlir_ctx=ctx.mlir_ctx,
+            return ASTTransformer.build_user_call(
+                ctx, obj, node, parameters, is_region=True
             )
-            # Propagate type parameters from subscript call (e.g., inner[2, 2])
-            if ctx.inst is not None:
-                type_inf_ctx.inst = ctx.inst
-            tree = TypeInferer()(type_inf_ctx, tree)
-            func_def = tree.body[0]
-
-            if not isinstance(node.func, ast.Attribute) or node.func.attr != "kernel":
-                # Mark as region so we can insert calls later
-                func_def.is_region = True
-                # Resolve naming collision by appending suffix
-                # Use type parameters as part of the suffix for uniqueness
-                if ctx.inst is not None:
-                    # Create suffix from type parameters (e.g., "2_2" for inner[2, 2])
-                    inst_suffix = "_".join(str(x) for x in ctx.inst)
-                    if hasattr(ctx, "func_suffix"):
-                        func_def.name = (
-                            f"{original_name}_{inst_suffix}_{ctx.func_suffix}"
-                        )
-                    else:
-                        func_def.name = f"{original_name}_{inst_suffix}"
-                elif hasattr(ctx, "func_suffix"):
-                    func_def.name = f"{original_name}_{ctx.func_suffix}"
-
-            # Create a new context
-            new_ctx = ctx.copy()
-            # Clear top_func to avoid nested definition behavior which assumes context sharing
-            # recursive build should start fresh but share globals/module
-            new_ctx.top_func = None
-            # Clear func_id since we already handle uniqueness via func_suffix and type parameters
-            # Otherwise func_id would append another suffix in build_FunctionDef
-            new_ctx.func_id = None
-            # We need to set the insertion point to the module body
-            # because the function op should be at the top level
-            # The first IP in the stack should be the module body
-            new_ctx.ip_stack = [ctx.ip_stack[0]]
-            # Propagate type parameters from subscript call (e.g., inner[2, 2])
-            if ctx.inst is not None:
-                new_ctx.inst = ctx.inst
-                # Set func_suffix for kernels inside the region based on type parameters
-                inst_suffix = "_".join(str(x) for x in ctx.inst)
-                if hasattr(ctx, "func_suffix"):
-                    new_ctx.func_suffix = f"{inst_suffix}_{ctx.func_suffix}"
-                else:
-                    new_ctx.func_suffix = inst_suffix
-
-            func_op = ASTTransformer.build_FunctionDef(new_ctx, func_def)
-            func_op.attributes["dataflow"] = UnitAttr.get()
-
-            # Now insert the call
-            # Parse arguments
-            new_args = build_stmts(ctx, node.args)
-            arg_values = [
-                ASTTransformer.get_mlir_op_result(ctx, arg) for arg in new_args
-            ]
-
-            call_op = func_d.CallOp(
-                [],
-                FlatSymbolRefAttr.get(func_def.name),
-                arg_values,
-                ip=ctx.get_ip(),
-            )
-            return call_op
 
         try:
             from ..backend.aie.vliw import VLIWKernelFunction
@@ -3197,62 +3039,39 @@ class ASTTransformer(ASTBuilder):
                 ]
                 input_types = [arg.type for arg in arg_results]
                 output_types = [input_types[0]]
-                func_op = func_d.FuncOp(
-                    name=f"{fn_name}_{abs(hash(node))}",
-                    type=FunctionType.get(input_types, output_types),
-                    ip=InsertionPoint(ctx.top_func),
+                library_origin = (
+                    "library",
+                    fn_name,
+                    ctx.origin,
+                    node.lineno,
+                    node.col_offset,
                 )
-                func_op.attributes["sym_visibility"] = StringAttr.get("private")
+                base = ctx.names.base(fn_name, library_origin)
+                value = ctx.names.instance(
+                    base,
+                    [str(arg_type) for arg_type in input_types],
+                    None,
+                )
+                symbol = naming.format_function_name(value)
+                if symbol not in ctx.names.built:
+                    func_op = func_d.FuncOp(
+                        name=symbol,
+                        type=FunctionType.get(input_types, output_types),
+                        ip=InsertionPoint(ctx.top_func),
+                    )
+                    func_op.attributes["sym_visibility"] = StringAttr.get("private")
+                    func_op.attributes["allo.library"] = StringAttr.get(fn_name)
+                    ctx.names.built[symbol] = func_op
                 call_op = func_d.CallOp(
                     [arg_results[0].type],
-                    FlatSymbolRefAttr.get(f"{fn_name}_{abs(hash(node))}"),
+                    FlatSymbolRefAttr.get(symbol),
                     arg_results,
                     ip=ctx.get_ip(),
                 )
                 return call_op
             raise RuntimeError(f"Unsupported function {fn_name} with type {arg_types}")
 
-        # User-defined subfunction
-        func = ctx.global_vars[obj_name]
-        new_args = [
-            ASTTransformer.get_mlir_op_result(ctx, stmt)
-            for stmt in build_stmts(ctx, node.args)
-        ]
-        func_name = obj_name if ctx.func_id is None else f"{obj_name}_{ctx.func_id}"
-        if func_name not in ctx.global_vars or not isinstance(
-            ctx.global_vars[func_name], func_d.FuncOp
-        ):  # function not built yet
-            # Create a new context to avoid name collision
-            func_ctx = ctx.copy()
-            func_ctx.call_args = new_args
-            func_ctx.set_ip(ctx.top_func)
-            stmts = build_stmts(func_ctx, node.tree.body)
-            func_ctx.pop_ip()
-            func_ctx.call_args = []
-            for key, value in func_ctx.global_vars.items():
-                if isinstance(value, func_d.FuncOp):
-                    ctx.global_vars[key] = value
-            # Attach buffers to function
-            # FIXME: Should create subschedule
-            for name, buffer in func_ctx.buffers.items():
-                if isinstance(buffer, (memref_d.AllocOp, MockArg)):
-                    # Intermediate buffers and function arguments
-                    setattr(func, name, MockBuffer(func_name, name))
-        elif isinstance(func, func_d.FuncOp):
-            # Has already been defined in the top-level scope
-            stmts = [func]
-        else:
-            stmts = [ctx.global_vars[func_name]]
-
-        # Build call function in the top-level
-        call_op = func_d.CallOp(
-            stmts[-1].type.results,
-            FlatSymbolRefAttr.get(func_name),
-            new_args,
-            ip=ctx.get_ip(),
-        )
-        ctx.func_id = original_func_id
-        return call_op
+        return ASTTransformer.build_user_call(ctx, obj, node, parameters)
 
     @staticmethod
     def build_library_op(
@@ -3697,23 +3516,18 @@ class ASTTransformer(ASTBuilder):
             ), "Only support three arguments (lower, upper bound, and step) for `allo.meta_for()`"
             var = node.items[0].optional_vars.id
             rargs = [
-                ASTResolver.resolve_constant(node.items[0].context_expr.args[0], ctx)
+                ASTResolver.resolve_constant(arg, ctx)
+                for arg in node.items[0].context_expr.args
             ]
-            if len(node.items[0].context_expr.args) > 1:
-                rargs.append(
-                    ASTResolver.resolve_constant(
-                        node.items[0].context_expr.args[1], ctx
-                    )
-                )
-            if len(node.items[0].context_expr.args) > 2:
-                rargs.append(
-                    ASTResolver.resolve_constant(
-                        node.items[0].context_expr.args[2], ctx
-                    )
-                )
-            if ctx.unroll or node in ctx.meta_fors_to_unroll:
+            if (
+                ctx.unroll
+                or node in ctx.meta_fors_to_unroll
+                or getattr(node, "allo_unroll", False)
+            ):
                 for i in range(*rargs):
-                    with ctx.block_scope_guard():
+                    with ctx.block_scope_guard(), naming.meta_iteration(
+                        ctx, node, var, i
+                    ):
                         ctx.global_vars[var] = i
                         build_stmts(ctx, node.body)
                         ctx.global_vars.pop(var)

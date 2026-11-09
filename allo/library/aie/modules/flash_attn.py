@@ -6,6 +6,7 @@ import allo
 from allo.ir.types import bfloat16, Stream
 import allo.dataflow as df
 from allo.memory import Layout
+from allo.utils import construct_kernel_name
 from allo.backend.aie.external_kernel import ExternalModule
 
 S = Layout.Shard
@@ -128,36 +129,27 @@ def FA(SEQ_LEN, HEAD_DIM, Q_tile_size, q_chunk_size, kv_chunk_size):
 
     mapping_primitives_ = []
     sub_graphs = []
+    chunks = SEQ_LEN // kv_chunk_size
     for idx in range(iteration):
-        if SEQ_LEN // kv_chunk_size > 1:
-            nodes = [
-                f"cal_attn_score_{idx}_{i}" for i in range(SEQ_LEN // kv_chunk_size)
-            ]
-            mapping_primitives_.append(("bundle", nodes))
-            nodes = [f"attn_{idx}_{i}" for i in range(SEQ_LEN // kv_chunk_size)]
-            mapping_primitives_.append(("bundle", nodes))
-            mapping_primitives_.append(
-                (
-                    "chain",
-                    [
-                        f"send_q_{idx}_0",
-                        f"cal_attn_score_{idx}_0x{SEQ_LEN // kv_chunk_size}",
-                    ],
-                )
-            )
-            sub_graphs.append(
-                (
-                    f"send_q_{idx}_0-cal_attn_score_{idx}_0x{SEQ_LEN // kv_chunk_size}",
-                    f"cal_softmax_{idx}_0",
-                    f"attn_{idx}_0x{SEQ_LEN // kv_chunk_size}",
-                    f"acc_{idx}_0",
-                )
+        sender = construct_kernel_name("send_q", (idx, 0))
+        score = construct_kernel_name("cal_attn_score", (idx, 0))
+        if chunks > 1:
+            bundled = {}
+            for prefix in ("cal_attn_score", "attn"):
+                nodes = [construct_kernel_name(prefix, (idx, i)) for i in range(chunks)]
+                mapping_primitives_.append(("bundle", nodes))
+                bundled[prefix] = f"{nodes[0]}x{chunks}"
+            score = bundled["cal_attn_score"]
+            sub_graph = (
+                "-".join((sender, score)),
+                construct_kernel_name("cal_softmax", (idx, 0)),
+                bundled["attn"],
+                construct_kernel_name("acc", (idx, 0)),
             )
         else:
-            mapping_primitives_.append(
-                ("chain", [f"send_q_{idx}_0", f"cal_attn_score_{idx}_0"])
-            )
-            sub_graphs.append((f"send_q_{idx}_0-cal_attn_score_{idx}_0",))
+            sub_graph = ("-".join((sender, score)),)
+        mapping_primitives_.append(("chain", [sender, score]))
+        sub_graphs.append(sub_graph)
     col_num = 4
     if iteration > col_num:
         for idx in range(col_num):

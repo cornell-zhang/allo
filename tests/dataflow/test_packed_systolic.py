@@ -93,6 +93,8 @@ def test_packed_systolic():
 
     mod = df.build(top)
     if hls.is_available("vitis_hls"):
+        # This kernel accumulates into Z; both backends need the same zero input.
+        Z_packed.fill(0)
         mod(packed_X, W_A_packed, Z_packed)
 
         np_C = X @ W_A_cst

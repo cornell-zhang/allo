@@ -4,11 +4,23 @@
 import os
 import pytest
 import allo
+from allo.utils import construct_kernel_name
 import allo.dataflow as df
 from allo.ir.types import int32, Stream
 from allo.memory import Layout
 import numpy as np
 from allo.backend.aie import is_available
+
+
+def _pe(prefix, *coordinates):
+    """Resolve a frontend processing element used by the AIE mapping graph."""
+    return construct_kernel_name(prefix, coordinates)
+
+
+def _chain_name(*nodes):
+    """Name the AIE graph node formed by chaining these ordered nodes."""
+    return "-".join(nodes)
+
 
 S = Layout.Shard
 R = Layout.Replicate
@@ -62,8 +74,25 @@ def test_tp_v1():
         mod = df.build(
             top,
             target="aie",
+            mapping_primitives=[("chain", [_pe("gemm1", 1), _pe("acc", 0)])],
+        )
+        Z = np.zeros((M, L)).astype(np.int32)
+        mod(X, W1, W2, Z)
+        np.testing.assert_allclose(Z, X @ W1 @ W2, atol=1e-5)
+        print("PASSED!")
+    else:
+        print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
+
+    if is_available():
+        mod = df.build(
+            top,
+            target="aie",
             mapping_primitives=[
-                ("chain", ["gemm1_1", "acc_0"]),
+                ("chain", [_pe("gemm1", 1), _pe("acc", 0)]),
+                (
+                    "chain",
+                    [_pe("gemm1", 0), _chain_name(_pe("gemm1", 1), _pe("acc", 0))],
+                ),
             ],
         )
         Z = np.zeros((M, L)).astype(np.int32)
@@ -78,24 +107,11 @@ def test_tp_v1():
             top,
             target="aie",
             mapping_primitives=[
-                ("chain", ["gemm1_1", "acc_0"]),
-                ("chain", ["gemm1_0", "gemm1_1-acc_0"]),
-            ],
-        )
-        Z = np.zeros((M, L)).astype(np.int32)
-        mod(X, W1, W2, Z)
-        np.testing.assert_allclose(Z, X @ W1 @ W2, atol=1e-5)
-        print("PASSED!")
-    else:
-        print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
-
-    if is_available():
-        mod = df.build(
-            top,
-            target="aie",
-            mapping_primitives=[
-                ("chain", ["gemm1_1", "acc_0"]),
-                ("chain", ["gemm1_0", "gemm1_1-acc_0"]),
+                ("chain", [_pe("gemm1", 1), _pe("acc", 0)]),
+                (
+                    "chain",
+                    [_pe("gemm1", 0), _chain_name(_pe("gemm1", 1), _pe("acc", 0))],
+                ),
             ],
         )
         Z = np.zeros((M, L)).astype(np.int32)
@@ -144,7 +160,13 @@ def test_tp_v2():
             top,
             target="aie",
             mapping_primitives=[
-                ("bundle", [("gemm0_0", "gemm1_0"), ("gemm0_1", "gemm1_1")]),
+                (
+                    "bundle",
+                    [
+                        (_pe("gemm0", 0), _pe("gemm1", 0)),
+                        (_pe("gemm0", 1), _pe("gemm1", 1)),
+                    ],
+                )
             ],
         )
         Z = np.zeros((M, L)).astype(np.int32)

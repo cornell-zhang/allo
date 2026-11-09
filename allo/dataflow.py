@@ -8,6 +8,7 @@ import os
 from typing import Union
 from ._mlir.ir import (
     InsertionPoint,
+    WalkResult,
     FlatSymbolRefAttr,
     Location,
     UnitAttr,
@@ -58,25 +59,27 @@ def move_stream_to_interface(
     stream_info = {}
     if with_extra_info:
         extra_stream_info = {}
-    funcs = get_all_df_kernels(s)
+    funcs = get_all_df_kernels(s, include_nested=True)
+    funcs.sort(key=lambda func: "df.nested_kernel" in func.attributes)
     new_func_args = s.func_args.copy()
     if with_stream_type:
         stream_types_dict: dict[str, Type] = {}
     for func in funcs:
+        nested = "df.nested_kernel" in func.attributes
         func_name = func.attributes["sym_name"].value
         stream_ops = []
         stream_types = []
         stream_signed = ""
         stream_info[func_name] = []
-        if with_extra_info:
+        if with_extra_info and not nested:
             extra_stream_info[func_name] = {}
         in_types = func.attributes["function_type"].value.inputs
         out_types = func.attributes["function_type"].value.results
         s_type_str = "_" * len(in_types)
-        new_args = new_func_args[func_name].copy()
+        new_args = [] if nested else new_func_args[func_name].copy()
         skip_new_args_flag = False
-        prefix, ids = parse_kernel_name(func_name)
-        if not unroll:
+        prefix, ids = (None, None) if nested else parse_kernel_name(func_name)
+        if not unroll and not nested:
             assert s.func_instances is not None and prefix in s.func_instances
             assert ids in s.func_instances[prefix].keys()
             for ids_, predicate_tag in s.func_instances[prefix].items():
@@ -97,7 +100,7 @@ def move_stream_to_interface(
         for op in func.entry_block.operations:
             if isinstance(op, allo_d.StreamConstructOp):
                 stream_name = op.attributes["name"].value
-                if stream_name in first_stream_ops:
+                if not nested and stream_name in first_stream_ops:
                     # Duplicate: replace uses with first stream's result and mark for erasure
                     first_op = first_stream_ops[stream_name]
                     op.result.replace_all_uses_with(first_op.result)
@@ -120,7 +123,7 @@ def move_stream_to_interface(
                 stream_info[func_name].append((stream_name, direction))
                 s_type_str += direction[0]
                 new_args.append(stream_name)
-                if not unroll and "symbolic_slice" in op.attributes:
+                if not nested and not unroll and "symbolic_slice" in op.attributes:
                     symbolic_name = op.attributes["symbolic_slice"].value
                     arg_idx = len(new_args) - 1
                     for ids_, predicate_tag in s.func_instances[prefix].items():
@@ -222,9 +225,9 @@ def move_stream_to_interface(
                                     )
 
         # create new func to update arguments
-        in_types += stream_types
+        in_types = list(in_types) + stream_types
         # skip_new_args_flag: updated with symbolic info, do not use `new_args`
-        if not skip_new_args_flag:
+        if not nested and not skip_new_args_flag:
             new_func_args[func_name] = new_args
         with s.module.context, Location.unknown():
             func_type = FunctionType.get(in_types, out_types)
@@ -233,6 +236,9 @@ def move_stream_to_interface(
                 type=func_type,
                 ip=InsertionPoint(func),
             )
+            for attr in func.attributes:
+                if attr not in {"sym_name", "function_type"}:
+                    new_func.attributes[attr] = func.attributes[attr]
             new_func.add_entry_block()
             final_op = func_d.ReturnOp([], ip=InsertionPoint(new_func.entry_block))
             # copy old attributes
@@ -240,16 +246,8 @@ def move_stream_to_interface(
                 new_func.attributes["itypes"] = StringAttr.get(
                     func.attributes["itypes"].value + stream_signed
                 )
-            if "otypes" in func.attributes:
-                new_func.attributes["otypes"] = func.attributes["otypes"]
             # tag stream types
             new_func.attributes["stypes"] = StringAttr.get(s_type_str)
-            if "df.kernel" in func.attributes:
-                new_func.attributes["df.kernel"] = UnitAttr.get()
-            if "tag" in func.attributes:
-                new_func.attributes["tag"] = StringAttr.get(
-                    func.attributes["tag"].value
-                )
             # move operations from old func to new func
             cnt_stream = 0
             for op in func.entry_block.operations:
@@ -270,99 +268,7 @@ def move_stream_to_interface(
                 arg.replace_all_uses_with(new_func.arguments[i])
             func.operation.erase()
 
-    # Second pass: Process nested kernels' streams
-    # These were skipped in the first pass but need their local streams moved to interface
-    nested_funcs = []
-    for func in list(s.module.body.operations):
-        if (
-            isinstance(func, func_d.FuncOp)
-            and "df.kernel" in func.attributes
-            and "df.nested_kernel" in func.attributes
-        ):
-            nested_funcs.append(func)
-
-    for func in nested_funcs:
-        func_name = func.attributes["sym_name"].value
-        stream_ops = []
-        stream_types = []
-        stream_signed = ""
-        stream_info[func_name] = []
-        in_types = func.attributes["function_type"].value.inputs
-        out_types = func.attributes["function_type"].value.results
-        s_type_str = "_" * len(in_types)
-
-        # Collect stream constructs in this nested kernel
-        for op in func.entry_block.operations:
-            if isinstance(op, allo_d.StreamConstructOp):
-                stream_ops.append(op)
-                stream_types.append(op.result.type)
-                stream_signed += "u" if "unsigned" in op.attributes else "_"
-                for use in op.result.uses:
-                    if isinstance(use.owner, allo_d.StreamGetOp):
-                        direction = "in"
-                    elif isinstance(use.owner, allo_d.StreamPutOp):
-                        direction = "out"
-                    else:
-                        raise ValueError("Stream is not used correctly.")
-                stream_name = op.attributes["name"].value
-                if with_stream_type and stream_name not in stream_types_dict:
-                    stream_types_dict[stream_name] = op.result.type
-                stream_info[func_name].append((stream_name, direction))
-                s_type_str += direction[0]
-
-        # Rebuild the function with streams as arguments
-        # Force rebuild even if no streams to clean up potential structure issues
-        in_types = list(in_types) + stream_types
-        with s.module.context, Location.unknown():
-            func_type = FunctionType.get(in_types, out_types)
-            # Create new func with temporary name to avoid collision handling by MLIR
-            # (which would rename it to func_name_0)
-            temp_name = func_name + "_temp"
-            new_func = func_d.FuncOp(
-                name=temp_name,
-                type=func_type,
-                ip=InsertionPoint(func),
-            )
-            new_func.add_entry_block()
-            final_op = func_d.ReturnOp([], ip=InsertionPoint(new_func.entry_block))
-            # copy old attributes
-            if "itypes" in func.attributes:
-                new_func.attributes["itypes"] = StringAttr.get(
-                    func.attributes["itypes"].value + stream_signed
-                )
-            if "otypes" in func.attributes:
-                new_func.attributes["otypes"] = func.attributes["otypes"]
-            # tag stream types
-            new_func.attributes["stypes"] = StringAttr.get(s_type_str)
-            if "df.kernel" in func.attributes:
-                new_func.attributes["df.kernel"] = UnitAttr.get()
-            if "df.nested_kernel" in func.attributes:
-                new_func.attributes["df.nested_kernel"] = UnitAttr.get()
-            if "tag" in func.attributes:
-                new_func.attributes["tag"] = StringAttr.get(
-                    func.attributes["tag"].value
-                )
-            # move operations from old func to new func
-            cnt_stream = 0
-            for op in func.entry_block.operations:
-                if op in stream_ops:
-                    op.result.replace_all_uses_with(
-                        new_func.arguments[len(in_types) - len(stream_ops) + cnt_stream]
-                    )
-                    cnt_stream += 1
-                    op.operation.erase()
-                    continue
-                op.operation.move_before(final_op)
-            final_op.erase()
-            # update original arguments
-            for i, arg in enumerate(func.arguments):
-                arg.replace_all_uses_with(new_func.arguments[i])
-            func.operation.erase()
-            # Rename to _fixed to avoid any potential name collision/stale reference
-            fixed_name = func_name + "_fixed"
-            new_func.attributes["sym_name"] = StringAttr.get(fixed_name)
-
-    # Third pass: Update calls to nested kernels to pass streams from parent
+    # Update calls to nested kernels to pass streams from parent
     # Find all functions that call nested kernels and update those calls
     # Collect into list first to avoid iterator invalidation
     all_funcs = list(s.module.body.operations)
@@ -380,9 +286,6 @@ def move_stream_to_interface(
             if isinstance(op, allo_d.StreamConstructOp):
                 stream_name = op.attributes["name"].value
                 parent_stream_map[stream_name] = op
-
-        # Force processing even if no streams in parent, because we renamed nested kernels
-        # and we MUST update calls to them regardless of streams
 
         # Find calls to nested kernels and update them
         calls_to_update = []
@@ -404,18 +307,17 @@ def move_stream_to_interface(
                     if stream_name in parent_stream_map:
                         new_operands.append(parent_stream_map[stream_name].result)
 
-                # Create new call with updated operands and FIXED name
-                fixed_callee_name = callee_name + "_fixed"
+                # Preserve the callee identity while updating its operands.
                 new_call = func_d.CallOp(
                     [],
-                    FlatSymbolRefAttr.get(fixed_callee_name),
+                    FlatSymbolRefAttr.get(callee_name),
                     new_operands,
                     ip=InsertionPoint(old_call),
                 )
                 # Copy attributes
-                for attr_name in old_call.attributes:
-                    if attr_name not in ("callee", "operandSegmentSizes"):
-                        new_call.attributes[attr_name] = old_call.attributes[attr_name]
+                for attr in old_call.attributes:
+                    if attr not in ("callee", "operandSegmentSizes"):
+                        new_call.attributes[attr] = old_call.attributes[attr]
                 old_call.operation.erase()
 
     s.func_args = new_func_args
@@ -427,6 +329,7 @@ def move_stream_to_interface(
 
 
 def remove_unused_func_ops(s, func_names):
+    empty = []
     for func_op in s.module.body.operations:
         if not (
             isinstance(func_op, func_d.FuncOp)
@@ -438,9 +341,23 @@ def remove_unused_func_ops(s, func_names):
             len(blocks) == 1
             and len(blocks[0].operations) == 1
             and blocks[0].operations[0].name == "func.return"
+            and not func_op.type.results
         ):
-            s.func_args.pop(func_op.attributes["sym_name"].value)
-            func_op.erase()
+            empty.append(func_op)
+    names = {func.name.value for func in empty}
+    calls = []
+
+    def collect(op):
+        if op.name == "func.call" and op.attributes["callee"].value in names:
+            calls.append(op)
+        return WalkResult(0)
+
+    s.module.operation.walk(collect)
+    for call in calls:
+        call.operation.erase()
+    for func in empty:
+        s.func_args.pop(func.name.value, None)
+        func.operation.erase()
 
 
 def _build_top(s, stream_info, enable_layout=False):
@@ -481,14 +398,7 @@ def _build_top(s, stream_info, enable_layout=False):
                     ]
                 arg_mapping[func_name].append(top_args[arg_name])
     # update top function
-    top_func = None
-    for func in s.module.body.operations:
-        if (
-            isinstance(func, func_d.FuncOp)
-            and func.attributes["sym_name"].value == s.top_func_name
-        ):
-            top_func = func
-            break
+    top_func = s._find_function(s.top_func_name, error=False)
     assert top_func is not None, "Top function not found"
     with s.module.context, Location.unknown():
         # create new func
@@ -498,6 +408,9 @@ def _build_top(s, stream_info, enable_layout=False):
         new_top = func_d.FuncOp(
             name=s.top_func_name, type=func_type, ip=InsertionPoint(top_func)
         )
+        for attr in top_func.attributes:
+            if attr not in {"sym_name", "function_type"}:
+                new_top.attributes[attr] = top_func.attributes[attr]
         new_top.attributes["itypes"] = StringAttr.get("".join(input_signed))
         new_top.add_entry_block()
         return_op = func_d.ReturnOp([], ip=InsertionPoint(new_top.entry_block))

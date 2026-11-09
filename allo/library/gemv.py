@@ -55,7 +55,7 @@ def int8xint8_mat_vec[
 def schedule_int8xint8_mat_vec(s):
     # """Schedule matrix vector multiply."""
     assert s.top_func_name == "int8xint8_mat_vec"
-    kernel_name = "pe_kernel"
+    kernel_name = s.get_functions(pe_kernel)[0].name.value
 
     s.partition(s.x, dim=1)
     s.partition(s.y, dim=1)

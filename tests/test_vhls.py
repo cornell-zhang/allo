@@ -134,7 +134,8 @@ def test_csim_write_back():
             print("Passed!")
 
 
-def test_pointer_generation():
+@pytest.mark.parametrize("inst", [False, True])
+def test_pointer_generation(inst):
     def top(inst: bool, C: int32[3]):
         if inst:
             C[0] = C[0] + 1
@@ -144,14 +145,14 @@ def test_pointer_generation():
         mod = s.build(target="vitis_hls", mode="csim", project=tmpdir)
         assert "bool v" in mod.hls_code and ",," not in mod.hls_code
         if hls.is_available("vitis_hls"):
-            inst = np.array([1], dtype=np.bool_)
             C = np.array([1, 2, 3], dtype=np.int32)
             mod(inst, C)
-            np.testing.assert_allclose(C, [2, 2, 3], rtol=1e-5)
+            np.testing.assert_array_equal(C, [1 + int(inst), 2, 3])
             print("Passed!")
 
 
-def test_scalar_not_array():
+@pytest.mark.parametrize("inst", [False, True])
+def test_scalar_not_array(inst):
     def top(inst: bool, C: int32[3]):
         flag: bool = inst[0]
         if flag:
@@ -163,8 +164,8 @@ def test_scalar_not_array():
         assert "bool v" in mod.hls_code and ",," not in mod.hls_code
         if hls.is_available("vitis_hls"):
             C = np.array([1, 2, 3], dtype=np.int32)
-            mod(1, C)
-            np.testing.assert_allclose(C, [2, 2, 3], rtol=1e-5)
+            mod(inst, C)
+            np.testing.assert_array_equal(C, [1 + int(inst), 2, 3])
             print("Passed!")
 
 

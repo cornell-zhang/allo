@@ -17,6 +17,7 @@ from math import log2
 
 import allo
 from allo.ir.types import int8, UInt, AlloType, int32, Stream
+from allo.utils import construct_kernel_name
 import allo.dataflow as df
 import allo.backend.hls as hls
 import numpy as np
@@ -141,7 +142,7 @@ def get_feather_top(AW: int, AH: int, Ty: AlloType):
 
 def get_scheduled_feather(AW: int, AH: int, Ty: AlloType):
     s = df.customize(get_feather_top(AW, AH, Ty))
-    nest_loop = s.get_loops("NEST_0")["nest"]["i"]
+    nest_loop = s.get_loops(construct_kernel_name("NEST", (0,)))["nest"]["i"]
     s.pipeline(nest_loop)
     s.partition("top:output_buffer", dim=1, factor=AW)
     s.partition("top:iActs", dim=1, factor=AH)

@@ -207,7 +207,7 @@ def test_cascade_systolic():
 
 
 def test_cascade_specialized_systolic():
-    from allo.library.systolic import systolic
+    from allo.library.systolic import systolic, systolic_tile
 
     M0, M1 = 2, 2
     MM, NN, KK = 4, 4, 4
@@ -248,13 +248,14 @@ def test_cascade_specialized_systolic():
     s.pipeline(store_C_loop)
     tile_loop = s.get_loops("systolic")["outer_tile"]["ni"]
     s.dataflow(tile_loop)
-    pe = s.unfold("systolic_tile:PE", [0, 1])  # specify which are spatial loops
-    s.to(MockBuffer("systolic_tile", "A_fifo"), pe, axis=1, depth=M0 + 1)
-    s.to(MockBuffer("systolic_tile", "B_fifo"), pe, axis=0, depth=M1 + 1)
+    tile = s.get_functions(systolic_tile)[0].name.value
+    pe = s.unfold(f"{tile}:PE", [0, 1])  # specify which are spatial loops
+    s.to(MockBuffer(tile, "A_fifo"), pe, axis=1, depth=M0 + 1)
+    s.to(MockBuffer(tile, "B_fifo"), pe, axis=0, depth=M1 + 1)
     # Compose with submodule
     s_top.compose(s, id="FFN1")
     s_top.compose(s, id="FFN2")
-    s_top.to(s_top.Z, "systolic_FFN2", depth=M0 * KK)
+    s_top.to(s_top.Z, "systolic__id_FFN2", depth=M0 * KK)
     # HLS testing
     code = s_top.build("vhls")
     print(code)
@@ -298,7 +299,7 @@ def test_ffn():
     s_top.compose(
         systolic, instantiate=[int8, int8, int8, L, 4 * D, D, M0, M1], id="FFN2"
     )
-    s_top.to(s_top.Z, "systolic_FFN2", depth=M0 * 4 * D)
+    s_top.to(s_top.Z, "systolic__id_FFN2", depth=M0 * 4 * D)
     # HLS testing
     code = s_top.build("vhls")
     print(code)

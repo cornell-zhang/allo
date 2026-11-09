@@ -6,12 +6,24 @@ import torch
 import math
 import torch.nn.functional as F
 import allo
+from allo.utils import construct_kernel_name
 from allo.ir.types import bfloat16, Stream
 import allo.dataflow as df
 import numpy as np
 from ml_dtypes import bfloat16 as np_bfloat16
 from allo.memory import Layout
 from allo.backend.aie.external_kernel import ExternalModule
+
+
+def _pe(prefix, *coordinates):
+    """Resolve a frontend processing element used by the AIE mapping graph."""
+    return construct_kernel_name(prefix, coordinates)
+
+
+def _chain_name(*nodes):
+    """Name the AIE graph node formed by chaining these ordered nodes."""
+    return "-".join(nodes)
+
 
 S = Layout.Shard
 R = Layout.Replicate
@@ -74,10 +86,11 @@ def gen_attn_score_primitives():
     for i in range(Pm):
         bases.append([])
         for j in range(Pn):
-            base = f"gemm_0_{i}_{j}"
+            base = _pe("gemm", 0, i, j)
             for k in range(1, Pk):
-                mapping_primitives.append(("chain", [base, f"gemm_{k}_{i}_{j}"]))
-                base += f"-gemm_{k}_{i}_{j}"
+                node = _pe("gemm", k, i, j)
+                mapping_primitives.append(("chain", [base, node]))
+                base = _chain_name(base, node)
             bases[i].append(base)
 
     if Pn // col_num < 1 or Pm // row_num < 1:
@@ -147,7 +160,7 @@ def gen_scaling_primitives():
             nodes = []
             for i in range(SCALING_P0 // ROW):
                 for j in range(SCALING_P1 // COL):
-                    nodes.append(f"core_{row + i * ROW}_{col + j * COL}")
+                    nodes.append(_pe("core", row + i * ROW, col + j * COL))
             primitives.append(("bundle", nodes))
     return primitives
 
@@ -175,7 +188,7 @@ def gen_softmax_primitives():
                 (
                     "bundle",
                     [
-                        f"core_{SOFTMAX_ROW*i_+row}"
+                        _pe("core", SOFTMAX_ROW * i_ + row)
                         for i_ in range(SOFTMAX_P0 // SOFTMAX_ROW)
                     ],
                 )
@@ -187,8 +200,7 @@ def gen_softmax_primitives():
 def softmax_kernel(input_x: Ty[N, N], output_x: Ty[N, N]):
     @df.kernel(mapping=[SOFTMAX_P0], args=[input_x, output_x])
     def core(
-        local_input_x: Ty[N, N] @ SOFTMAX_Ly,
-        local_output_x: Ty[N, N] @ SOFTMAX_Ly,
+        local_input_x: Ty[N, N] @ SOFTMAX_Ly, local_output_x: Ty[N, N] @ SOFTMAX_Ly
     ):
         softmax(local_input_x, local_output_x)
 
@@ -234,10 +246,11 @@ def gen_gemm_primitive():
     for i in range(Pm):
         bases.append([])
         for j in range(Pn):
-            base = f"gemm_0_{i}_{j}"
+            base = _pe("gemm", 0, i, j)
             for k in range(1, Pk):
-                mapping_primitives.append(("chain", [base, f"gemm_{k}_{i}_{j}"]))
-                base += f"-gemm_{k}_{i}_{j}"
+                node = _pe("gemm", k, i, j)
+                mapping_primitives.append(("chain", [base, node]))
+                base = _chain_name(base, node)
             bases[i].append(base)
 
     if Pm // ROW > 1:

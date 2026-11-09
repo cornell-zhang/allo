@@ -5,10 +5,17 @@ import os
 import pytest
 import numpy as np
 import allo
+from allo.utils import construct_kernel_name
 import allo.dataflow as df
 from allo.backend.aie import is_available
 from allo.ir.types import int16, Stream
 from allo.memory import Layout
+
+
+def _pe(prefix, *coordinates):
+    """Resolve a frontend processing element used by the AIE mapping graph."""
+    return construct_kernel_name(prefix, coordinates)
+
 
 S = Layout.Shard
 R = Layout.Replicate
@@ -51,7 +58,7 @@ def test_atb_onchip_tiling(rho):
 
     mapping_primitives = None
     if rho > 1:
-        mapping_primitives = [("bundle", [f"compute_{i}" for i in range(rho)])]
+        mapping_primitives = [("bundle", [_pe("compute", i) for i in range(rho)])]
 
     A = np.random.randint(0, 64, (M, K)).astype(np.int16)
     B = np.random.randint(0, 64, (K, N)).astype(np.int16)
@@ -98,7 +105,7 @@ def test_atb(rho):
 
     mapping_primitives = None
     if rho > 1:
-        mapping_primitives = [("bundle", [f"compute_{i}" for i in range(rho)])]
+        mapping_primitives = [("bundle", [_pe("compute", i) for i in range(rho)])]
 
     A = np.random.randint(0, 64, (M, K)).astype(np.int16)
     B = np.random.randint(0, 64, (K, N)).astype(np.int16)
